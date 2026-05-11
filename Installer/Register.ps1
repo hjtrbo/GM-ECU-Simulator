@@ -53,7 +53,7 @@ if ($Build) {
     & $msbuild "$repoRoot\PassThruShim\PassThruShim.vcxproj" /p:Configuration=Debug /p:Platform=Win32 /nologo /v:minimal | Out-Host
     if ($LASTEXITCODE -ne 0) { throw "MSBuild Win32 failed (exit $LASTEXITCODE)" }
     Write-Host "Building C# simulator..."
-    & dotnet build "$repoRoot\EcuSimulator.sln" -c Debug | Out-Host
+    & dotnet build "$repoRoot\GM ECU Simulator.sln" -c Debug | Out-Host
     if ($LASTEXITCODE -ne 0) { throw "dotnet build failed (exit $LASTEXITCODE)" }
 }
 

@@ -234,12 +234,12 @@ public sealed class MainViewModel : NotifyPropertyChangedBase
     {
         // The EXE lives at GmEcuSimulator/bin/Debug/net9.0-windows/. The
         // installer scripts are at <repo-root>/Installer/. Walk up looking
-        // for the marker file (EcuSimulator.sln) rather than hard-coding ../
-        // hops, so this still works after a publish that flattens the layout.
+        // for the marker file (GM ECU Simulator.sln) rather than hard-coding
+        // ../ hops, so this still works after a publish that flattens the layout.
         var dir = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location);
         for (int i = 0; i < 10 && dir != null; i++)
         {
-            var marker = Path.Combine(dir, "EcuSimulator.sln");
+            var marker = Path.Combine(dir, "GM ECU Simulator.sln");
             if (File.Exists(marker)) return Path.Combine(dir, "Installer", name);
             dir = Path.GetDirectoryName(dir);
         }
