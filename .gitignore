@@ -1,0 +1,47 @@
+# Build output
+[Bb]in/
+[Oo]bj/
+[Dd]ebug/
+[Rr]elease/
+x64/
+x86/
+[Ww]in32/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+# Visual Studio
+.vs/
+TestResults/
+
+# Runtime config
+ecu_config.json
+
+# Editor / per-user
+.vscode/
+.claude/
+
+# Scratch / output
+*.txt
+claude-context.md
+CLAUDE.md
+
+# OS
+Thumbs.db
+.DS_Store
+
+# NuGet
+packages/
+*.nupkg
+
+# Native intermediates
+*.tlog
+*.pdb
+*.idb
+*.ilk
+*.exp
+*.lib
+*.obj
+*.iobj
+*.ipdb

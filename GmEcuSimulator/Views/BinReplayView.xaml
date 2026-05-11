@@ -1,0 +1,75 @@
+<UserControl x:Class="GmEcuSimulator.Views.BinReplayView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:sys="clr-namespace:System;assembly=mscorlib"
+             xmlns:replay="clr-namespace:Common.Replay;assembly=EcuSim.Common">
+    <UserControl.Resources>
+        <ObjectDataProvider x:Key="LoopModes" MethodName="GetValues" ObjectType="{x:Type sys:Enum}">
+            <ObjectDataProvider.MethodParameters>
+                <x:Type TypeName="replay:BinReplayLoopMode"/>
+            </ObjectDataProvider.MethodParameters>
+        </ObjectDataProvider>
+    </UserControl.Resources>
+
+    <DockPanel>
+        <Border DockPanel.Dock="Top" BorderBrush="#FFCCCCCC" BorderThickness="0,0,0,1" Padding="6,4">
+            <StackPanel>
+                <StackPanel Orientation="Horizontal">
+                    <Button Content="Load…"
+                            Command="{Binding LoadFileCommand}"
+                            Padding="10,3" Margin="0,0,4,0"
+                            ToolTip="Open a .bin or .csv. CSVs are converted on-the-fly via CsvParser (HP Tuners / PCMTEC / GMLAN formats)."/>
+                    <Button Content="Load synthetic demo"
+                            Command="{Binding LoadDemoCommand}"
+                            Padding="10,3" Margin="0,0,4,0"
+                            ToolTip="Loads a deterministic 4-channel in-memory bin (RPM/TPS/Coolant/TransTemp). For wiring up the start/stop hooks before the real bin loader lands."/>
+                    <Button Content="Unload"
+                            Command="{Binding UnloadCommand}"
+                            Padding="10,3"/>
+                    <Separator Width="12" Visibility="Hidden"/>
+                    <TextBlock Text="State:" VerticalAlignment="Center" Margin="12,0,4,0"/>
+                    <TextBlock Text="{Binding StateLabel}" FontWeight="Bold" VerticalAlignment="Center"/>
+                    <TextBlock Text="•" Margin="10,0" VerticalAlignment="Center" Foreground="Gray"/>
+                    <TextBlock Text="{Binding ElapsedSummary}" FontFamily="Consolas" VerticalAlignment="Center"/>
+                </StackPanel>
+                <StackPanel Orientation="Horizontal" Margin="0,4,0,0">
+                    <TextBlock Text="File:" VerticalAlignment="Center" Margin="0,0,4,0"/>
+                    <TextBlock Text="{Binding FilePathLabel}" FontFamily="Consolas" VerticalAlignment="Center"
+                               TextTrimming="CharacterEllipsis" MaxWidth="700"/>
+                    <TextBlock Text="•" Margin="10,0" VerticalAlignment="Center" Foreground="Gray"/>
+                    <TextBlock Text="{Binding ChannelSummary}" VerticalAlignment="Center"/>
+                </StackPanel>
+                <StackPanel Orientation="Horizontal" Margin="0,4,0,0">
+                    <TextBlock Text="Loop mode:" VerticalAlignment="Center" Margin="0,0,4,0"/>
+                    <ComboBox ItemsSource="{Binding Source={StaticResource LoopModes}}"
+                              SelectedItem="{Binding LoopMode}"
+                              MinWidth="100" Padding="4,1"
+                              ToolTip="HoldLast freezes at the last sample. Loop wraps to the start. Stop transitions to Stopped at end-of-bin."/>
+                    <CheckBox Content="Auto-load on app start"
+                              IsChecked="{Binding AutoLoadOnStart}"
+                              VerticalAlignment="Center" Margin="20,0,0,0"
+                              ToolTip="Persists the loaded bin path in ecu_config.json and re-loads on next launch."/>
+                </StackPanel>
+            </StackPanel>
+        </Border>
+
+        <DataGrid ItemsSource="{Binding Channels}"
+                  AutoGenerateColumns="False"
+                  CanUserAddRows="False"
+                  CanUserDeleteRows="False"
+                  IsReadOnly="True"
+                  HeadersVisibility="Column"
+                  GridLinesVisibility="Horizontal"
+                  FontFamily="Consolas" FontSize="11"
+                  RowHeight="22">
+            <DataGrid.Columns>
+                <DataGridTextColumn Header="ECU"      Binding="{Binding EcuLabel}"   Width="200"/>
+                <DataGridTextColumn Header="Address"  Binding="{Binding AddressHex}" Width="80"/>
+                <DataGridTextColumn Header="Name"     Binding="{Binding Name}"       Width="*"/>
+                <DataGridTextColumn Header="Unit"     Binding="{Binding Unit}"       Width="60"/>
+                <DataGridTextColumn Header="Size"     Binding="{Binding SizeBytes}"  Width="50"/>
+                <DataGridTextColumn Header="Live"     Binding="{Binding LiveValue}"  Width="100"/>
+            </DataGrid.Columns>
+        </DataGrid>
+    </DockPanel>
+</UserControl>

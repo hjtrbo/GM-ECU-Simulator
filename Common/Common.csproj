@@ -1,0 +1,18 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <!-- Both this repo and the sibling Gmlan Data Logger have a project named
+         "Common". Distinguish output assembly names so they can coexist in
+         GmEcuSimulator's bin folder when the sibling's BinaryWorker /
+         CsvParser are referenced for bin-replay. -->
+    <AssemblyName>EcuSim.Common</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="System.Text.Json" Version="10.0.7" />
+  </ItemGroup>
+
+</Project>

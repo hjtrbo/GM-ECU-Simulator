@@ -1,0 +1,29 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <ProjectReference Include="..\Common\Common.csproj" />
+    <ProjectReference Include="..\Core\Core.csproj" />
+    <!-- Sibling Gmlan Data Logger projects: BinaryWorker for the LogReader
+         that backs LogReaderBinSource, and the sibling Common.dll for the
+         eNodeType / eSize / eDataType enums that BinaryWorker.Header
+         carries (transitively pulled by BinaryWorker; listed explicitly so
+         the dependency is visible). The sibling Common's AssemblyName is
+         "Common"; our Common is renamed to "EcuSim.Common" so both DLLs
+         can coexist in this project's output folder. -->
+    <ProjectReference Include="..\..\GM Data Logger\BinaryWorker\BinaryWorker.csproj" />
+    <ProjectReference Include="..\..\GM Data Logger\Common\Common.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.0.7" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net9.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <UseWPF>true</UseWPF>
+  </PropertyGroup>
+
+</Project>

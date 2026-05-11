@@ -1,0 +1,37 @@
+; SAE J2534-1 v04.04 PassThru API — v04.04 ONLY.
+;
+; This DLL supports v04.04 and NOT v05.00. The 14 v04.04 functions below
+; are all that's exported, and that is by design. Names match the C
+; signatures in j2534.h. Without this .def the __stdcall decorator suffix
+; and x64 mangling would surface — apps load these by exact name via
+; GetProcAddress.
+;
+; LIBRARY directive intentionally omitted so the linker doesn't override
+; the project's TargetName (PassThruShim32.dll / PassThruShim64.dll).
+EXPORTS
+    PassThruOpen
+    PassThruClose
+    PassThruConnect
+    PassThruDisconnect
+    PassThruReadMsgs
+    PassThruWriteMsgs
+    PassThruStartPeriodicMsg
+    PassThruStopPeriodicMsg
+    PassThruStartMsgFilter
+    PassThruStopMsgFilter
+    PassThruSetProgrammingVoltage
+    PassThruReadVersion
+    PassThruGetLastError
+    PassThruIoctl
+;
+; Intentionally NOT exported (NOT a v04.04 function — do not add):
+;   PassThruScanForDevices, PassThruGetNextDevice,
+;   PassThruLogicalConnect, PassThruLogicalDisconnect,
+;   PassThruSelect, PassThruQueueMsgs        <- all v05.00
+;   PassThruGetNextCarDAQ                    <- Drew Tech proprietary;
+;       triggers an x64 AV inside J2534-Sharp's HeapIntPtr (4-byte alloc,
+;       8-byte ReadIntPtr) on the first call.
+;
+; Hosts that gate connection on a non-empty GetDeviceList must instead
+; call api.GetDevice("") for the default device — that's the v04.04
+; spec-defined open path.
