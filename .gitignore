@@ -18,6 +18,10 @@ TestResults/
 # Runtime config
 ecu_config.json
 
+# Manual build scripts (kept locally, not published)
+docs/Build-PDF.py
+docs/Build-Manual.ps1
+
 # Editor / per-user
 .vscode/
 .claude/
