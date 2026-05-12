@@ -217,6 +217,9 @@ public sealed class RequestDispatcher
         }
 
         var ch = state.AllocateChannel(proto, baud, flags);
+        // Clear any stale rejection notice left over from a prior bad connect.
+        state.Bus.OnStatusMessage?.Invoke(
+            $"J2534 host connected — channel {ch.Id}, CAN @ {baud} baud");
         var w = new IpcWriter();
         w.WriteU32((uint)ResultCode.STATUS_NOERROR);
         w.WriteU32(ch.Id);
