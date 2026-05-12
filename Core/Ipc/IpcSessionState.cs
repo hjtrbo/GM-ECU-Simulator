@@ -97,7 +97,7 @@ public sealed class IpcSessionState : IDisposable
         // session — otherwise a later P3C timeout would enqueue an unsolicited
         // $60 onto a now-orphaned channel that no host is reading from.
         foreach (var node in Bus.Nodes)
-            node.ClearLastEnhancedChannelIf(ch);
+            node.State.ClearLastEnhancedChannelIf(ch);
         return true;
     }
 

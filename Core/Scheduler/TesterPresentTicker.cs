@@ -53,9 +53,9 @@ public sealed class TesterPresentTicker : IDisposable
         {
             // Atomic check-and-advance under the state's lock so a $3E reset
             // landing mid-tick is never swallowed.
-            if (node.TesterPresent.TickAndCheckTimeout(delta, Timing.P3Cnom))
+            if (node.State.TesterPresent.TickAndCheckTimeout(delta, Timing.P3Cnom))
             {
-                EcuExitLogic.Run(node, scheduler, node.LastEnhancedChannel);
+                EcuExitLogic.Run(node, scheduler, node.State.LastEnhancedChannel);
                 anyTimedOut = true;
             }
         }
@@ -68,7 +68,7 @@ public sealed class TesterPresentTicker : IDisposable
             bool allIdle = true;
             foreach (var node in bus.Nodes)
             {
-                if (node.TesterPresent.State == TesterPresentTimerState.Active)
+                if (node.State.TesterPresent.State == TesterPresentTimerState.Active)
                 {
                     allIdle = false;
                     break;

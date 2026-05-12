@@ -11,6 +11,7 @@ public static class Service
     public const byte ReadDataByIdentifier = 0x1A;
     public const byte ReturnToNormalMode = 0x20;              // $20 — clears all enhanced state
     public const byte ReadDataByParameterIdentifier = 0x22;   // $22 — main read
+    public const byte SecurityAccess = 0x27;                  // $27 — seed/key unlock (§8 SecurityAccess)
     public const byte DisableNormalCommunication = 0x28;
     public const byte DynamicallyDefineMessage = 0x2C;        // $2C — DPID definition
     public const byte DefinePidByAddress = 0x2D;              // $2D — PID by memory address
@@ -30,6 +31,10 @@ public static class Nrc
     public const byte SubFunctionNotSupportedInvalidFormat = 0x12;  // SFNS-IF
     public const byte ConditionsNotCorrectOrSequenceError = 0x22;   // CNCRSE
     public const byte RequestOutOfRange = 0x31;               // ROOR
+    public const byte SecurityAccessDenied = 0x33;            // SAD — $27 sub not allowed in current state
+    public const byte InvalidKey = 0x35;                      // IK — $27 key mismatch
+    public const byte ExceededNumberOfAttempts = 0x36;        // ENOA — $27 lockout triggered
+    public const byte RequiredTimeDelayNotExpired = 0x37;     // RTDNE — $27 inside lockout window
     public const byte RequestCorrectlyReceivedResponsePending = 0x78;  // RCR-RP
     public const byte SchedulerFull = 0x81;                   // SCHDFULL
     public const byte VoltageOutOfRange = 0x83;               // VOLTRNG

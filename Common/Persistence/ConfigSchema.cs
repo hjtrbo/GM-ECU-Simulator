@@ -1,3 +1,4 @@
+using System.Text.Json;
 using System.Text.Json.Serialization;
 using Common.Glitch;
 using Common.Protocol;
@@ -16,9 +17,12 @@ namespace Common.Persistence;
 //
 // v2 added the optional BinReplay section (path + auto-load + loop mode).
 // v1 files load with BinReplay == null and round-trip cleanly.
+//
+// v3 added per-ECU SecurityModuleId + SecurityModuleConfig for $27 SecurityAccess
+// support. v1/v2 files load with both null → $27 returns NRC $11 as before.
 public sealed class SimulatorConfig
 {
-    public const int CurrentVersion = 2;
+    public const int CurrentVersion = 3;
     public const int MinSupportedVersion = 1;
 
     public int Version { get; set; } = CurrentVersion;
@@ -51,6 +55,16 @@ public sealed class EcuDto
     // disabled with all probabilities at 0 so saved configs are unaffected
     // until the user opts in via the editor.
     public GlitchConfig Glitch { get; set; } = GlitchConfig.CreateDefault();
+
+    // ID of the security module to instantiate for $27 on this ECU. Null
+    // (or unknown to the registry) → $27 returns NRC $11 ServiceNotSupported.
+    public string? SecurityModuleId { get; set; }
+
+    // Module-specific configuration handed to ISecurityAccessModule.LoadConfig.
+    // Each module deserialises its own shape from this blob — ConfigSchema
+    // doesn't need to know about any of them. Null is valid (module gets
+    // defaults).
+    public JsonElement? SecurityModuleConfig { get; set; }
 
     public List<PidDto> Pids { get; set; } = new();
 }

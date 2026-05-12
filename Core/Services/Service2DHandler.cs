@@ -102,7 +102,7 @@ public static class Service2DHandler
         dyn.WaveformConfig = existing.WaveformConfig;
         node.AddPid(dyn);
         // Track for cleanup on P3C timeout / $20 ReturnToNormal.
-        lock (node.DynamicallyDefinedPids) node.DynamicallyDefinedPids.Add(pidId);
+        lock (node.State.DynamicallyDefinedPids) node.State.DynamicallyDefinedPids.Add(pidId);
 
         // Positive response: 0x6D + PID id echo.
         IsoTpFragmenter.EnqueueResponse(ch, node.UsdtResponseCanId,

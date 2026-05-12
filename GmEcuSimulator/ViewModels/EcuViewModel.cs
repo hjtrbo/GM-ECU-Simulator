@@ -1,7 +1,11 @@
 using System.Collections.ObjectModel;
+using System.ComponentModel;
+using System.Collections.Specialized;
+using System.Text.Json;
 using Common.Protocol;
 using Common.Waveforms;
 using Core.Ecu;
+using Core.Security;
 
 namespace GmEcuSimulator.ViewModels;
 
@@ -20,6 +24,18 @@ public sealed class EcuViewModel : NotifyPropertyChangedBase
         Model = model;
         Glitch = new GlitchConfigViewModel(model.Glitch);
         foreach (var pid in model.Pids) Pids.Add(new PidViewModel(pid, this));
+
+        // Security module picker: synthetic "(none)" at index 0, then every
+        // registered module ID. Matches the ComboBox's ItemsSource binding.
+        AvailableSecurityModuleIds = new ObservableCollection<string> { NoneSecurityModuleLabel };
+        foreach (var id in SecurityModuleRegistry.KnownIds) AvailableSecurityModuleIds.Add(id);
+        selectedSecurityModuleId = model.SecurityModule?.Id ?? NoneSecurityModuleLabel;
+
+        // Initial KV entries from any persisted config.
+        SecurityModuleConfigEntries = new ObservableCollection<KeyValueEntry>();
+        LoadEntriesFromJson(model.SecurityModuleConfig);
+        SecurityModuleConfigEntries.CollectionChanged += OnSecurityEntriesChanged;
+        foreach (var e in SecurityModuleConfigEntries) e.PropertyChanged += OnSecurityEntryPropertyChanged;
     }
 
     public string Name
@@ -119,4 +135,191 @@ public sealed class EcuViewModel : NotifyPropertyChangedBase
                                System.Globalization.CultureInfo.InvariantCulture, out v);
     }
 
+    // ---------------- Security ($27) ----------------
+
+    private const string NoneSecurityModuleLabel = "(none)";
+
+    /// <summary>All registered module IDs, prefixed with a synthetic "(none)" entry.</summary>
+    public ObservableCollection<string> AvailableSecurityModuleIds { get; }
+
+    /// <summary>Editable key→string map for the module's SecurityModuleConfig JsonElement.</summary>
+    public ObservableCollection<KeyValueEntry> SecurityModuleConfigEntries { get; }
+
+    // ---- Live security state (refreshed from MainWindow refresh timer) ----
+
+    private string securityStatusText = "Locked";
+    public string SecurityStatusText
+    {
+        get => securityStatusText;
+        private set => SetField(ref securityStatusText, value);
+    }
+
+    private string securityFailedAttemptsText = "0 / 3";
+    public string SecurityFailedAttemptsText
+    {
+        get => securityFailedAttemptsText;
+        private set => SetField(ref securityFailedAttemptsText, value);
+    }
+
+    private string securityPendingSeedText = "(none)";
+    public string SecurityPendingSeedText
+    {
+        get => securityPendingSeedText;
+        private set => SetField(ref securityPendingSeedText, value);
+    }
+
+    /// <summary>
+    /// Re-locks the ECU and clears every transient $27 field on its NodeState
+    /// (unlocked level, pending seed, failed-attempt counter, lockout deadline,
+    /// module-private bookkeeping). Equivalent to a power-cycle for this one
+    /// ECU's security subsystem. Bound to the "Reset state" button in the
+    /// Security tab.
+    /// </summary>
+    public void ResetSecurityState()
+    {
+        var s = Model.State;
+        lock (s.Sync)
+        {
+            s.SecurityUnlockedLevel = 0;
+            s.SecurityPendingSeedLevel = 0;
+            s.SecurityLastIssuedSeed = null;
+            s.SecurityFailedAttempts = 0;
+            s.SecurityLockoutUntilMs = 0;
+            s.SecurityModuleState = null;
+        }
+        // The 10Hz refresh tick would catch this within 100ms; push an
+        // immediate update so the click feels instant.
+        RefreshSecurity(0);
+    }
+
+    /// <summary>Called from the main refresh timer to update the live security display.</summary>
+    public void RefreshSecurity(long nowMs)
+    {
+        var s = Model.State;
+        if (s.IsInLockout(nowMs))
+        {
+            double remainingSec = (s.SecurityLockoutUntilMs - nowMs) / 1000.0;
+            SecurityStatusText = $"Locked out — {remainingSec:F1} s remaining";
+        }
+        else if (s.SecurityUnlockedLevel > 0)
+        {
+            SecurityStatusText = $"Unlocked (level {s.SecurityUnlockedLevel})";
+        }
+        else
+        {
+            SecurityStatusText = "Locked";
+        }
+
+        SecurityFailedAttemptsText = $"{s.SecurityFailedAttempts} / 3";
+
+        var seed = s.SecurityLastIssuedSeed;
+        if (s.SecurityPendingSeedLevel == 0 || seed is null)
+        {
+            SecurityPendingSeedText = "(none)";
+        }
+        else
+        {
+            SecurityPendingSeedText =
+                $"level {s.SecurityPendingSeedLevel}, seed = {string.Join(" ", seed.Select(b => b.ToString("X2")))}";
+        }
+    }
+
+    private string selectedSecurityModuleId;
+    public string SelectedSecurityModuleId
+    {
+        get => selectedSecurityModuleId;
+        set
+        {
+            if (selectedSecurityModuleId == value) return;
+            selectedSecurityModuleId = value;
+            OnPropertyChanged();
+            ApplyModuleSelection();
+        }
+    }
+
+    private void ApplyModuleSelection()
+    {
+        if (selectedSecurityModuleId == NoneSecurityModuleLabel)
+        {
+            Model.SecurityModule = null;
+        }
+        else
+        {
+            Model.SecurityModule = SecurityModuleRegistry.Create(selectedSecurityModuleId);
+            Model.SecurityModule?.LoadConfig(Model.SecurityModuleConfig);
+        }
+    }
+
+    private void OnSecurityEntriesChanged(object? sender, NotifyCollectionChangedEventArgs e)
+    {
+        if (e.OldItems != null)
+            foreach (KeyValueEntry old in e.OldItems) old.PropertyChanged -= OnSecurityEntryPropertyChanged;
+        if (e.NewItems != null)
+            foreach (KeyValueEntry n in e.NewItems) n.PropertyChanged += OnSecurityEntryPropertyChanged;
+        PushEntriesToModel();
+    }
+
+    private void OnSecurityEntryPropertyChanged(object? sender, PropertyChangedEventArgs e)
+        => PushEntriesToModel();
+
+    private void PushEntriesToModel()
+    {
+        Model.SecurityModuleConfig = BuildJsonFromEntries();
+        Model.SecurityModule?.LoadConfig(Model.SecurityModuleConfig);
+    }
+
+    private void LoadEntriesFromJson(JsonElement? json)
+    {
+        SecurityModuleConfigEntries?.Clear();
+        if (json is null || json.Value.ValueKind != JsonValueKind.Object) return;
+        foreach (var prop in json.Value.EnumerateObject())
+            SecurityModuleConfigEntries!.Add(new KeyValueEntry(prop.Name, ValueToDisplayString(prop.Value)));
+    }
+
+    private JsonElement? BuildJsonFromEntries()
+    {
+        // Every entry value persists as a JSON string — modules parse strings
+        // themselves (hex bytes, integers, etc.). Round-tripping a number-typed
+        // load lands as a stringified number; modules that care can parse it.
+        var dict = new Dictionary<string, string>();
+        foreach (var e in SecurityModuleConfigEntries)
+        {
+            if (string.IsNullOrWhiteSpace(e.Key)) continue;
+            dict[e.Key] = e.Value ?? "";
+        }
+        if (dict.Count == 0) return null;
+        return JsonSerializer.SerializeToElement(dict);
+    }
+
+    private static string ValueToDisplayString(JsonElement e) => e.ValueKind switch
+    {
+        JsonValueKind.String => e.GetString() ?? "",
+        JsonValueKind.Number => e.GetRawText(),
+        JsonValueKind.True => "true",
+        JsonValueKind.False => "false",
+        JsonValueKind.Null => "",
+        _ => e.GetRawText(),
+    };
+}
+
+public sealed class KeyValueEntry : NotifyPropertyChangedBase
+{
+    private string key = "";
+    private string value = "";
+
+    // Parameterless ctor lets the DataGrid create new rows when CanUserAddRows=True.
+    public KeyValueEntry() { }
+    public KeyValueEntry(string key, string value) { this.key = key; this.value = value; }
+
+    public string Key
+    {
+        get => key;
+        set => SetField(ref key, value);
+    }
+
+    public string Value
+    {
+        get => value;
+        set => SetField(ref this.value, value);
+    }
 }

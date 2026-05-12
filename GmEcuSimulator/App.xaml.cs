@@ -43,6 +43,12 @@ public partial class App : Application
         // register/unregister, etc.). Low volume; never gated.
         bus.LogDiagnostic = s => GmEcuSimulator.MainWindow.AppendLog(s);
 
+        // High-prominence status sink — currently only rejected non-CAN
+        // connect attempts. Routed to the status bar at the bottom of the
+        // main window so a third-party tester user can see why their host
+        // got ERR_INVALID_PROTOCOL_ID back from PassThruConnect.
+        bus.OnStatusMessage = s => GmEcuSimulator.MainWindow.SetStatus(s);
+
         // Auto-load: if the user has a saved config in LocalAppData, hydrate the
         // bus from it; otherwise fall back to the built-in default ECUs.
         try

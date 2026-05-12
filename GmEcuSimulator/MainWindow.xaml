@@ -272,7 +272,7 @@
                           HorizontalAlignment="Stretch" VerticalAlignment="Stretch"
                           Background="#FFCCCCCC" ShowsPreview="False"/>
 
-            <!-- Bus log, bin replay, glitch settings -->
+            <!-- Bus log, bin replay, security, glitch settings -->
             <TabControl Grid.Row="2">
                 <TabItem Header="Bus log">
                     <DockPanel>
@@ -326,6 +326,76 @@
 
                 <TabItem Header="Bin Replay">
                     <views:BinReplayView DataContext="{Binding BinReplay}"/>
+                </TabItem>
+
+                <TabItem Header="Security ($27)">
+                    <DockPanel DataContext="{Binding SelectedEcu}">
+                        <Border DockPanel.Dock="Top" BorderBrush="#FFCCCCCC" BorderThickness="0,0,0,1" Padding="6,4">
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Text="ECU: " VerticalAlignment="Center"/>
+                                <TextBlock Text="{Binding Name, FallbackValue='(none selected)'}"
+                                           FontWeight="Bold" VerticalAlignment="Center"/>
+                                <TextBlock Text="Module:" VerticalAlignment="Center" Margin="20,0,4,0"/>
+                                <ComboBox ItemsSource="{Binding AvailableSecurityModuleIds}"
+                                          SelectedItem="{Binding SelectedSecurityModuleId}"
+                                          Width="320" VerticalAlignment="Center"
+                                          ToolTip="Seed/key algorithm for this ECU. (none) makes $27 return NRC $11."/>
+                                <Button Content="Reset state"
+                                        Command="{Binding DataContext.ResetSecurityCommand,
+                                                          RelativeSource={RelativeSource AncestorType=Window}}"
+                                        Padding="10,2" Margin="12,0,0,0" VerticalAlignment="Center"
+                                        ToolTip="Re-lock this ECU and clear the attempt counter, pending seed, and lockout deadline. Equivalent to a power-cycle for $27 only."/>
+                                <TextBlock Text="Module-specific config below — values are passed to the module as JSON strings."
+                                           Foreground="Gray" FontStyle="Italic"
+                                           Margin="20,0,0,0" VerticalAlignment="Center"/>
+                            </StackPanel>
+                        </Border>
+                        <Border DockPanel.Dock="Top" BorderBrush="#FFCCCCCC" BorderThickness="0,0,0,1"
+                                Background="#FFF8FAFC" Padding="6,6">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="260"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="80"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Grid.Column="0" Text="Status:" FontWeight="Bold"
+                                           VerticalAlignment="Center" Margin="0,0,6,0"/>
+                                <TextBlock Grid.Column="1" Text="{Binding SecurityStatusText, FallbackValue='—'}"
+                                           FontFamily="Consolas" VerticalAlignment="Center"
+                                           ToolTip="Live ECU lock state. Counts down during a 10s lockout window after 3 failed key attempts."/>
+                                <TextBlock Grid.Column="2" Text="Failed attempts:" FontWeight="Bold"
+                                           VerticalAlignment="Center" Margin="12,0,6,0"/>
+                                <TextBlock Grid.Column="3" Text="{Binding SecurityFailedAttemptsText, FallbackValue='—'}"
+                                           FontFamily="Consolas" VerticalAlignment="Center"/>
+                                <TextBlock Grid.Column="4" Text="Pending seed:" FontWeight="Bold"
+                                           VerticalAlignment="Center" Margin="12,0,6,0"/>
+                                <TextBlock Grid.Column="5" Text="{Binding SecurityPendingSeedText, FallbackValue='—'}"
+                                           FontFamily="Consolas" VerticalAlignment="Center"
+                                           ToolTip="Level and bytes of the last requestSeed response — cleared on successful unlock or lockout arm."/>
+                            </Grid>
+                        </Border>
+                        <DataGrid ItemsSource="{Binding SecurityModuleConfigEntries}"
+                                  AutoGenerateColumns="False"
+                                  CanUserAddRows="True"
+                                  CanUserDeleteRows="True"
+                                  HeadersVisibility="Column"
+                                  GridLinesVisibility="Horizontal"
+                                  FontFamily="Consolas" FontSize="11"
+                                  RowHeight="22"
+                                  Margin="6">
+                            <DataGrid.Columns>
+                                <DataGridTextColumn Header="Key"
+                                                    Binding="{Binding Key, UpdateSourceTrigger=LostFocus}"
+                                                    Width="220"/>
+                                <DataGridTextColumn Header="Value"
+                                                    Binding="{Binding Value, UpdateSourceTrigger=LostFocus}"
+                                                    Width="*"/>
+                            </DataGrid.Columns>
+                        </DataGrid>
+                    </DockPanel>
                 </TabItem>
 
                 <TabItem Header="Glitch settings">
