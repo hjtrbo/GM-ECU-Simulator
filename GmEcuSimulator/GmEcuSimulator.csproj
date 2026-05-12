@@ -3,19 +3,31 @@
   <ItemGroup>
     <ProjectReference Include="..\Common\Common.csproj" />
     <ProjectReference Include="..\Core\Core.csproj" />
-    <!-- Sibling Gmlan Data Logger projects: BinaryWorker for the LogReader
-         that backs LogReaderBinSource, and the sibling Common.dll for the
-         eNodeType / eSize / eDataType enums that BinaryWorker.Header
-         carries (transitively pulled by BinaryWorker; listed explicitly so
-         the dependency is visible). The sibling Common's AssemblyName is
-         "Common"; our Common is renamed to "EcuSim.Common" so both DLLs
-         can coexist in this project's output folder. -->
-    <ProjectReference Include="..\..\GM Data Logger\BinaryWorker\BinaryWorker.csproj" />
-    <ProjectReference Include="..\..\GM Data Logger\Common\Common.csproj" />
+  </ItemGroup>
+
+  <!-- Sibling Gmlan Data Logger BinaryWorker (and its Common.dll + the
+       J2534-Sharp.dll Common needs) are vendored in lib/ as pre-built
+       binaries so this repo builds without the sibling source on disk.
+       See lib/README.md for provenance and licence notes. -->
+  <ItemGroup>
+    <Reference Include="BinaryWorker">
+      <HintPath>..\lib\BinaryWorker.dll</HintPath>
+      <Private>true</Private>
+    </Reference>
+    <Reference Include="Common">
+      <HintPath>..\lib\Common.dll</HintPath>
+      <Private>true</Private>
+    </Reference>
+    <Reference Include="J2534-Sharp">
+      <HintPath>..\lib\J2534-Sharp.dll</HintPath>
+      <Private>true</Private>
+    </Reference>
   </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.0.7" />
+    <!-- Transitive dependency of the vendored Common.dll. -->
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.4" />
   </ItemGroup>
 
   <PropertyGroup>
