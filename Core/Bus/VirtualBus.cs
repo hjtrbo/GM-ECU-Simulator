@@ -69,6 +69,14 @@ public sealed class VirtualBus
     /// </summary>
     public Action<string>? LogDiagnostic { get; set; }
 
+    /// <summary>
+    /// Higher-prominence sink for events the user should see at a glance —
+    /// surfaced in the status bar at the bottom of the main window. Reserved
+    /// for things that meaningfully change what the simulator is doing for
+    /// a host (rejected connect attempts, etc.). Null means no surfacing.
+    /// </summary>
+    public Action<string>? OnStatusMessage { get; set; }
+
     internal void LogTx(uint chId, ReadOnlySpan<byte> frame)
     {
         var sink = LogFrame;

@@ -8,11 +8,33 @@ A standalone Windows app that emulates one or more GM (GMLAN / GMW3110-2010) ECU
 
 ## What it does
 
-* Implements GMW3110 services `$22` (ReadDataByPid), `$2C` (DynamicallyDefineMessage), `$2D` (DefinePidByAddress), `$AA` (ReadDataByPacketIdentifier — periodic UUDT push at Slow / Medium / Fast bands), plus the auxiliary modes `$3E` TesterPresent, `$20` ReturnToNormal, and `$10` InitiateDiagnosticOperation needed for a real tester to handshake.
+* Implements GMW3110 services `$22` (ReadDataByPid), `$2C` (DynamicallyDefineMessage), `$2D` (DefinePidByAddress), `$AA` (ReadDataByPacketIdentifier — periodic UUDT push at Slow / Medium / Fast bands), `$27` (SecurityAccess — modular, see below), plus the auxiliary modes `$3E` TesterPresent, `$20` ReturnToNormal, and `$10` InitiateDiagnosticOperation needed for a real tester to handshake.
 * Real ISO-TP segmentation/reassembly, flow-control frames, P3C timeout handling, idle-bus detection.
 * N concurrent virtual ECUs on a virtual CAN bus, routed by destination CAN ID.
 * PID values synthesised from waveforms (sine / triangle / square / sawtooth / constant) or replayed from `.bin` log files.
 * Defaults to the OBD-II convention (`$7E0` request, `$7E8` USDT response, `$5E8` UUDT response). Per-ECU IDs are editable.
+
+## Security Access ($27)
+
+`$27` is implemented behind a two-layer plug-in interface so different GM seed-key flavours can be slotted in per-ECU without touching the dispatcher:
+
+* **`ISecurityAccessModule`** — owns a whole `$27` exchange step. The bundled `Gmw3110_2010_Generic` module covers the GMW3110-2010 protocol envelope (length validation, subfunction parity, pending-seed tracking, 3-strike lockout with 10s deadline-timestamp recovery, NRC `$12` / `$22` / `$35` / `$36` / `$37` paths).
+* **`ISeedKeyAlgorithm`** — the small strategy you usually write. ~30 lines. `Gmw3110_2010_Generic` wraps one and handles everything else.
+
+Ships with two algorithms registered out of the box, selectable per-ECU in the **Security access ($27)** tab:
+
+* `gmw3110-2010-not-implemented` — deterministic seed `[0x12, 0x34]`, refuses every key. Exercises every NRC path against any J2534 host without committing real algorithm math.
+* `gm-e38-test` — the GM E38 ECM algorithm (GMLAN algo `0x92`, also used by E67). 2-byte seed, 2-byte key. Optional `fixedSeed` JSON config for deterministic exchanges.
+
+Each ECU's chosen module ID + module config blob persist to `ecu_config.json` (schema v3; v1/v2 configs load unchanged with no module → `$27` returns NRC `$11`).
+
+See [`docs/security-access-modules.md`](docs/security-access-modules.md) for a step-by-step walkthrough of writing a new algorithm, using the E38 algorithm as the worked example.
+
+### CAN-only protocol
+
+The simulator implements raw `ProtocolID.CAN` (5) only — hosts must do their own ISO-TP framing (PCI byte + data) inside `PassThruWriteMsgs`. A host that calls `PassThruConnect` with `ProtocolID.ISO15765` (6) gets `ERR_INVALID_PROTOCOL_ID` back, plus a status-bar message and J2534-calls-log entry so a third-party user can see why their connect failed.
+
+On real GM hardware ISO15765 mode is the more common choice (the J2534 driver handles ISO-TP for you). For the sim, point your tester at `Protocol.CAN` and frame the PCI yourself.
 
 ## Architecture (one paragraph)
 

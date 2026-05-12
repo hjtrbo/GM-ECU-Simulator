@@ -208,7 +208,13 @@ public sealed class RequestDispatcher
         // Hosts must use ProtocolID.CAN and do their own ISO-TP framing in the
         // PassThruWriteMsgs payload (PCI byte + data).
         if (proto != ProtocolID.CAN)
+        {
+            state.Bus.LogDiagnostic?.Invoke(
+                $"[connect] rejected: protocol {proto} not supported — sim is CAN-only (use ProtocolID.CAN with manual ISO-TP framing)");
+            state.Bus.OnStatusMessage?.Invoke(
+                $"Rejected J2534 connect: {proto} not supported — sim is CAN-only");
             return ProtocolFail(IpcMessageTypes.ConnectResponse, ResultCode.ERR_INVALID_PROTOCOL_ID);
+        }
 
         var ch = state.AllocateChannel(proto, baud, flags);
         var w = new IpcWriter();

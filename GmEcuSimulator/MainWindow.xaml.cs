@@ -51,6 +51,22 @@ public partial class MainWindow : Window
         Append(instance?.LogBox, line);
     }
 
+    // High-prominence status update routed to the bottom status bar. Used for
+    // events the user should see without having to look at any log pane —
+    // currently just rejected non-CAN connect attempts. Always shown, not
+    // gated by Log traffic.
+    public static void SetStatus(string line)
+    {
+        var w = instance;
+        if (w == null) return;
+        if (!w.Dispatcher.CheckAccess())
+        {
+            w.Dispatcher.BeginInvoke(() => SetStatus(line));
+            return;
+        }
+        if (w.vm != null) w.vm.StatusText = line;
+    }
+
     private static void Append(System.Windows.Controls.TextBox? box, string line)
     {
         if (box == null) return;
