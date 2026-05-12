@@ -345,6 +345,33 @@
                                            Margin="20,0,0,0" VerticalAlignment="Center"/>
                             </StackPanel>
                         </Border>
+                        <Border DockPanel.Dock="Top" BorderBrush="#FFCCCCCC" BorderThickness="0,0,0,1"
+                                Background="#FFF8FAFC" Padding="6,6">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="260"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="80"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Grid.Column="0" Text="Status:" FontWeight="Bold"
+                                           VerticalAlignment="Center" Margin="0,0,6,0"/>
+                                <TextBlock Grid.Column="1" Text="{Binding SecurityStatusText, FallbackValue='—'}"
+                                           FontFamily="Consolas" VerticalAlignment="Center"
+                                           ToolTip="Live ECU lock state. Counts down during a 10s lockout window after 3 failed key attempts."/>
+                                <TextBlock Grid.Column="2" Text="Failed attempts:" FontWeight="Bold"
+                                           VerticalAlignment="Center" Margin="12,0,6,0"/>
+                                <TextBlock Grid.Column="3" Text="{Binding SecurityFailedAttemptsText, FallbackValue='—'}"
+                                           FontFamily="Consolas" VerticalAlignment="Center"/>
+                                <TextBlock Grid.Column="4" Text="Pending seed:" FontWeight="Bold"
+                                           VerticalAlignment="Center" Margin="12,0,6,0"/>
+                                <TextBlock Grid.Column="5" Text="{Binding SecurityPendingSeedText, FallbackValue='—'}"
+                                           FontFamily="Consolas" VerticalAlignment="Center"
+                                           ToolTip="Level and bytes of the last requestSeed response — cleared on successful unlock or lockout arm."/>
+                            </Grid>
+                        </Border>
                         <DataGrid ItemsSource="{Binding SecurityModuleConfigEntries}"
                                   AutoGenerateColumns="False"
                                   CanUserAddRows="True"

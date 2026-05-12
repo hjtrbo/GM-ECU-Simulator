@@ -117,9 +117,13 @@ public partial class MainWindow : Window
         {
             if (vm == null) return;
             double now = bus.NowMs;
+            long nowLong = (long)now;
             foreach (var ecu in vm.Ecus)
+            {
                 foreach (var pid in ecu.Pids)
                     pid.RefreshLive(now);
+                ecu.RefreshSecurity(nowLong);
+            }
             vm.RefreshBinReplayLive();
         };
         refreshTimer.Start();

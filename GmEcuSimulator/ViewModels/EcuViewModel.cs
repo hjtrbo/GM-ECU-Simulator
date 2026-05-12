@@ -145,6 +145,61 @@ public sealed class EcuViewModel : NotifyPropertyChangedBase
     /// <summary>Editable key→string map for the module's SecurityModuleConfig JsonElement.</summary>
     public ObservableCollection<KeyValueEntry> SecurityModuleConfigEntries { get; }
 
+    // ---- Live security state (refreshed from MainWindow refresh timer) ----
+
+    private string securityStatusText = "Locked";
+    public string SecurityStatusText
+    {
+        get => securityStatusText;
+        private set => SetField(ref securityStatusText, value);
+    }
+
+    private string securityFailedAttemptsText = "0 / 3";
+    public string SecurityFailedAttemptsText
+    {
+        get => securityFailedAttemptsText;
+        private set => SetField(ref securityFailedAttemptsText, value);
+    }
+
+    private string securityPendingSeedText = "(none)";
+    public string SecurityPendingSeedText
+    {
+        get => securityPendingSeedText;
+        private set => SetField(ref securityPendingSeedText, value);
+    }
+
+    /// <summary>Called from the main refresh timer to update the live security display.</summary>
+    public void RefreshSecurity(long nowMs)
+    {
+        var s = Model.State;
+        if (s.IsInLockout(nowMs))
+        {
+            double remainingSec = (s.SecurityLockoutUntilMs - nowMs) / 1000.0;
+            SecurityStatusText = $"Locked out — {remainingSec:F1} s remaining";
+        }
+        else if (s.SecurityUnlockedLevel > 0)
+        {
+            SecurityStatusText = $"Unlocked (level {s.SecurityUnlockedLevel})";
+        }
+        else
+        {
+            SecurityStatusText = "Locked";
+        }
+
+        SecurityFailedAttemptsText = $"{s.SecurityFailedAttempts} / 3";
+
+        var seed = s.SecurityLastIssuedSeed;
+        if (s.SecurityPendingSeedLevel == 0 || seed is null)
+        {
+            SecurityPendingSeedText = "(none)";
+        }
+        else
+        {
+            SecurityPendingSeedText =
+                $"level {s.SecurityPendingSeedLevel}, seed = {string.Join(" ", seed.Select(b => b.ToString("X2")))}";
+        }
+    }
+
     private string selectedSecurityModuleId;
     public string SelectedSecurityModuleId
     {
