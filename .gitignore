@@ -33,6 +33,10 @@ scripts/
 claude-context.md
 CLAUDE.md
 
+# docs: PDFs only
+docs/*
+!docs/*.pdf
+
 # OS
 Thumbs.db
 .DS_Store
