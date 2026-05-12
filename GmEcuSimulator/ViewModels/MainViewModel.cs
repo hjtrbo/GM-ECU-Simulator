@@ -40,6 +40,7 @@ public sealed class MainViewModel : NotifyPropertyChangedBase
     public RelayCommand RemoveEcuCommand { get; }
     public RelayCommand AddPidCommand { get; }
     public RelayCommand RemovePidCommand { get; }
+    public RelayCommand ResetSecurityCommand { get; }
     public RelayCommand RegisterJ2534Command { get; }
     public RelayCommand UnregisterJ2534Command { get; }
     public RelayCommand ShowRegisteredDevicesCommand { get; }
@@ -61,6 +62,7 @@ public sealed class MainViewModel : NotifyPropertyChangedBase
         RemoveEcuCommand             = new RelayCommand(RemoveEcu, () => SelectedEcu != null);
         AddPidCommand                = new RelayCommand(AddPid,    () => SelectedEcu != null);
         RemovePidCommand             = new RelayCommand(RemovePid, () => SelectedEcu?.SelectedPid != null);
+        ResetSecurityCommand         = new RelayCommand(ResetSecurity, () => SelectedEcu != null);
         RegisterJ2534Command         = new RelayCommand(RegisterJ2534,         () => !j2534Busy);
         UnregisterJ2534Command       = new RelayCommand(UnregisterJ2534,       () => !j2534Busy);
         ShowRegisteredDevicesCommand = new RelayCommand(ShowRegisteredDevices, () => !j2534Busy);
@@ -214,6 +216,7 @@ public sealed class MainViewModel : NotifyPropertyChangedBase
 
     private void AddPid() => SelectedEcu?.AddPid();
     private void RemovePid() => SelectedEcu?.RemoveSelectedPid();
+    private void ResetSecurity() => SelectedEcu?.ResetSecurityState();
 
     // ---------------- J2534 registry buttons ----------------
     //

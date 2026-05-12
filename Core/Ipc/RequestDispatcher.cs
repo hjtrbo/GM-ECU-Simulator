@@ -204,10 +204,22 @@ public sealed class RequestDispatcher
         var flags = r.ReadU32();                          // CAN_29BIT_ID etc — see ChannelSession.ConnectFlags
         var baud = r.ReadU32();
 
-        if (proto != ProtocolID.CAN && proto != ProtocolID.ISO15765)
+        // CAN only — the sim doesn't implement the ISO15765 protocol layer.
+        // Hosts must use ProtocolID.CAN and do their own ISO-TP framing in the
+        // PassThruWriteMsgs payload (PCI byte + data).
+        if (proto != ProtocolID.CAN)
+        {
+            state.Bus.LogDiagnostic?.Invoke(
+                $"[connect] rejected: protocol {proto} not supported — sim is CAN-only (use ProtocolID.CAN with manual ISO-TP framing)");
+            state.Bus.OnStatusMessage?.Invoke(
+                $"Rejected J2534 connect: {proto} not supported — sim is CAN-only");
             return ProtocolFail(IpcMessageTypes.ConnectResponse, ResultCode.ERR_INVALID_PROTOCOL_ID);
+        }
 
         var ch = state.AllocateChannel(proto, baud, flags);
+        // Clear any stale rejection notice left over from a prior bad connect.
+        state.Bus.OnStatusMessage?.Invoke(
+            $"J2534 host connected — channel {ch.Id}, CAN @ {baud} baud");
         var w = new IpcWriter();
         w.WriteU32((uint)ResultCode.STATUS_NOERROR);
         w.WriteU32(ch.Id);

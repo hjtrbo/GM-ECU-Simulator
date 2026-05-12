@@ -67,7 +67,7 @@ public static class Service2CHandler
             return false;
         }
 
-        node.AddDpid(new Dpid { Id = dpidId, Pids = pids });
+        node.State.AddDpid(new Dpid { Id = dpidId, Pids = pids });
 
         IsoTpFragmenter.EnqueueResponse(ch, node.UsdtResponseCanId,
             [Service.Positive(sid), dpidId]);

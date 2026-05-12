@@ -98,12 +98,12 @@ public sealed class IdleBusSupervisor : IDisposable
         //    fact doesn't enqueue onto an orphaned ChannelSession.
         foreach (var node in bus.Nodes)
         {
-            if (node.TesterPresent.State == TesterPresentTimerState.Active)
+            if (node.State.TesterPresent.State == TesterPresentTimerState.Active)
             {
-                EcuExitLogic.Run(node, scheduler, node.LastEnhancedChannel);
+                EcuExitLogic.Run(node, scheduler, node.State.LastEnhancedChannel);
                 bus.LogDiagnostic?.Invoke($"[idle] {node.Name}: exit_diagnostic_services applied");
             }
-            node.LastEnhancedChannel = null;
+            node.State.LastEnhancedChannel = null;
         }
 
         // 2. Notify session-level subscribers so they can cancel host-driven

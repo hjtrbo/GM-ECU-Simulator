@@ -1,8 +1,6 @@
-using System.Collections.Concurrent;
+using System.Text.Json;
 using Common.Glitch;
-using Common.Protocol;
-using Core.Bus;
-using Core.Transport;
+using Core.Security;
 
 namespace Core.Ecu;
 
@@ -39,28 +37,23 @@ public sealed class EcuNode
     /// <summary>Raised after a PID is added, removed, or the list is cleared.</summary>
     public event EventHandler? PidsChanged;
 
-    public ConcurrentDictionary<byte, Dpid> Dpids { get; } = new();
-    public IsoTpReassembler Reassembler { get; } = new();
-    public TesterPresentState TesterPresent { get; } = new();
+    // Per-ECU runtime state (Dpids, TesterPresent, Reassembler, security
+    // session, $2D dynamic-PID set, LastEnhancedChannel, etc.) lives in
+    // NodeState. EcuNode keeps user config; State carries runtime state.
+    public NodeState State { get; } = new();
 
-    // PID addresses are 32-bit (Pid.Address is uint), so the dynamic-PID
-    // tracking set has to match. Static configured PIDs aren't in here.
-    public HashSet<uint> DynamicallyDefinedPids { get; } = new();
+    // The chosen security module for this ECU (null = $27 returns NRC $11
+    // ServiceNotSupported). Mutable so the editor can hot-swap modules at
+    // runtime, mirroring how identity fields work. The module instance is
+    // separate from NodeState: state is data, the module is behaviour.
+    public ISecurityAccessModule? SecurityModule { get; set; }
 
-    private ChannelSession? lastEnhancedChannel;
-    public ChannelSession? LastEnhancedChannel
-    {
-        get => Volatile.Read(ref lastEnhancedChannel);
-        set => Volatile.Write(ref lastEnhancedChannel, value);
-    }
-
-    /// <summary>
-    /// Clears LastEnhancedChannel only if it currently points to the given
-    /// session. Used on host disconnect so the next P3C/$20 exit doesn't
-    /// enqueue an unsolicited $60 onto an orphaned channel. Atomic via CAS.
-    /// </summary>
-    public void ClearLastEnhancedChannelIf(ChannelSession ch)
-        => Interlocked.CompareExchange(ref lastEnhancedChannel, null, ch);
+    // Raw module-specific configuration as last loaded from disk or edited
+    // in the UI. ConfigStore round-trips this verbatim; the module consumes
+    // it via LoadConfig. EcuNode owns the blob so the JSON survives across
+    // module hot-swaps and so saving doesn't require each module to remember
+    // its own config separately.
+    public JsonElement? SecurityModuleConfig { get; set; }
 
     /// <summary>Snapshot copy of the PID list — safe to enumerate cross-thread.</summary>
     public IReadOnlyList<Pid> Pids
@@ -101,8 +94,6 @@ public sealed class EcuNode
         if (removed) PidsChanged?.Invoke(this, EventArgs.Empty);
         return removed;
     }
-
-    public void AddDpid(Dpid dpid) => Dpids[dpid.Id] = dpid;
 
     /// <summary>
     /// Notifies subscribers that the PID list has changed without adding/removing.
