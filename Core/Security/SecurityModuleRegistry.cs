@@ -16,6 +16,9 @@ public static class SecurityModuleRegistry
         Register("gmw3110-2010-not-implemented",
             () => new Gmw3110_2010_Generic(new NotImplementedAlgorithm(),
                                            id: "gmw3110-2010-not-implemented"));
+        Register("gm-e38-test",
+            () => new Gmw3110_2010_Generic(new E38Algorithm(),
+                                           id: "gm-e38-test"));
     }
 
     public static void Register(string id, Func<ISecurityAccessModule> factory)
