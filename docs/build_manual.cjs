@@ -2,12 +2,15 @@
 //
 // Regenerates docs/GM_ECU_Simulator_User_Manual.docx from the content arrays
 // below. The .pdf is produced separately on Windows by opening the docx in
-// Word and saving as PDF — easiest via this PowerShell one-liner from the
-// repo root after running this script:
+// Word and exporting as PDF with heading bookmarks — run this PowerShell
+// snippet from the repo root after running this script:
 //
 //   $w = New-Object -ComObject Word.Application
+//   $w.Visible = $false
 //   $d = $w.Documents.Open((Resolve-Path "docs\GM_ECU_Simulator_User_Manual.docx").Path, $false, $true)
-//   $d.SaveAs([ref] (Join-Path (Resolve-Path "docs").Path "GM_ECU_Simulator_User_Manual.pdf"), [ref] 17)
+//   $pdf = Join-Path (Resolve-Path "docs").Path "GM_ECU_Simulator_User_Manual.pdf"
+//   # CreateBookmarks=1 → wdExportCreateHeadingBookmarks (PDF outline from Heading styles)
+//   $d.ExportAsFixedFormat($pdf, 17, $false, 0, 0, 0, 0, 0, $true, $true, 1, $true, $true, $false)
 //   $d.Close(); $w.Quit()
 //
 // Prerequisite: `npm install -g docx` (the docx-js library).
@@ -215,7 +218,7 @@ const sec1 = [
             ['$2C', 'Dyn. Define Data ID',         'Defines custom DPIDs for periodic UUDT streaming'],
             ['$2D', 'Write Memory by Address',     '32-bit memory-address writes mirrored to matching PID'],
             ['$AA', 'Periodic UUDT Push',          'Streams DPID values at Slow / Medium / Fast rates'],
-            ['$27', 'Security Access',             'Modular seed/key unlock — see §8'],
+            ['$27', 'Security',                    'Modular seed/key unlock — see §8'],
             ['$3E', 'Tester Present',              'Keeps the session alive; resets P3C timeout'],
             ['$10', 'Start Diagnostic Session',    'Transitions ECU into programming or extended mode'],
             ['$20', 'Return to Normal',            'Graceful session teardown and DPID scheduler reset'],
@@ -253,7 +256,7 @@ const sec3 = [
 
 const sec4 = [
     H1('4. Main Editor'),
-    Body('The main editor is divided into three areas: the ECU list on the left, the PID table in the centre, and the waveform configuration panel on the right. A tab strip at the bottom provides access to Bus Log, Bin Replay, Security access ($27), and Glitch Settings.'),
+    Body('The main editor is divided into three areas: the ECU list on the left, the PID table in the centre, and the waveform configuration panel on the right. A tab strip at the bottom provides access to Bus Log, Bin Replay, Security $27, and Glitch Settings.'),
     ...image('main-editor.png', 600, 330, 'Figure 1 — Main editor with ECM and TCM in the ECU list, Engine RPM and MAP sensor PIDs, and the sine-wave waveform panel on the right.'),
     H2('4.1 ECU List'),
     Body('Lists all virtual ECU nodes loaded in the simulator. Each entry shows the ECU name, request CAN ID, and response CAN ID. Click an ECU to load its PIDs into the centre table. Use the toolbar buttons or Edit menu to add, remove, or clone ECUs.'),
@@ -304,10 +307,10 @@ const sec7 = [
         'The glitch injection UI is fully built and all settings are saved to the config file, but the feature currently has no effect at runtime. The bus logic does not yet consult the glitch configuration. Full implementation is slated for a future release.'),
 ];
 
-// NEW SECTION — Security Access ($27)
+// NEW SECTION — Security ($27)
 const sec8 = [
-    H1('8. Security Access ($27)'),
-    Body('The Security access ($27) tab configures GMW3110 Service $27 SecurityAccess per ECU. The simulator implements $27 behind a two-layer plug-in interface so different GM seed-key flavours (the algorithms have evolved across model years) can be slotted in without recompiling the dispatcher.'),
+    H1('8. Security ($27)'),
+    Body('The Security $27 tab configures GMW3110 Service $27 SecurityAccess per ECU. The simulator implements $27 behind a two-layer plug-in interface so different GM seed-key flavours (the algorithms have evolved across model years) can be slotted in without recompiling the dispatcher.'),
     H2('8.1 Architecture in 30 seconds'),
     Bullet('ISecurityAccessModule — owns one full $27 exchange step. The bundled Gmw3110_2010_Generic implementation handles all the protocol envelope concerns: length validation, subfunction parity (odd = requestSeed, even = sendKey), pending-seed tracking, the 3-strike attempt counter, the 10-second lockout window, and every NRC path ($12, $22, $35, $36, $37).'),
     Bullet('ISeedKeyAlgorithm — the small strategy interface most users actually write. It supplies SeedLength, KeyLength, SupportedLevels, GenerateSeed and ComputeExpectedKey. Gmw3110_2010_Generic wraps an instance and handles everything else.'),
@@ -325,7 +328,7 @@ const sec8 = [
     Bullet('sendKey without a prior requestSeed for the same level — NRC $7F 27 22.'),
     Bullet('Malformed payload, reserved subfunction ($00 / $7F), or unsupported level — NRC $7F 27 12.'),
     H2('8.3 Configuring per ECU'),
-    Body('In the editor, select the ECU you want to configure, then open the Security access ($27) tab. The Module dropdown lists every algorithm registered in SecurityModuleRegistry, prefixed with a synthetic "(none)" entry. Picking (none) leaves $27 unsupported on that ECU; the simulator returns NRC $11 ServiceNotSupported to any incoming request.'),
+    Body('In the editor, select the ECU you want to configure, then open the Security $27 tab. The Module dropdown lists every algorithm registered in SecurityModuleRegistry, prefixed with a synthetic "(none)" entry. Picking (none) leaves $27 unsupported on that ECU; the simulator returns NRC $11 ServiceNotSupported to any incoming request.'),
     Body('Beneath the dropdown is a key/value editor. Each row becomes one top-level property in the JSON object passed to the algorithm\'s LoadConfig. Values persist as JSON strings; the algorithm is responsible for parsing them as needed (hex bytes, integers, etc.). The grid round-trips to the SecurityModuleConfig entry under that ECU in ecu_config.json.'),
     Bold('Example — ', 'with Module set to gm-e38-test, one row:'),
     Code('Key: fixedSeed       Value: 1234'),

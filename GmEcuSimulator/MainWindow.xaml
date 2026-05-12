@@ -272,7 +272,7 @@
                           HorizontalAlignment="Stretch" VerticalAlignment="Stretch"
                           Background="#FFCCCCCC" ShowsPreview="False"/>
 
-            <!-- Bus log, bin replay, glitch settings -->
+            <!-- Bus log, bin replay, security, glitch settings -->
             <TabControl Grid.Row="2">
                 <TabItem Header="Bus log">
                     <DockPanel>
@@ -328,7 +328,7 @@
                     <views:BinReplayView DataContext="{Binding BinReplay}"/>
                 </TabItem>
 
-                <TabItem Header="Security access ($27)">
+                <TabItem Header="Security ($27)">
                     <DockPanel DataContext="{Binding SelectedEcu}">
                         <Border DockPanel.Dock="Top" BorderBrush="#FFCCCCCC" BorderThickness="0,0,0,1" Padding="6,4">
                             <StackPanel Orientation="Horizontal">

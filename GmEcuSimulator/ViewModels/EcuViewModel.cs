@@ -135,7 +135,7 @@ public sealed class EcuViewModel : NotifyPropertyChangedBase
                                System.Globalization.CultureInfo.InvariantCulture, out v);
     }
 
-    // ---------------- Security Access ($27) ----------------
+    // ---------------- Security ($27) ----------------
 
     private const string NoneSecurityModuleLabel = "(none)";
 
@@ -173,7 +173,7 @@ public sealed class EcuViewModel : NotifyPropertyChangedBase
     /// (unlocked level, pending seed, failed-attempt counter, lockout deadline,
     /// module-private bookkeeping). Equivalent to a power-cycle for this one
     /// ECU's security subsystem. Bound to the "Reset state" button in the
-    /// Security access tab.
+    /// Security tab.
     /// </summary>
     public void ResetSecurityState()
     {

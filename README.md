@@ -14,14 +14,14 @@ A standalone Windows app that emulates one or more GM (GMLAN / GMW3110-2010) ECU
 * PID values synthesised from waveforms (sine / triangle / square / sawtooth / constant) or replayed from `.bin` log files.
 * Defaults to the OBD-II convention (`$7E0` request, `$7E8` USDT response, `$5E8` UUDT response). Per-ECU IDs are editable.
 
-## Security Access ($27)
+## Security ($27)
 
 `$27` is implemented behind a two-layer plug-in interface so different GM seed-key flavours can be slotted in per-ECU without touching the dispatcher:
 
 * **`ISecurityAccessModule`** — owns a whole `$27` exchange step. The bundled `Gmw3110_2010_Generic` module covers the GMW3110-2010 protocol envelope (length validation, subfunction parity, pending-seed tracking, 3-strike lockout with 10s deadline-timestamp recovery, NRC `$12` / `$22` / `$35` / `$36` / `$37` paths).
 * **`ISeedKeyAlgorithm`** — the small strategy you usually write. ~30 lines. `Gmw3110_2010_Generic` wraps one and handles everything else.
 
-Ships with two algorithms registered out of the box, selectable per-ECU in the **Security access ($27)** tab:
+Ships with two algorithms registered out of the box, selectable per-ECU in the **Security $27** tab:
 
 * `gmw3110-2010-not-implemented` — deterministic seed `[0x12, 0x34]`, refuses every key. Exercises every NRC path against any J2534 host without committing real algorithm math.
 * `gm-e38-test` — the GM E38 ECM algorithm (GMLAN algo `0x92`, also used by E67). 2-byte seed, 2-byte key. Optional `fixedSeed` JSON config for deterministic exchanges.

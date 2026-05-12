@@ -248,7 +248,7 @@ Run them all with `dotnet test Tests.Unit/Tests.Unit.csproj`. Note: testhost rel
 
 1. `dotnet run --project GmEcuSimulator/GmEcuSimulator.csproj` (or `Run` from your IDE).
 2. Pick an ECU in the left sidebar.
-3. Open the **Security access (\$27)** tab.
+3. Open the **Security \$27** tab.
 4. Choose **`gm-e38-test`** in the Module dropdown.
 5. *(Optional)* Add a row: `fixedSeed` = `1234` → exchange becomes deterministic.
 6. `File > Save`. Confirm `ecu_config.json` shows `"Version": 3`, `"SecurityModuleId": "gm-e38-test"`, and (if set) `"SecurityModuleConfig": { "fixedSeed": "1234" }`.
