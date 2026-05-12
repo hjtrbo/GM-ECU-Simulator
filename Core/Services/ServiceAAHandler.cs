@@ -57,7 +57,7 @@ public static class ServiceAAHandler
                 }
                 foreach (var id in dpidIds)
                 {
-                    if (!node.Dpids.TryGetValue(id, out var dpid))
+                    if (!node.State.Dpids.TryGetValue(id, out var dpid))
                     {
                         ServiceUtil.EnqueueNrc(node, ch, sid, Nrc.RequestOutOfRange);
                         return false;
@@ -76,7 +76,7 @@ public static class ServiceAAHandler
                 }
                 foreach (var id in dpidIds)
                 {
-                    if (!node.Dpids.TryGetValue(id, out var dpid))
+                    if (!node.State.Dpids.TryGetValue(id, out var dpid))
                     {
                         ServiceUtil.EnqueueNrc(node, ch, sid, Nrc.RequestOutOfRange);
                         return false;

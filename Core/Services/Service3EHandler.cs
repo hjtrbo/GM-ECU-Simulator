@@ -60,7 +60,7 @@ public static class Service3EHandler
         }
 
         // Reset the timer regardless of address type or response suppression.
-        node.TesterPresent.Reset();
+        node.State.TesterPresent.Reset();
 
         if (!isFunctional && !suppressPositive)
         {

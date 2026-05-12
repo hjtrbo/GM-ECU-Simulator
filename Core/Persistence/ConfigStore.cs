@@ -5,6 +5,7 @@ using Common.Waveforms;
 using Core.Bus;
 using Core.Ecu;
 using Core.Replay;
+using Core.Security;
 
 namespace Core.Persistence;
 
@@ -64,6 +65,8 @@ public static class ConfigStore
                 UudtResponseCanId = node.UudtResponseCanId,
                 AllowPeriodicTesterPresent = node.AllowPeriodicTesterPresent,
                 Glitch = node.Glitch,
+                SecurityModuleId = node.SecurityModule?.Id,
+                SecurityModuleConfig = node.SecurityModuleConfig,
                 Pids = node.Pids.Select(PidDtoFrom).ToList(),
             });
         }
@@ -103,7 +106,10 @@ public static class ConfigStore
             UudtResponseCanId = dto.UudtResponseCanId,
             AllowPeriodicTesterPresent = dto.AllowPeriodicTesterPresent,
             Glitch = dto.Glitch ?? Common.Glitch.GlitchConfig.CreateDefault(),
+            SecurityModuleConfig = dto.SecurityModuleConfig,
         };
+        node.SecurityModule = SecurityModuleRegistry.Create(dto.SecurityModuleId);
+        node.SecurityModule?.LoadConfig(dto.SecurityModuleConfig);
         foreach (var pidDto in dto.Pids) node.AddPid(PidFrom(pidDto));
         return node;
     }

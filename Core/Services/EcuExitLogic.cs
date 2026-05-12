@@ -25,18 +25,18 @@ public static class EcuExitLogic
     public static void Run(EcuNode node, DpidScheduler scheduler, ChannelSession? respondOn)
     {
         // 1. Reset P3C state.
-        node.TesterPresent.Deactivate();
+        node.State.TesterPresent.Deactivate();
 
         // 2. Reset DPID scheduler for this node (clears Slow/Med/Fast entries).
         scheduler.Stop(node, Array.Empty<byte>());
 
         // 3. Clear dynamic PIDs from $2D. Static PIDs (the user-configured ones)
         //    stay. We track the dynamic set on the node so this is a clean diff.
-        lock (node.DynamicallyDefinedPids)
+        lock (node.State.DynamicallyDefinedPids)
         {
-            foreach (var id in node.DynamicallyDefinedPids)
+            foreach (var id in node.State.DynamicallyDefinedPids)
                 node.RemovePidByAddress(id);
-            node.DynamicallyDefinedPids.Clear();
+            node.State.DynamicallyDefinedPids.Clear();
         }
 
         // 4. Send unsolicited $60 positive response (only if we have a channel).

@@ -165,7 +165,7 @@ public sealed class VirtualBus
             return;
         }
 
-        var assembled = node.Reassembler.Feed(data, (bs, st) =>
+        var assembled = node.State.Reassembler.Feed(data, (bs, st) =>
         {
             var fc = new byte[CanFrame.IdBytes + 3];
             CanFrame.WriteId(fc, node.UsdtResponseCanId);
@@ -198,8 +198,8 @@ public sealed class VirtualBus
 
     private static void ActivateP3C(EcuNode node, ChannelSession ch)
     {
-        node.LastEnhancedChannel = ch;
-        node.TesterPresent.Activate();
+        node.State.LastEnhancedChannel = ch;
+        node.State.TesterPresent.Activate();
     }
 
     private void DispatchUsdt(EcuNode node, ReadOnlySpan<byte> usdt, ChannelSession ch, bool isFunctional)
@@ -243,6 +243,11 @@ public sealed class VirtualBus
             case Service.InitiateDiagnosticOperation:
                 if (isFunctional) return;
                 if (Service10Handler.Handle(node, usdt, ch))
+                    ActivateP3C(node, ch);
+                break;
+            case Service.SecurityAccess:
+                if (isFunctional) return;
+                if (Service27Handler.Handle(node, usdt, ch, (long)NowMs))
                     ActivateP3C(node, ch);
                 break;
             default:
