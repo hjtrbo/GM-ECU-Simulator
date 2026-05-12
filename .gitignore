@@ -24,8 +24,10 @@ scripts/docx_to_pdf.py
 # Editor / per-user
 .vscode/
 .claude/
+scripts/
 
 # Scratch / output
+*.cjs
 *.txt
 *.docx
 claude-context.md
