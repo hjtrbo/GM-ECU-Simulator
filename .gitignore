@@ -19,8 +19,7 @@ TestResults/
 ecu_config.json
 
 # Manual build scripts (kept locally, not published)
-docs/Build-PDF.py
-docs/Build-Manual.ps1
+scripts/docx_to_pdf.py
 
 # Editor / per-user
 .vscode/
@@ -28,6 +27,7 @@ docs/Build-Manual.ps1
 
 # Scratch / output
 *.txt
+*.docx
 claude-context.md
 CLAUDE.md
 
