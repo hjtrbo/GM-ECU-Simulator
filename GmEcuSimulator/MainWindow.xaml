@@ -340,6 +340,11 @@
                                           SelectedItem="{Binding SelectedSecurityModuleId}"
                                           Width="320" VerticalAlignment="Center"
                                           ToolTip="Seed/key algorithm for this ECU. (none) makes $27 return NRC $11."/>
+                                <Button Content="Reset state"
+                                        Command="{Binding DataContext.ResetSecurityCommand,
+                                                          RelativeSource={RelativeSource AncestorType=Window}}"
+                                        Padding="10,2" Margin="12,0,0,0" VerticalAlignment="Center"
+                                        ToolTip="Re-lock this ECU and clear the attempt counter, pending seed, and lockout deadline. Equivalent to a power-cycle for $27 only."/>
                                 <TextBlock Text="Module-specific config below — values are passed to the module as JSON strings."
                                            Foreground="Gray" FontStyle="Italic"
                                            Margin="20,0,0,0" VerticalAlignment="Center"/>

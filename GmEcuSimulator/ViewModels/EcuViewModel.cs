@@ -168,6 +168,30 @@ public sealed class EcuViewModel : NotifyPropertyChangedBase
         private set => SetField(ref securityPendingSeedText, value);
     }
 
+    /// <summary>
+    /// Re-locks the ECU and clears every transient $27 field on its NodeState
+    /// (unlocked level, pending seed, failed-attempt counter, lockout deadline,
+    /// module-private bookkeeping). Equivalent to a power-cycle for this one
+    /// ECU's security subsystem. Bound to the "Reset state" button in the
+    /// Security access tab.
+    /// </summary>
+    public void ResetSecurityState()
+    {
+        var s = Model.State;
+        lock (s.Sync)
+        {
+            s.SecurityUnlockedLevel = 0;
+            s.SecurityPendingSeedLevel = 0;
+            s.SecurityLastIssuedSeed = null;
+            s.SecurityFailedAttempts = 0;
+            s.SecurityLockoutUntilMs = 0;
+            s.SecurityModuleState = null;
+        }
+        // The 10Hz refresh tick would catch this within 100ms; push an
+        // immediate update so the click feels instant.
+        RefreshSecurity(0);
+    }
+
     /// <summary>Called from the main refresh timer to update the live security display.</summary>
     public void RefreshSecurity(long nowMs)
     {
