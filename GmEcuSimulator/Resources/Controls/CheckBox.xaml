@@ -17,7 +17,6 @@
         <Setter Property="Padding" Value="6,0,0,0"/>
         <Setter Property="VerticalContentAlignment" Value="Center"/>
         <Setter Property="HorizontalContentAlignment" Value="Left"/>
-        <Setter Property="Cursor" Value="Hand"/>
         <Setter Property="SnapsToDevicePixels" Value="True"/>
         <Setter Property="Template">
             <Setter.Value>
@@ -74,7 +73,6 @@
                             <Setter TargetName="Box" Property="Background" Value="{DynamicResource Bg.DisabledBrush}"/>
                             <Setter TargetName="Box" Property="BorderBrush" Value="{DynamicResource Border.SubtleBrush}"/>
                             <Setter Property="Foreground" Value="{DynamicResource Text.DisabledBrush}"/>
-                            <Setter Property="Cursor" Value="Arrow"/>
                         </Trigger>
                     </ControlTemplate.Triggers>
                 </ControlTemplate>

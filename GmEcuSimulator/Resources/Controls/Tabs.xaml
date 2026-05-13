@@ -17,7 +17,6 @@
         <Setter Property="FontFamily" Value="{StaticResource Font.Sans}"/>
         <Setter Property="FontSize" Value="{StaticResource Font.Size.BodyLarge}"/>
         <Setter Property="Padding" Value="14,8"/>
-        <Setter Property="Cursor" Value="Hand"/>
         <Setter Property="SnapsToDevicePixels" Value="True"/>
         <Setter Property="Template">
             <Setter.Value>
@@ -58,7 +57,6 @@
                         </Trigger>
                         <Trigger Property="IsEnabled" Value="False">
                             <Setter Property="Foreground" Value="{DynamicResource Text.DisabledBrush}"/>
-                            <Setter Property="Cursor" Value="Arrow"/>
                         </Trigger>
                     </ControlTemplate.Triggers>
                 </ControlTemplate>
