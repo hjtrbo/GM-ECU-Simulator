@@ -1,20 +1,73 @@
 <Window x:Class="GmEcuSimulator.Views.RegisteredDevicesWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="Registered J2534 Devices" Height="520" Width="820"
+        xmlns:shell="clr-namespace:System.Windows.Shell;assembly=PresentationFramework"
+        Title="Registered J2534 Devices"
+        Height="600" Width="900"
         WindowStartupLocation="CenterOwner"
-        ShowInTaskbar="False">
-    <DockPanel Margin="12">
-        <TextBlock DockPanel.Dock="Top" Margin="0,0,0,6" TextWrapping="Wrap"
-                   Text="Output of Installer\List.ps1 — every J2534 PassThru device registered on this machine, both bitnesses. Read-only diagnostic."/>
-        <Button DockPanel.Dock="Bottom" HorizontalAlignment="Right" Padding="16,4" Margin="0,8,0,0"
-                Content="Close" IsCancel="True" IsDefault="True" Click="OnCloseClicked"/>
-        <TextBox x:Name="OutputBox"
-                 IsReadOnly="True"
-                 FontFamily="Consolas" FontSize="12"
-                 VerticalScrollBarVisibility="Auto"
-                 HorizontalScrollBarVisibility="Auto"
-                 TextWrapping="NoWrap"
-                 Background="#FAFAFA"/>
+        ShowInTaskbar="False"
+        Style="{StaticResource Window.Dialog}">
+
+    <DockPanel LastChildFill="True">
+
+        <!-- Custom titlebar (matches the main shell) -->
+        <Grid DockPanel.Dock="Top" Background="{StaticResource Chrome.GradientBrush}" Height="32">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+            <TextBlock Text="Registered J2534 Devices"
+                       Style="{StaticResource Text.Body}"
+                       FontWeight="SemiBold"
+                       VerticalAlignment="Center"
+                       Margin="14,0,0,0"/>
+            <Button Grid.Column="1"
+                    Style="{StaticResource Button.ChromeClose}"
+                    Width="46" Height="32"
+                    Click="OnCloseClicked"
+                    ToolTip="Close">
+                <Path Data="{StaticResource Icon.Close}"
+                      Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"
+                      StrokeThickness="1.2"
+                      Width="10" Height="10"/>
+            </Button>
+        </Grid>
+
+        <!-- Footer with close button -->
+        <Border DockPanel.Dock="Bottom"
+                Background="{StaticResource Chrome.BgBrush}"
+                BorderBrush="{StaticResource Border.SubtleBrush}"
+                BorderThickness="0,1,0,0"
+                Padding="14,10">
+            <Button HorizontalAlignment="Right"
+                    Content="Close"
+                    IsCancel="True" IsDefault="True"
+                    Click="OnCloseClicked"
+                    MinWidth="90"/>
+        </Border>
+
+        <!-- Subtitle / explanation -->
+        <Border DockPanel.Dock="Top" Padding="14,12,14,10">
+            <StackPanel>
+                <TextBlock Text="J2534 device registry"
+                           Style="{StaticResource Text.Subtitle}"/>
+                <TextBlock Text="Output of Installer\List.ps1 — every J2534 PassThru device registered on this machine, both bitnesses. Read-only diagnostic."
+                           Style="{StaticResource Text.Caption}"
+                           TextWrapping="Wrap"
+                           Margin="0,4,0,0"/>
+            </StackPanel>
+        </Border>
+
+        <!-- Log output -->
+        <Border Margin="14,0,14,12"
+                CornerRadius="4"
+                BorderBrush="{StaticResource Border.SubtleBrush}"
+                BorderThickness="1"
+                ClipToBounds="True">
+            <TextBox x:Name="OutputBox"
+                     Style="{StaticResource TextBox.Log}"
+                     IsReadOnly="True"
+                     TextWrapping="NoWrap"/>
+        </Border>
     </DockPanel>
 </Window>

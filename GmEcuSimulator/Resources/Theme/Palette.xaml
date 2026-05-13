@@ -1,0 +1,57 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <!--
+        Color palette. A dark, professional palette tuned for long sessions in
+        a diagnostic / engineering tool. Inspired by JetBrains Rider Dark and
+        the GM Heritage Blue (#0066B3) modernised to a higher-contrast accent.
+        Hue temperature is deliberately cool-neutral so log monospace text
+        does not clash with the chrome.
+    -->
+
+    <!-- Background ramp: from deepest (window) up through hover/selected -->
+    <Color x:Key="Bg.Base">#14171F</Color>
+    <Color x:Key="Bg.Surface">#1A1E29</Color>
+    <Color x:Key="Bg.Elevated">#232838</Color>
+    <Color x:Key="Bg.Hover">#2A3045</Color>
+    <Color x:Key="Bg.Active">#313858</Color>
+    <Color x:Key="Bg.Selected">#1E3A5F</Color>
+    <Color x:Key="Bg.Disabled">#1F2330</Color>
+
+    <!-- Borders & dividers -->
+    <Color x:Key="Border.Subtle">#262C3A</Color>
+    <Color x:Key="Border.Strong">#3A4256</Color>
+    <Color x:Key="Border.Divider">#20242F</Color>
+
+    <!-- Text ramp -->
+    <Color x:Key="Text.Primary">#E6E9F2</Color>
+    <Color x:Key="Text.Secondary">#9CA3B7</Color>
+    <Color x:Key="Text.Tertiary">#6B7186</Color>
+    <Color x:Key="Text.Disabled">#4A4F60</Color>
+    <Color x:Key="Text.Inverse">#0B0E14</Color>
+
+    <!-- Accent (interactive primary, focus, selection) -->
+    <Color x:Key="Accent.Primary">#2D80E6</Color>
+    <Color x:Key="Accent.Hover">#4A95EF</Color>
+    <Color x:Key="Accent.Active">#1E6BC8</Color>
+    <Color x:Key="Accent.Subtle">#1B3654</Color>
+
+    <!-- Semantic status -->
+    <Color x:Key="Status.Success">#5BC289</Color>
+    <Color x:Key="Status.Success.Subtle">#1F3A2C</Color>
+    <Color x:Key="Status.Warning">#E6B547</Color>
+    <Color x:Key="Status.Warning.Subtle">#3D3320</Color>
+    <Color x:Key="Status.Error">#E25C5C</Color>
+    <Color x:Key="Status.Error.Subtle">#3B2125</Color>
+    <Color x:Key="Status.Info">#2D80E6</Color>
+
+    <!-- Mono surfaces (terminal-like) -->
+    <Color x:Key="Mono.Bg">#0F1219</Color>
+    <Color x:Key="Mono.Text">#C9D1E0</Color>
+    <Color x:Key="Mono.Dim">#6B7186</Color>
+
+    <!-- Window-chrome accents -->
+    <Color x:Key="Chrome.Bg">#10131B</Color>
+    <Color x:Key="Chrome.Border">#262C3A</Color>
+
+</ResourceDictionary>

@@ -1,0 +1,58 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <ResourceDictionary.MergedDictionaries>
+        <ResourceDictionary Source="/Resources/Theme/Palette.xaml"/>
+    </ResourceDictionary.MergedDictionaries>
+
+    <!-- Brushes are thin SolidColorBrush wrappers around the Palette colors so
+         every style binds to a named brush, never a raw color. Swap the
+         Palette to retheme the whole app. -->
+
+    <SolidColorBrush x:Key="Bg.BaseBrush"      Color="{StaticResource Bg.Base}"/>
+    <SolidColorBrush x:Key="Bg.SurfaceBrush"   Color="{StaticResource Bg.Surface}"/>
+    <SolidColorBrush x:Key="Bg.ElevatedBrush"  Color="{StaticResource Bg.Elevated}"/>
+    <SolidColorBrush x:Key="Bg.HoverBrush"     Color="{StaticResource Bg.Hover}"/>
+    <SolidColorBrush x:Key="Bg.ActiveBrush"    Color="{StaticResource Bg.Active}"/>
+    <SolidColorBrush x:Key="Bg.SelectedBrush"  Color="{StaticResource Bg.Selected}"/>
+    <SolidColorBrush x:Key="Bg.DisabledBrush"  Color="{StaticResource Bg.Disabled}"/>
+
+    <SolidColorBrush x:Key="Border.SubtleBrush"   Color="{StaticResource Border.Subtle}"/>
+    <SolidColorBrush x:Key="Border.StrongBrush"   Color="{StaticResource Border.Strong}"/>
+    <SolidColorBrush x:Key="Border.DividerBrush"  Color="{StaticResource Border.Divider}"/>
+    <SolidColorBrush x:Key="Border.FocusBrush"    Color="{StaticResource Accent.Primary}"/>
+
+    <SolidColorBrush x:Key="Text.PrimaryBrush"    Color="{StaticResource Text.Primary}"/>
+    <SolidColorBrush x:Key="Text.SecondaryBrush"  Color="{StaticResource Text.Secondary}"/>
+    <SolidColorBrush x:Key="Text.TertiaryBrush"   Color="{StaticResource Text.Tertiary}"/>
+    <SolidColorBrush x:Key="Text.DisabledBrush"   Color="{StaticResource Text.Disabled}"/>
+    <SolidColorBrush x:Key="Text.InverseBrush"    Color="{StaticResource Text.Inverse}"/>
+
+    <SolidColorBrush x:Key="Accent.PrimaryBrush"  Color="{StaticResource Accent.Primary}"/>
+    <SolidColorBrush x:Key="Accent.HoverBrush"    Color="{StaticResource Accent.Hover}"/>
+    <SolidColorBrush x:Key="Accent.ActiveBrush"   Color="{StaticResource Accent.Active}"/>
+    <SolidColorBrush x:Key="Accent.SubtleBrush"   Color="{StaticResource Accent.Subtle}"/>
+
+    <SolidColorBrush x:Key="Status.SuccessBrush"         Color="{StaticResource Status.Success}"/>
+    <SolidColorBrush x:Key="Status.SuccessSubtleBrush"   Color="{StaticResource Status.Success.Subtle}"/>
+    <SolidColorBrush x:Key="Status.WarningBrush"         Color="{StaticResource Status.Warning}"/>
+    <SolidColorBrush x:Key="Status.WarningSubtleBrush"   Color="{StaticResource Status.Warning.Subtle}"/>
+    <SolidColorBrush x:Key="Status.ErrorBrush"           Color="{StaticResource Status.Error}"/>
+    <SolidColorBrush x:Key="Status.ErrorSubtleBrush"     Color="{StaticResource Status.Error.Subtle}"/>
+    <SolidColorBrush x:Key="Status.InfoBrush"            Color="{StaticResource Status.Info}"/>
+
+    <SolidColorBrush x:Key="Mono.BgBrush"    Color="{StaticResource Mono.Bg}"/>
+    <SolidColorBrush x:Key="Mono.TextBrush"  Color="{StaticResource Mono.Text}"/>
+    <SolidColorBrush x:Key="Mono.DimBrush"   Color="{StaticResource Mono.Dim}"/>
+
+    <SolidColorBrush x:Key="Chrome.BgBrush"      Color="{StaticResource Chrome.Bg}"/>
+    <SolidColorBrush x:Key="Chrome.BorderBrush"  Color="{StaticResource Chrome.Border}"/>
+
+    <!-- Subtle gradient used on the title-bar to give the chrome a slight
+         vertical lift; falls back gracefully on low-DPI displays. -->
+    <LinearGradientBrush x:Key="Chrome.GradientBrush" StartPoint="0,0" EndPoint="0,1">
+        <GradientStop Offset="0" Color="{StaticResource Chrome.Bg}"/>
+        <GradientStop Offset="1" Color="{StaticResource Bg.Base}"/>
+    </LinearGradientBrush>
+
+</ResourceDictionary>

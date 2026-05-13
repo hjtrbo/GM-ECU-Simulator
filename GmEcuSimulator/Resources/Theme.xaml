@@ -1,0 +1,30 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <!--
+        Master theme. Merged once from App.xaml. The merge order matters —
+        Palette feeds Brushes, Brushes and Typography feed every control style.
+    -->
+
+    <ResourceDictionary.MergedDictionaries>
+        <!-- Foundations -->
+        <ResourceDictionary Source="/Resources/Theme/Palette.xaml"/>
+        <ResourceDictionary Source="/Resources/Theme/Brushes.xaml"/>
+        <ResourceDictionary Source="/Resources/Theme/Typography.xaml"/>
+        <ResourceDictionary Source="/Resources/Theme/Icons.xaml"/>
+
+        <!-- Controls. Containers first so window/groupbox/scrollbar exist
+             before composite controls reference them. -->
+        <ResourceDictionary Source="/Resources/Controls/ScrollBar.xaml"/>
+        <ResourceDictionary Source="/Resources/Controls/Containers.xaml"/>
+        <ResourceDictionary Source="/Resources/Controls/Window.xaml"/>
+        <ResourceDictionary Source="/Resources/Controls/Buttons.xaml"/>
+        <ResourceDictionary Source="/Resources/Controls/Inputs.xaml"/>
+        <ResourceDictionary Source="/Resources/Controls/CheckBox.xaml"/>
+        <ResourceDictionary Source="/Resources/Controls/Menus.xaml"/>
+        <ResourceDictionary Source="/Resources/Controls/Tabs.xaml"/>
+        <ResourceDictionary Source="/Resources/Controls/ListBox.xaml"/>
+        <ResourceDictionary Source="/Resources/Controls/DataGrid.xaml"/>
+    </ResourceDictionary.MergedDictionaries>
+
+</ResourceDictionary>

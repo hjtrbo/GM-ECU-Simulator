@@ -7,11 +7,16 @@
         xmlns:proto="clr-namespace:Common.Protocol;assembly=EcuSim.Common"
         xmlns:wave="clr-namespace:Common.Waveforms;assembly=EcuSim.Common"
         xmlns:glitch="clr-namespace:Common.Glitch;assembly=EcuSim.Common"
+        xmlns:shell="clr-namespace:System.Windows.Shell;assembly=PresentationFramework"
         Title="{Binding WindowTitle, FallbackValue='GM ECU Simulator'}"
-        Height="720" Width="1100">
+        Height="800" Width="1280"
+        MinHeight="540" MinWidth="960"
+        WindowStartupLocation="CenterScreen"
+        Style="{StaticResource Window.AppShell}">
 
     <Window.Resources>
         <conv:BoolToVisibilityConverter x:Key="BoolToVis"/>
+        <conv:StatusToBrushConverter    x:Key="StatusToBrush"/>
 
         <ObjectDataProvider x:Key="WaveformShapes" MethodName="GetValues" ObjectType="{x:Type sys:Enum}">
             <ObjectDataProvider.MethodParameters>
@@ -33,93 +38,339 @@
                 <x:Type TypeName="glitch:GlitchAction"/>
             </ObjectDataProvider.MethodParameters>
         </ObjectDataProvider>
-
-        <Style TargetType="Label">
-            <Setter Property="Padding" Value="0,4,8,0"/>
-            <Setter Property="HorizontalContentAlignment" Value="Right"/>
-        </Style>
-        <Style TargetType="TextBox">
-            <Setter Property="Margin" Value="0,2,0,2"/>
-            <Setter Property="Padding" Value="4,2"/>
-        </Style>
-        <Style TargetType="ComboBox">
-            <Setter Property="Margin" Value="0,2,0,2"/>
-            <Setter Property="Padding" Value="4,2"/>
-        </Style>
-        <Style TargetType="GroupBox">
-            <Setter Property="Margin" Value="0,8,0,0"/>
-            <Setter Property="Padding" Value="6"/>
-        </Style>
     </Window.Resources>
 
-    <DockPanel>
-        <!-- Top: menu -->
-        <Menu DockPanel.Dock="Top">
-            <MenuItem Header="_File">
-                <MenuItem Header="_New"          Command="{Binding NewCommand}"      InputGestureText="Ctrl+N"/>
-                <MenuItem Header="_Open…"        Command="{Binding OpenCommand}"     InputGestureText="Ctrl+O"/>
-                <Separator/>
-                <MenuItem Header="_Save"         Command="{Binding SaveCommand}"     InputGestureText="Ctrl+S"/>
-                <MenuItem Header="Save _As…"     Command="{Binding SaveAsCommand}"   InputGestureText="Ctrl+Shift+S"/>
-                <Separator/>
-                <MenuItem Header="_Import…"      Command="{Binding ImportCommand}"/>
-                <MenuItem Header="_Export…"      Command="{Binding ExportCommand}"/>
-                <Separator/>
-                <MenuItem Header="E_xit"         Click="OnExitClicked"/>
-            </MenuItem>
-            <MenuItem Header="_J2534">
-                <MenuItem Header="_Register as J2534 device…"   Command="{Binding RegisterJ2534Command}"
-                          ToolTip="Writes HKLM\SOFTWARE\PassThruSupport.04.04\GmEcuSim. Triggers a UAC prompt."/>
-                <MenuItem Header="_Unregister"                  Command="{Binding UnregisterJ2534Command}"
-                          ToolTip="Removes only the GmEcuSim entry; never touches other vendors. Triggers a UAC prompt."/>
-                <Separator/>
-                <MenuItem Header="_Show registered devices…"    Command="{Binding ShowRegisteredDevicesCommand}"
-                          ToolTip="Lists every J2534 device on this machine in both registry views. Read-only — no UAC."/>
-            </MenuItem>
-        </Menu>
+    <DockPanel LastChildFill="True">
 
-        <!-- Status bar (always visible) -->
+        <!--
+            TITLEBAR.
+            Custom chrome. The first 36 pixels are draggable via
+            WindowChrome.CaptionHeight; interactive zones (menu, status pill,
+            window buttons) opt out via IsHitTestVisibleInChrome=True.
+        -->
+        <Grid DockPanel.Dock="Top" Background="{StaticResource Chrome.GradientBrush}" Height="36">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+
+            <!-- Brand / title -->
+            <StackPanel Grid.Column="0" Orientation="Horizontal" Margin="12,0,0,0" VerticalAlignment="Center">
+                <Border Width="18" Height="18" CornerRadius="3"
+                        Background="{StaticResource Accent.PrimaryBrush}"
+                        Margin="0,0,8,0">
+                    <TextBlock Text="G" Foreground="White"
+                               FontFamily="{StaticResource Font.SansDisplay}"
+                               FontWeight="Bold" FontSize="12"
+                               HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                </Border>
+                <TextBlock Text="{Binding WindowTitle, FallbackValue='GM ECU Simulator'}"
+                           Style="{StaticResource Text.Body}"
+                           Foreground="{StaticResource Text.PrimaryBrush}"
+                           FontWeight="SemiBold"
+                           VerticalAlignment="Center"/>
+            </StackPanel>
+
+            <!-- Centre: J2534 status pill (live, accent-coloured dot + text) -->
+            <Border Grid.Column="2" CornerRadius="11"
+                    Background="{StaticResource Bg.SurfaceBrush}"
+                    BorderBrush="{StaticResource Border.SubtleBrush}"
+                    BorderThickness="1"
+                    Padding="10,3" Margin="0,0,12,0"
+                    VerticalAlignment="Center"
+                    WindowChrome.IsHitTestVisibleInChrome="True"
+                    ToolTip="J2534 device registration state (HKLM\SOFTWARE\PassThruSupport.04.04\GmEcuSim)">
+                <StackPanel Orientation="Horizontal">
+                    <Ellipse Width="8" Height="8" Margin="0,0,8,0"
+                             Fill="{Binding J2534Status, Converter={StaticResource StatusToBrush}}"
+                             VerticalAlignment="Center"/>
+                    <TextBlock Text="{Binding J2534Status}"
+                               Style="{StaticResource Text.Caption}"
+                               Foreground="{StaticResource Text.PrimaryBrush}"
+                               VerticalAlignment="Center"/>
+                </StackPanel>
+            </Border>
+
+            <!-- Right: window controls -->
+            <StackPanel Grid.Column="3" Orientation="Horizontal">
+                <Button x:Name="MinimizeBtn"
+                        Style="{StaticResource Button.Chrome}"
+                        Click="OnMinimizeClicked"
+                        ToolTip="Minimize">
+                    <Path Data="{StaticResource Icon.Minimize}"
+                          Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"
+                          StrokeThickness="1.2"
+                          Width="10" Height="10"/>
+                </Button>
+                <Button x:Name="MaximizeBtn"
+                        Style="{StaticResource Button.Chrome}"
+                        Click="OnMaximizeClicked"
+                        ToolTip="Maximize">
+                    <Path x:Name="MaxIcon"
+                          Data="{StaticResource Icon.Maximize}"
+                          Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"
+                          StrokeThickness="1.2"
+                          Width="10" Height="10"/>
+                </Button>
+                <Button x:Name="CloseBtn"
+                        Style="{StaticResource Button.ChromeClose}"
+                        Click="OnCloseWindowClicked"
+                        ToolTip="Close">
+                    <Path Data="{StaticResource Icon.Close}"
+                          Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"
+                          StrokeThickness="1.2"
+                          Width="10" Height="10"/>
+                </Button>
+            </StackPanel>
+        </Grid>
+
+        <!-- MENU BAR -->
+        <Border DockPanel.Dock="Top"
+                Background="{StaticResource Bg.BaseBrush}"
+                BorderBrush="{StaticResource Border.SubtleBrush}"
+                BorderThickness="0,0,0,1"
+                WindowChrome.IsHitTestVisibleInChrome="True">
+            <Menu Padding="6,2" Background="Transparent">
+                <MenuItem Header="_File">
+                    <MenuItem Header="_New"      Command="{Binding NewCommand}"    InputGestureText="Ctrl+N"/>
+                    <MenuItem Header="_Open…"    Command="{Binding OpenCommand}"   InputGestureText="Ctrl+O"/>
+                    <Separator/>
+                    <MenuItem Header="_Save"     Command="{Binding SaveCommand}"   InputGestureText="Ctrl+S"/>
+                    <MenuItem Header="Save _As…" Command="{Binding SaveAsCommand}" InputGestureText="Ctrl+Shift+S"/>
+                    <Separator/>
+                    <MenuItem Header="_Import…"  Command="{Binding ImportCommand}"/>
+                    <MenuItem Header="_Export…"  Command="{Binding ExportCommand}"/>
+                    <Separator/>
+                    <MenuItem Header="E_xit"     Click="OnExitClicked"/>
+                </MenuItem>
+                <MenuItem Header="_J2534">
+                    <MenuItem Header="_Register as J2534 device…"
+                              Command="{Binding RegisterJ2534Command}"
+                              ToolTip="Writes HKLM\SOFTWARE\PassThruSupport.04.04\GmEcuSim. Triggers a UAC prompt."/>
+                    <MenuItem Header="_Unregister"
+                              Command="{Binding UnregisterJ2534Command}"
+                              ToolTip="Removes only the GmEcuSim entry; never touches other vendors. Triggers a UAC prompt."/>
+                    <Separator/>
+                    <MenuItem Header="_Show registered devices…"
+                              Command="{Binding ShowRegisteredDevicesCommand}"
+                              ToolTip="Lists every J2534 device on this machine in both registry views. Read-only — no UAC."/>
+                </MenuItem>
+            </Menu>
+        </Border>
+
+        <!-- STATUS BAR (bottom) -->
         <StatusBar DockPanel.Dock="Bottom">
-            <StatusBarItem><TextBlock Text="{Binding StatusText}"/></StatusBarItem>
-            <StatusBarItem><Separator Width="8"/></StatusBarItem>
-            <StatusBarItem><TextBlock Text="{Binding J2534Status}" FontFamily="Consolas"/></StatusBarItem>
-            <StatusBarItem HorizontalAlignment="Right"><TextBlock Text="Pipe: \\.\pipe\GmEcuSim.PassThru"/></StatusBarItem>
+            <StatusBarItem>
+                <TextBlock Text="{Binding StatusText}" Style="{StaticResource Text.Caption}"
+                           Foreground="{StaticResource Text.PrimaryBrush}"/>
+            </StatusBarItem>
+            <StatusBarItem HorizontalAlignment="Right">
+                <StackPanel Orientation="Horizontal">
+                    <TextBlock Text="Pipe" Style="{StaticResource Text.Caption}" Margin="0,0,6,0"
+                               VerticalAlignment="Center"/>
+                    <TextBlock Text="\\.\pipe\GmEcuSim.PassThru" Style="{StaticResource Text.MonoDim}"
+                               VerticalAlignment="Center"/>
+                </StackPanel>
+            </StatusBarItem>
         </StatusBar>
 
-        <!-- Last child fill: editor (Row 0) above bus log (Row 1). The
-             "Maximize" checkbox in the bus log toolbar collapses EditorRow
-             to 0 so the bus log fills the entire middle area. -->
-        <Grid>
+        <!--
+            MAIN WORKSPACE.
+            Two rows split by a horizontal GridSplitter. The "Maximize"
+            checkbox in the bus-log tab collapses the editor row so the
+            tabbed workspace fills the window.
+        -->
+        <Grid Margin="14">
             <Grid.RowDefinitions>
                 <RowDefinition x:Name="EditorRow" Height="*" MinHeight="8"/>
                 <RowDefinition Height="Auto"/>
-                <RowDefinition x:Name="LogRow" Height="296"/>
+                <RowDefinition x:Name="LogRow"    Height="320" MinHeight="80"/>
             </Grid.RowDefinitions>
 
-            <!-- Three-pane editor -->
-            <Grid Grid.Row="0" Margin="8">
+            <!-- THREE PANE EDITOR (Row 0) -->
+            <Grid Grid.Row="0">
                 <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="182"/>
-                    <ColumnDefinition Width="*"/>
-                    <ColumnDefinition Width="Auto"/>
-                    <ColumnDefinition Width="160"/>
+                    <ColumnDefinition Width="220" MinWidth="180"/>
+                    <ColumnDefinition Width="*"   MinWidth="280"/>
+                    <ColumnDefinition Width="240" MinWidth="200"/>
                 </Grid.ColumnDefinitions>
 
-                <!-- Left: ECU list + selected ECU panel -->
-                <DockPanel Grid.Column="0" Margin="0,0,8,0">
-                    <TextBlock DockPanel.Dock="Top" Text="ECUs" FontWeight="Bold" Margin="0,0,0,4"/>
-                    <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" Margin="0,4,0,0">
-                        <Button Content="Add ECU"    Command="{Binding AddEcuCommand}"    Width="85" Padding="6,2" Margin="0,0,4,0"/>
-                        <Button Content="Remove ECU" Command="{Binding RemoveEcuCommand}" Width="85" Padding="6,2"/>
-                    </StackPanel>
+                <!-- ECU sidebar -->
+                <Border Grid.Column="0" Style="{StaticResource Card}" Margin="0,0,12,0">
+                    <DockPanel LastChildFill="True">
+                        <Grid DockPanel.Dock="Top" Margin="0,0,0,8">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Text="ECUs" Style="{StaticResource Text.SectionHeader}"
+                                       Margin="0" VerticalAlignment="Center"/>
+                            <TextBlock Grid.Column="1"
+                                       Text="{Binding Ecus.Count, StringFormat={}{0} configured}"
+                                       Style="{StaticResource Text.Caption}"
+                                       VerticalAlignment="Center"/>
+                        </Grid>
 
-                    <GroupBox DockPanel.Dock="Bottom" Header="Selected ECU"
-                              DataContext="{Binding SelectedEcu}"
-                              Visibility="{Binding Converter={StaticResource BoolToVis}, FallbackValue=Collapsed,
-                                                            ConverterParameter=NotNull}">
-                        <Grid>
+                        <Grid DockPanel.Dock="Bottom" Margin="0,8,0,0">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="8"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <Button Grid.Column="0" Content="Add"
+                                    Style="{StaticResource Button.Primary}"
+                                    Command="{Binding AddEcuCommand}"/>
+                            <Button Grid.Column="2" Content="Remove"
+                                    Command="{Binding RemoveEcuCommand}"/>
+                        </Grid>
+
+                        <Border DockPanel.Dock="Bottom" Margin="0,12,0,0"
+                                Background="{StaticResource Bg.ElevatedBrush}"
+                                BorderBrush="{StaticResource Border.SubtleBrush}"
+                                BorderThickness="1"
+                                CornerRadius="3"
+                                Padding="10"
+                                DataContext="{Binding SelectedEcu}"
+                                Visibility="{Binding Converter={StaticResource BoolToVis}, FallbackValue=Collapsed, ConverterParameter=NotNull}">
+                            <StackPanel>
+                                <TextBlock Text="SELECTED" Style="{StaticResource Text.SectionHeader}" Margin="0,0,0,8"/>
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto" MinWidth="72"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                    </Grid.RowDefinitions>
+                                    <Label   Grid.Row="0" Grid.Column="0" Content="Name"/>
+                                    <TextBox Grid.Row="0" Grid.Column="1" Margin="0,2"
+                                             Text="{Binding Name, UpdateSourceTrigger=PropertyChanged}"/>
+                                    <Label   Grid.Row="1" Grid.Column="0" Content="Req CAN"/>
+                                    <TextBox Grid.Row="1" Grid.Column="1" Margin="0,2"
+                                             Text="{Binding PhysicalRequestCanIdHex, UpdateSourceTrigger=LostFocus}"
+                                             FontFamily="{StaticResource Font.Mono}"/>
+                                    <Label   Grid.Row="2" Grid.Column="0" Content="USDT resp"/>
+                                    <TextBox Grid.Row="2" Grid.Column="1" Margin="0,2"
+                                             Text="{Binding UsdtResponseCanIdHex, UpdateSourceTrigger=LostFocus}"
+                                             FontFamily="{StaticResource Font.Mono}"/>
+                                    <Label   Grid.Row="3" Grid.Column="0" Content="UUDT resp"/>
+                                    <TextBox Grid.Row="3" Grid.Column="1" Margin="0,2"
+                                             Text="{Binding UudtResponseCanIdHex, UpdateSourceTrigger=LostFocus}"
+                                             FontFamily="{StaticResource Font.Mono}"/>
+                                    <CheckBox Grid.Row="4" Grid.Column="1" Margin="0,8,0,0"
+                                              Content="HW $3E keepalives"
+                                              IsChecked="{Binding AllowPeriodicTesterPresent}"
+                                              ToolTip="Simulator drives $3E keepalives for hosts using PassThruStartPeriodicMsg"/>
+                                </Grid>
+                            </StackPanel>
+                        </Border>
+
+                        <ListBox ItemsSource="{Binding Ecus}"
+                                 SelectedItem="{Binding SelectedEcu}"
+                                 DisplayMemberPath="Name"
+                                 BorderThickness="0"
+                                 Background="Transparent"
+                                 Padding="0"/>
+                    </DockPanel>
+                </Border>
+
+                <!-- PIDs main pane -->
+                <Border Grid.Column="1" Style="{StaticResource Card}" Margin="0,0,12,0">
+                    <DockPanel DataContext="{Binding SelectedEcu}" LastChildFill="True">
+                        <Grid DockPanel.Dock="Top" Margin="0,0,0,10">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Text="PIDs"
+                                       Style="{StaticResource Text.Subtitle}"
+                                       VerticalAlignment="Center"/>
+                            <TextBlock Grid.Column="1"
+                                       Text="{Binding Pids.Count, StringFormat='{}{0} parameter(s)', FallbackValue='no ECU selected'}"
+                                       Style="{StaticResource Text.Caption}"
+                                       VerticalAlignment="Center"
+                                       Margin="12,0,0,0"/>
+                            <StackPanel Grid.Column="2" Orientation="Horizontal">
+                                <Button Style="{StaticResource Button.Primary}"
+                                        Content="Add PID"
+                                        Margin="0,0,8,0"
+                                        Command="{Binding DataContext.AddPidCommand,
+                                                          RelativeSource={RelativeSource AncestorType=Window}}"/>
+                                <Button Content="Remove PID"
+                                        Command="{Binding DataContext.RemovePidCommand,
+                                                          RelativeSource={RelativeSource AncestorType=Window}}"/>
+                            </StackPanel>
+                        </Grid>
+
+                        <DataGrid ItemsSource="{Binding Pids}"
+                                  SelectedItem="{Binding SelectedPid}"
+                                  AutoGenerateColumns="False"
+                                  CanUserAddRows="False"
+                                  CanUserDeleteRows="False">
+                            <DataGrid.RowStyle>
+                                <Style TargetType="DataGridRow" BasedOn="{StaticResource {x:Type DataGridRow}}">
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding HasAliasWarning}" Value="True">
+                                            <Setter Property="BorderBrush" Value="{StaticResource Status.ErrorBrush}"/>
+                                            <Setter Property="BorderThickness" Value="3,0,0,0"/>
+                                            <Setter Property="ToolTip" Value="{Binding AliasWarningTooltip}"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </DataGrid.RowStyle>
+                            <DataGrid.Columns>
+                                <DataGridTextColumn Header="Address" Binding="{Binding AddressHex, UpdateSourceTrigger=LostFocus}" Width="86"/>
+                                <DataGridTextColumn Header="Name"    Binding="{Binding Name, UpdateSourceTrigger=LostFocus}"       Width="*" MinWidth="120"/>
+                                <DataGridTemplateColumn Header="Size" Width="84">
+                                    <DataGridTemplateColumn.CellTemplate>
+                                        <DataTemplate>
+                                            <ComboBox Style="{StaticResource ComboBox.Cell}"
+                                                      ItemsSource="{Binding Source={StaticResource PidSizes}}"
+                                                      SelectedItem="{Binding Size, UpdateSourceTrigger=PropertyChanged}"/>
+                                        </DataTemplate>
+                                    </DataGridTemplateColumn.CellTemplate>
+                                </DataGridTemplateColumn>
+                                <DataGridTemplateColumn Header="Type" Width="96">
+                                    <DataGridTemplateColumn.CellTemplate>
+                                        <DataTemplate>
+                                            <ComboBox Style="{StaticResource ComboBox.Cell}"
+                                                      ItemsSource="{Binding Source={StaticResource PidDataTypes}}"
+                                                      SelectedItem="{Binding DataType, UpdateSourceTrigger=PropertyChanged}"/>
+                                        </DataTemplate>
+                                    </DataGridTemplateColumn.CellTemplate>
+                                </DataGridTemplateColumn>
+                                <DataGridTextColumn Header="Scalar" Binding="{Binding Scalar, UpdateSourceTrigger=LostFocus, StringFormat=G}" Width="78"/>
+                                <DataGridTextColumn Header="Offset" Binding="{Binding Offset, UpdateSourceTrigger=LostFocus, StringFormat=G}" Width="78"/>
+                                <DataGridTextColumn Header="Unit"   Binding="{Binding Unit, UpdateSourceTrigger=LostFocus}"   Width="72"/>
+                                <DataGridTextColumn Header="Live"   Binding="{Binding LiveValue}" IsReadOnly="True" Width="90"/>
+                            </DataGrid.Columns>
+                        </DataGrid>
+                    </DockPanel>
+                </Border>
+
+                <!-- Waveform inspector -->
+                <Border Grid.Column="2" Style="{StaticResource Card}"
+                        DataContext="{Binding SelectedEcu.SelectedPid.Waveform}">
+                    <DockPanel>
+                        <TextBlock DockPanel.Dock="Top"
+                                   Text="Waveform"
+                                   Style="{StaticResource Text.Subtitle}"
+                                   Margin="0,0,0,12"/>
+                        <TextBlock DockPanel.Dock="Top"
+                                   Text="Generator for the selected PID."
+                                   Style="{StaticResource Text.Hint}"
+                                   Margin="0,0,0,12"/>
+
+                        <Grid VerticalAlignment="Top">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" MinWidth="74"/>
                                 <ColumnDefinition Width="*"/>
                             </Grid.ColumnDefinitions>
                             <Grid.RowDefinitions>
@@ -128,347 +379,347 @@
                                 <RowDefinition Height="Auto"/>
                                 <RowDefinition Height="Auto"/>
                                 <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
                             </Grid.RowDefinitions>
+                            <Label Grid.Row="0" Grid.Column="0" Content="Shape"/>
+                            <ComboBox Grid.Row="0" Grid.Column="1" Margin="0,2"
+                                      ItemsSource="{Binding Source={StaticResource WaveformShapes}}"
+                                      SelectedItem="{Binding Shape, UpdateSourceTrigger=PropertyChanged}"/>
 
-                            <Label   Grid.Row="0" Grid.Column="0" Content="Name"/>
-                            <TextBox Grid.Row="0" Grid.Column="1" Text="{Binding Name, UpdateSourceTrigger=PropertyChanged}"/>
-                            <Label   Grid.Row="1" Grid.Column="0" Content="Req CAN ID"/>
-                            <TextBox Grid.Row="1" Grid.Column="1" Text="{Binding PhysicalRequestCanIdHex, UpdateSourceTrigger=LostFocus}"/>
-                            <Label   Grid.Row="2" Grid.Column="0" Content="USDT resp"/>
-                            <TextBox Grid.Row="2" Grid.Column="1" Text="{Binding UsdtResponseCanIdHex, UpdateSourceTrigger=LostFocus}"/>
-                            <Label   Grid.Row="3" Grid.Column="0" Content="UUDT resp"/>
-                            <TextBox Grid.Row="3" Grid.Column="1" Text="{Binding UudtResponseCanIdHex, UpdateSourceTrigger=LostFocus}"/>
-                            <Label   Grid.Row="4" Grid.Column="0" Content="HW $3E"
-                                     ToolTip="Simulator drives $3E keepalives for hosts using PassThruStartPeriodicMsg"/>
-                            <CheckBox Grid.Row="4" Grid.Column="1"
-                                      IsChecked="{Binding AllowPeriodicTesterPresent}"
-                                      Margin="0,4"
-                                     ToolTip="Simulator drives $3E keepalives for hosts using PassThruStartPeriodicMsg"/>
+                            <Label Grid.Row="1" Grid.Column="0" Content="Amplitude"
+                                   Visibility="{Binding SupportsAmplitude, Converter={StaticResource BoolToVis}}"/>
+                            <TextBox Grid.Row="1" Grid.Column="1" Margin="0,2"
+                                     Text="{Binding Amplitude, UpdateSourceTrigger=LostFocus, StringFormat=G}"
+                                     Visibility="{Binding SupportsAmplitude, Converter={StaticResource BoolToVis}}"
+                                     FontFamily="{StaticResource Font.Mono}"/>
+
+                            <Label Grid.Row="2" Grid.Column="0" Content="Offset"/>
+                            <TextBox Grid.Row="2" Grid.Column="1" Margin="0,2"
+                                     Text="{Binding Offset, UpdateSourceTrigger=LostFocus, StringFormat=G}"
+                                     FontFamily="{StaticResource Font.Mono}"/>
+
+                            <Label Grid.Row="3" Grid.Column="0" Content="Freq (Hz)"
+                                   Visibility="{Binding SupportsFrequency, Converter={StaticResource BoolToVis}}"/>
+                            <TextBox Grid.Row="3" Grid.Column="1" Margin="0,2"
+                                     Text="{Binding FrequencyHz, UpdateSourceTrigger=LostFocus, StringFormat=G}"
+                                     Visibility="{Binding SupportsFrequency, Converter={StaticResource BoolToVis}}"
+                                     FontFamily="{StaticResource Font.Mono}"/>
+
+                            <Label Grid.Row="4" Grid.Column="0" Content="Phase (°)"
+                                   Visibility="{Binding SupportsFrequency, Converter={StaticResource BoolToVis}}"/>
+                            <TextBox Grid.Row="4" Grid.Column="1" Margin="0,2"
+                                     Text="{Binding PhaseDeg, UpdateSourceTrigger=LostFocus, StringFormat=G}"
+                                     Visibility="{Binding SupportsFrequency, Converter={StaticResource BoolToVis}}"
+                                     FontFamily="{StaticResource Font.Mono}"/>
+
+                            <Label Grid.Row="5" Grid.Column="0" Content="Duty (0..1)"
+                                   Visibility="{Binding SupportsDuty, Converter={StaticResource BoolToVis}}"/>
+                            <TextBox Grid.Row="5" Grid.Column="1" Margin="0,2"
+                                     Text="{Binding DutyCycle, UpdateSourceTrigger=LostFocus, StringFormat=G}"
+                                     Visibility="{Binding SupportsDuty, Converter={StaticResource BoolToVis}}"
+                                     FontFamily="{StaticResource Font.Mono}"/>
                         </Grid>
-                    </GroupBox>
-
-                    <ListBox ItemsSource="{Binding Ecus}"
-                             SelectedItem="{Binding SelectedEcu}"
-                             DisplayMemberPath="Name"/>
-                </DockPanel>
-
-                <!-- Center: PIDs grid for the selected ECU -->
-                <DockPanel Grid.Column="1" Margin="0,0,8,0"
-                           DataContext="{Binding SelectedEcu}">
-                    <TextBlock DockPanel.Dock="Top" Text="PIDs" FontWeight="Bold" Margin="0,0,0,4"/>
-                    <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" Margin="0,4,0,0">
-                        <Button Content="Add PID"
-                                Command="{Binding DataContext.AddPidCommand,
-                                                  RelativeSource={RelativeSource AncestorType=Window}}"
-                                Width="85" Padding="6,2" Margin="0,0,4,0"/>
-                        <Button Content="Remove PID"
-                                Command="{Binding DataContext.RemovePidCommand,
-                                                  RelativeSource={RelativeSource AncestorType=Window}}"
-                                Width="85" Padding="6,2"/>
-                    </StackPanel>
-
-                    <DataGrid ItemsSource="{Binding Pids}"
-                              SelectedItem="{Binding SelectedPid}"
-                              AutoGenerateColumns="False"
-                              CanUserAddRows="False"
-                              CanUserDeleteRows="False"
-                              HeadersVisibility="Column"
-                              GridLinesVisibility="Horizontal"
-                              FontFamily="Consolas" FontSize="11"
-                              RowHeight="22">
-                        <DataGrid.RowStyle>
-                            <Style TargetType="DataGridRow">
-                                <Style.Triggers>
-                                    <DataTrigger Binding="{Binding HasAliasWarning}" Value="True">
-                                        <Setter Property="BorderBrush" Value="Crimson"/>
-                                        <Setter Property="BorderThickness" Value="4,0,0,0"/>
-                                        <Setter Property="ToolTip" Value="{Binding AliasWarningTooltip}"/>
-                                    </DataTrigger>
-                                </Style.Triggers>
-                            </Style>
-                        </DataGrid.RowStyle>
-                        <DataGrid.Columns>
-                            <DataGridTextColumn Header="Address" Binding="{Binding AddressHex, UpdateSourceTrigger=LostFocus}" Width="80"/>
-                            <DataGridTextColumn Header="Name"    Binding="{Binding Name, UpdateSourceTrigger=LostFocus}"       Width="*"/>
-                            <DataGridTemplateColumn Header="Size" Width="80">
-                                <DataGridTemplateColumn.CellTemplate>
-                                    <DataTemplate>
-                                        <ComboBox ItemsSource="{Binding Source={StaticResource PidSizes}}"
-                                                  SelectedItem="{Binding Size, UpdateSourceTrigger=PropertyChanged}"
-                                                  BorderThickness="0" Background="Transparent"/>
-                                    </DataTemplate>
-                                </DataGridTemplateColumn.CellTemplate>
-                            </DataGridTemplateColumn>
-                            <DataGridTemplateColumn Header="DataType" Width="80">
-                                <DataGridTemplateColumn.CellTemplate>
-                                    <DataTemplate>
-                                        <ComboBox ItemsSource="{Binding Source={StaticResource PidDataTypes}}"
-                                                  SelectedItem="{Binding DataType, UpdateSourceTrigger=PropertyChanged}"
-                                                  BorderThickness="0" Background="Transparent"/>
-                                    </DataTemplate>
-                                </DataGridTemplateColumn.CellTemplate>
-                            </DataGridTemplateColumn>
-                            <DataGridTextColumn Header="Scalar"  Binding="{Binding Scalar, UpdateSourceTrigger=LostFocus, StringFormat=G}" Width="80"/>
-                            <DataGridTextColumn Header="Offset"  Binding="{Binding Offset, UpdateSourceTrigger=LostFocus, StringFormat=G}" Width="80"/>
-                            <DataGridTextColumn Header="Unit"    Binding="{Binding Unit, UpdateSourceTrigger=LostFocus}"  Width="80"/>
-                            <DataGridTextColumn Header="Live"    Binding="{Binding LiveValue}" IsReadOnly="True" Width="80"/>
-                        </DataGrid.Columns>
-                    </DataGrid>
-                </DockPanel>
-
-                <GridSplitter Grid.Column="2" Width="4" Margin="-4,0,4,0"
-                          HorizontalAlignment="Stretch" VerticalAlignment="Stretch"
-                          Background="#FFCCCCCC" ShowsPreview="False"/>
-
-                <!-- Right: selected PID waveform editor -->
-                <DockPanel Grid.Column="3"
-                           DataContext="{Binding SelectedEcu.SelectedPid.Waveform}">
-                    <TextBlock DockPanel.Dock="Top" Text="Waveform" FontWeight="Bold" Margin="0,0,0,4"/>
-                    <Grid VerticalAlignment="Top">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="Auto"/>
-                            <ColumnDefinition Width="*"/>
-                        </Grid.ColumnDefinitions>
-                        <Grid.RowDefinitions>
-                            <RowDefinition Height="Auto"/>
-                            <RowDefinition Height="Auto"/>
-                            <RowDefinition Height="Auto"/>
-                            <RowDefinition Height="Auto"/>
-                            <RowDefinition Height="Auto"/>
-                            <RowDefinition Height="Auto"/>
-                        </Grid.RowDefinitions>
-                        <Label Grid.Row="0" Grid.Column="0" Content="Shape"/>
-                        <ComboBox Grid.Row="0" Grid.Column="1"
-                                  ItemsSource="{Binding Source={StaticResource WaveformShapes}}"
-                                  SelectedItem="{Binding Shape, UpdateSourceTrigger=PropertyChanged}"/>
-
-                        <Label Grid.Row="1" Grid.Column="0" Content="Amplitude"
-                               Visibility="{Binding SupportsAmplitude, Converter={StaticResource BoolToVis}}"/>
-                        <TextBox Grid.Row="1" Grid.Column="1" Text="{Binding Amplitude, UpdateSourceTrigger=LostFocus, StringFormat=G}"
-                                 Visibility="{Binding SupportsAmplitude, Converter={StaticResource BoolToVis}}"/>
-
-                        <Label Grid.Row="2" Grid.Column="0" Content="Offset"/>
-                        <TextBox Grid.Row="2" Grid.Column="1" Text="{Binding Offset, UpdateSourceTrigger=LostFocus, StringFormat=G}"/>
-
-                        <Label Grid.Row="3" Grid.Column="0" Content="Freq Hz"
-                               Visibility="{Binding SupportsFrequency, Converter={StaticResource BoolToVis}}"/>
-                        <TextBox Grid.Row="3" Grid.Column="1" Text="{Binding FrequencyHz, UpdateSourceTrigger=LostFocus, StringFormat=G}"
-                                 Visibility="{Binding SupportsFrequency, Converter={StaticResource BoolToVis}}"/>
-
-                        <Label Grid.Row="4" Grid.Column="0" Content="Phase °"
-                               Visibility="{Binding SupportsFrequency, Converter={StaticResource BoolToVis}}"/>
-                        <TextBox Grid.Row="4" Grid.Column="1" Text="{Binding PhaseDeg, UpdateSourceTrigger=LostFocus, StringFormat=G}"
-                                 Visibility="{Binding SupportsFrequency, Converter={StaticResource BoolToVis}}"/>
-
-                        <Label Grid.Row="5" Grid.Column="0" Content="Duty (0..1)"
-                               Visibility="{Binding SupportsDuty, Converter={StaticResource BoolToVis}}"/>
-                        <TextBox Grid.Row="5" Grid.Column="1" Text="{Binding DutyCycle, UpdateSourceTrigger=LostFocus, StringFormat=G}"
-                                 Visibility="{Binding SupportsDuty, Converter={StaticResource BoolToVis}}"/>
-                    </Grid>
-                </DockPanel>
+                    </DockPanel>
+                </Border>
             </Grid>
 
-            <GridSplitter Grid.Row="1" Height="4" Margin="0,-4,0,4"
-                          HorizontalAlignment="Stretch" VerticalAlignment="Stretch"
-                          Background="#FFCCCCCC" ShowsPreview="False"/>
-
-            <!-- Bus log, bin replay, security, glitch settings -->
-            <TabControl Grid.Row="2">
-                <TabItem Header="Bus log">
-                    <DockPanel>
-                        <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="4,2">
-                            <CheckBox x:Name="LogTrafficCheck" Content="Log traffic"
-                                      VerticalAlignment="Center"
-                                      Checked="OnLogTrafficChecked" Unchecked="OnLogTrafficUnchecked"
-                                      ToolTip="Master gate for both panes: CAN frames (left) and J2534 calls (right). Off by default — at $AA Fast 25Hz the bus frames alone can flood the textbox quickly."/>
-                            <Button Content="Clear" Click="OnClearLogClicked" Padding="8,2" Margin="12,0,0,0"/>
-                            <CheckBox x:Name="MaximizeBusLogCheck" Content="Maximize"
-                                      VerticalAlignment="Center" Margin="12,0,0,0"
-                                      Checked="OnMaximizeBusLogChecked" Unchecked="OnMaximizeBusLogUnchecked"
-                                      ToolTip="Collapse the ECU/PID editor and fill the window with the bus log."/>
-                        </StackPanel>
-                        <Grid>
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="*"/>
-                                <ColumnDefinition Width="4"/>
-                                <ColumnDefinition Width="*"/>
-                            </Grid.ColumnDefinitions>
-                            <DockPanel Grid.Column="0">
-                                <TextBlock DockPanel.Dock="Top" Text="CAN frames (Tx/Rx)"
-                                           FontWeight="Bold" Padding="4,1"
-                                           Background="#FFEFEFEF"/>
-                                <TextBox x:Name="LogBox"
-                                         IsReadOnly="True"
-                                         FontFamily="Consolas" FontSize="11"
-                                         VerticalScrollBarVisibility="Auto"
-                                         HorizontalScrollBarVisibility="Auto"
-                                         TextWrapping="NoWrap"
-                                         BorderThickness="0"/>
-                            </DockPanel>
-                            <GridSplitter Grid.Column="1" Width="4"
-                                          HorizontalAlignment="Stretch" VerticalAlignment="Stretch"
-                                          Background="#FFCCCCCC" ShowsPreview="False"/>
-                            <DockPanel Grid.Column="2">
-                                <TextBlock DockPanel.Dock="Top" Text="J2534 calls (control plane)"
-                                           FontWeight="Bold" Padding="4,1"
-                                           Background="#FFEFEFEF"/>
-                                <TextBox x:Name="IpcLogBox"
-                                         IsReadOnly="True"
-                                         FontFamily="Consolas" FontSize="11"
-                                         VerticalScrollBarVisibility="Auto"
-                                         HorizontalScrollBarVisibility="Auto"
-                                         TextWrapping="NoWrap"
-                                         BorderThickness="0"/>
-                            </DockPanel>
-                        </Grid>
-                    </DockPanel>
-                </TabItem>
-
-                <TabItem Header="Bin Replay">
-                    <views:BinReplayView DataContext="{Binding BinReplay}"/>
-                </TabItem>
-
-                <TabItem Header="Security ($27)">
-                    <DockPanel DataContext="{Binding SelectedEcu}">
-                        <Border DockPanel.Dock="Top" BorderBrush="#FFCCCCCC" BorderThickness="0,0,0,1" Padding="6,4">
-                            <StackPanel Orientation="Horizontal">
-                                <TextBlock Text="ECU: " VerticalAlignment="Center"/>
-                                <TextBlock Text="{Binding Name, FallbackValue='(none selected)'}"
-                                           FontWeight="Bold" VerticalAlignment="Center"/>
-                                <TextBlock Text="Module:" VerticalAlignment="Center" Margin="20,0,4,0"/>
-                                <ComboBox ItemsSource="{Binding AvailableSecurityModuleIds}"
-                                          SelectedItem="{Binding SelectedSecurityModuleId}"
-                                          Width="320" VerticalAlignment="Center"
-                                          ToolTip="Seed/key algorithm for this ECU. (none) makes $27 return NRC $11."/>
-                                <Button Content="Reset state"
-                                        Command="{Binding DataContext.ResetSecurityCommand,
-                                                          RelativeSource={RelativeSource AncestorType=Window}}"
-                                        Padding="10,2" Margin="12,0,0,0" VerticalAlignment="Center"
-                                        ToolTip="Re-lock this ECU and clear the attempt counter, pending seed, and lockout deadline. Equivalent to a power-cycle for $27 only."/>
-                                <TextBlock Text="Module-specific config below — values are passed to the module as JSON strings."
-                                           Foreground="Gray" FontStyle="Italic"
-                                           Margin="20,0,0,0" VerticalAlignment="Center"/>
-                            </StackPanel>
+            <!-- Horizontal splitter (Row 1) -->
+            <GridSplitter Grid.Row="1" Height="6"
+                          HorizontalAlignment="Stretch"
+                          VerticalAlignment="Center"
+                          Margin="0,6"
+                          Background="Transparent">
+                <GridSplitter.Template>
+                    <ControlTemplate TargetType="GridSplitter">
+                        <Border Background="Transparent">
+                            <Rectangle Height="1" Fill="{StaticResource Border.SubtleBrush}"
+                                       VerticalAlignment="Center"
+                                       HorizontalAlignment="Stretch"
+                                       SnapsToDevicePixels="True"/>
                         </Border>
-                        <Border DockPanel.Dock="Top" BorderBrush="#FFCCCCCC" BorderThickness="0,0,0,1"
-                                Background="#FFF8FAFC" Padding="6,6">
+                    </ControlTemplate>
+                </GridSplitter.Template>
+            </GridSplitter>
+
+            <!-- TABBED WORKSPACE (Row 2) -->
+            <Border Grid.Row="2"
+                    Background="{StaticResource Bg.SurfaceBrush}"
+                    BorderBrush="{StaticResource Border.SubtleBrush}"
+                    BorderThickness="1"
+                    CornerRadius="4">
+                <TabControl Margin="0">
+                    <!-- Bus log tab -->
+                    <TabItem Header="Bus log">
+                        <DockPanel LastChildFill="True">
+                            <Border DockPanel.Dock="Top" Style="{StaticResource Toolbar}">
+                                <StackPanel Orientation="Horizontal">
+                                    <CheckBox x:Name="LogTrafficCheck"
+                                              Content="Log traffic"
+                                              VerticalAlignment="Center"
+                                              Checked="OnLogTrafficChecked"
+                                              Unchecked="OnLogTrafficUnchecked"
+                                              ToolTip="Master gate for both panes: CAN frames (left) and J2534 calls (right). Off by default — at $AA Fast 25Hz the bus frames alone can flood the textbox quickly."/>
+                                    <Button Content="Clear" Click="OnClearLogClicked"
+                                            Style="{StaticResource Button.Ghost}"
+                                            Margin="16,0,0,0"/>
+                                    <Rectangle Width="1" Margin="12,4" Fill="{StaticResource Border.SubtleBrush}"/>
+                                    <CheckBox x:Name="MaximizeBusLogCheck"
+                                              Content="Maximize"
+                                              VerticalAlignment="Center"
+                                              Checked="OnMaximizeBusLogChecked"
+                                              Unchecked="OnMaximizeBusLogUnchecked"
+                                              ToolTip="Collapse the ECU/PID editor and fill the window with the bus log."/>
+                                </StackPanel>
+                            </Border>
                             <Grid>
                                 <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="Auto"/>
-                                    <ColumnDefinition Width="260"/>
-                                    <ColumnDefinition Width="Auto"/>
-                                    <ColumnDefinition Width="80"/>
-                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="6"/>
                                     <ColumnDefinition Width="*"/>
                                 </Grid.ColumnDefinitions>
-                                <TextBlock Grid.Column="0" Text="Status:" FontWeight="Bold"
-                                           VerticalAlignment="Center" Margin="0,0,6,0"/>
-                                <TextBlock Grid.Column="1" Text="{Binding SecurityStatusText, FallbackValue='—'}"
-                                           FontFamily="Consolas" VerticalAlignment="Center"
-                                           ToolTip="Live ECU lock state. Counts down during a 10s lockout window after 3 failed key attempts."/>
-                                <TextBlock Grid.Column="2" Text="Failed attempts:" FontWeight="Bold"
-                                           VerticalAlignment="Center" Margin="12,0,6,0"/>
-                                <TextBlock Grid.Column="3" Text="{Binding SecurityFailedAttemptsText, FallbackValue='—'}"
-                                           FontFamily="Consolas" VerticalAlignment="Center"/>
-                                <TextBlock Grid.Column="4" Text="Pending seed:" FontWeight="Bold"
-                                           VerticalAlignment="Center" Margin="12,0,6,0"/>
-                                <TextBlock Grid.Column="5" Text="{Binding SecurityPendingSeedText, FallbackValue='—'}"
-                                           FontFamily="Consolas" VerticalAlignment="Center"
-                                           ToolTip="Level and bytes of the last requestSeed response — cleared on successful unlock or lockout arm."/>
+
+                                <DockPanel Grid.Column="0">
+                                    <Border DockPanel.Dock="Top"
+                                            Background="{StaticResource Bg.ElevatedBrush}"
+                                            BorderBrush="{StaticResource Border.SubtleBrush}"
+                                            BorderThickness="0,0,0,1"
+                                            Padding="12,5">
+                                        <StackPanel Orientation="Horizontal">
+                                            <Ellipse Width="6" Height="6"
+                                                     Fill="{StaticResource Accent.PrimaryBrush}"
+                                                     VerticalAlignment="Center" Margin="0,0,8,0"/>
+                                            <TextBlock Text="CAN frames"
+                                                       Style="{StaticResource Text.Caption}"
+                                                       Foreground="{StaticResource Text.PrimaryBrush}"
+                                                       FontWeight="SemiBold"
+                                                       VerticalAlignment="Center"/>
+                                            <TextBlock Text="Tx / Rx"
+                                                       Style="{StaticResource Text.Caption}"
+                                                       Margin="8,0,0,0"
+                                                       VerticalAlignment="Center"/>
+                                        </StackPanel>
+                                    </Border>
+                                    <TextBox x:Name="LogBox"
+                                             Style="{StaticResource TextBox.Log}"
+                                             IsReadOnly="True"
+                                             TextWrapping="NoWrap"/>
+                                </DockPanel>
+
+                                <GridSplitter Grid.Column="1" Width="6"
+                                              HorizontalAlignment="Stretch"
+                                              VerticalAlignment="Stretch"
+                                              Background="Transparent">
+                                    <GridSplitter.Template>
+                                        <ControlTemplate TargetType="GridSplitter">
+                                            <Border Background="Transparent">
+                                                <Rectangle Width="1" Fill="{StaticResource Border.SubtleBrush}"
+                                                           HorizontalAlignment="Center"/>
+                                            </Border>
+                                        </ControlTemplate>
+                                    </GridSplitter.Template>
+                                </GridSplitter>
+
+                                <DockPanel Grid.Column="2">
+                                    <Border DockPanel.Dock="Top"
+                                            Background="{StaticResource Bg.ElevatedBrush}"
+                                            BorderBrush="{StaticResource Border.SubtleBrush}"
+                                            BorderThickness="0,0,0,1"
+                                            Padding="12,5">
+                                        <StackPanel Orientation="Horizontal">
+                                            <Ellipse Width="6" Height="6"
+                                                     Fill="{StaticResource Status.SuccessBrush}"
+                                                     VerticalAlignment="Center" Margin="0,0,8,0"/>
+                                            <TextBlock Text="J2534 calls"
+                                                       Style="{StaticResource Text.Caption}"
+                                                       Foreground="{StaticResource Text.PrimaryBrush}"
+                                                       FontWeight="SemiBold"
+                                                       VerticalAlignment="Center"/>
+                                            <TextBlock Text="control plane"
+                                                       Style="{StaticResource Text.Caption}"
+                                                       Margin="8,0,0,0"
+                                                       VerticalAlignment="Center"/>
+                                        </StackPanel>
+                                    </Border>
+                                    <TextBox x:Name="IpcLogBox"
+                                             Style="{StaticResource TextBox.Log}"
+                                             IsReadOnly="True"
+                                             TextWrapping="NoWrap"/>
+                                </DockPanel>
                             </Grid>
-                        </Border>
-                        <DataGrid ItemsSource="{Binding SecurityModuleConfigEntries}"
-                                  AutoGenerateColumns="False"
-                                  CanUserAddRows="True"
-                                  CanUserDeleteRows="True"
-                                  HeadersVisibility="Column"
-                                  GridLinesVisibility="Horizontal"
-                                  FontFamily="Consolas" FontSize="11"
-                                  RowHeight="22"
-                                  Margin="6">
-                            <DataGrid.Columns>
-                                <DataGridTextColumn Header="Key"
-                                                    Binding="{Binding Key, UpdateSourceTrigger=LostFocus}"
-                                                    Width="220"/>
-                                <DataGridTextColumn Header="Value"
-                                                    Binding="{Binding Value, UpdateSourceTrigger=LostFocus}"
-                                                    Width="*"/>
-                            </DataGrid.Columns>
-                        </DataGrid>
-                    </DockPanel>
-                </TabItem>
+                        </DockPanel>
+                    </TabItem>
 
-                <TabItem Header="Glitch settings">
-                    <DockPanel DataContext="{Binding SelectedEcu}">
-                        <Border DockPanel.Dock="Top" BorderBrush="#FFCCCCCC" BorderThickness="0,0,0,1" Padding="6,4">
-                            <StackPanel Orientation="Horizontal">
-                                <TextBlock Text="ECU: " VerticalAlignment="Center"/>
-                                <TextBlock Text="{Binding Name, FallbackValue='(none selected)'}"
-                                           FontWeight="Bold" VerticalAlignment="Center"/>
-                                <CheckBox Content="Enable glitch injection"
-                                          IsChecked="{Binding Glitch.Enabled}"
-                                          VerticalAlignment="Center" Margin="20,0,0,0"/>
-                                <TextBlock Text="(prep — not yet wired into bus logic)"
-                                           Foreground="Gray" FontStyle="Italic"
-                                           Margin="12,0,0,0" VerticalAlignment="Center"/>
-                            </StackPanel>
-                        </Border>
-                        <Grid>
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="*"/>
-                                <ColumnDefinition Width="240"/>
-                            </Grid.ColumnDefinitions>
+                    <!-- Bin Replay tab -->
+                    <TabItem Header="Bin Replay">
+                        <views:BinReplayView DataContext="{Binding BinReplay}"/>
+                    </TabItem>
 
-                            <!-- Per-service settings -->
-                            <DataGrid Grid.Column="0"
-                                      ItemsSource="{Binding Glitch.Services}"
+                    <!-- Security ($27) tab -->
+                    <TabItem Header="Security ($27)">
+                        <DockPanel DataContext="{Binding SelectedEcu}" LastChildFill="True">
+                            <Border DockPanel.Dock="Top" Style="{StaticResource Toolbar}">
+                                <StackPanel>
+                                    <StackPanel Orientation="Horizontal">
+                                        <TextBlock Text="ECU"
+                                                   Style="{StaticResource Text.Caption}"
+                                                   VerticalAlignment="Center"
+                                                   Margin="0,0,8,0"/>
+                                        <TextBlock Text="{Binding Name, FallbackValue='(none selected)'}"
+                                                   Style="{StaticResource Text.Body}"
+                                                   FontWeight="SemiBold"
+                                                   VerticalAlignment="Center"/>
+                                        <Rectangle Width="1" Margin="16,3" Fill="{StaticResource Border.SubtleBrush}"/>
+                                        <TextBlock Text="Module"
+                                                   Style="{StaticResource Text.Caption}"
+                                                   VerticalAlignment="Center"
+                                                   Margin="0,0,8,0"/>
+                                        <ComboBox ItemsSource="{Binding AvailableSecurityModuleIds}"
+                                                  SelectedItem="{Binding SelectedSecurityModuleId}"
+                                                  Width="340" VerticalAlignment="Center"
+                                                  ToolTip="Seed/key algorithm for this ECU. (none) makes $27 return NRC $11."/>
+                                        <Button Content="Reset state"
+                                                Margin="12,0,0,0"
+                                                Style="{StaticResource Button.Ghost}"
+                                                Command="{Binding DataContext.ResetSecurityCommand,
+                                                                  RelativeSource={RelativeSource AncestorType=Window}}"
+                                                ToolTip="Re-lock this ECU and clear the attempt counter, pending seed, and lockout deadline. Equivalent to a power-cycle for $27 only."/>
+                                    </StackPanel>
+                                    <TextBlock Text="Module-specific config below. Values are passed to the module as JSON strings."
+                                               Style="{StaticResource Text.Hint}"
+                                               Margin="0,6,0,0"/>
+                                </StackPanel>
+                            </Border>
+
+                            <Border DockPanel.Dock="Top"
+                                    Background="{StaticResource Bg.BaseBrush}"
+                                    BorderBrush="{StaticResource Border.SubtleBrush}"
+                                    BorderThickness="0,0,0,1"
+                                    Padding="14,8">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="2*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel Grid.Column="0">
+                                        <TextBlock Text="STATUS" Style="{StaticResource Text.SectionHeader}" Margin="0"/>
+                                        <TextBlock Text="{Binding SecurityStatusText, FallbackValue='—'}"
+                                                   Style="{StaticResource Text.Mono}"
+                                                   Foreground="{StaticResource Text.PrimaryBrush}"
+                                                   ToolTip="Live ECU lock state. Counts down during a 10s lockout window after 3 failed key attempts."/>
+                                    </StackPanel>
+                                    <StackPanel Grid.Column="1">
+                                        <TextBlock Text="FAILED ATTEMPTS" Style="{StaticResource Text.SectionHeader}" Margin="0"/>
+                                        <TextBlock Text="{Binding SecurityFailedAttemptsText, FallbackValue='—'}"
+                                                   Style="{StaticResource Text.Mono}"
+                                                   Foreground="{StaticResource Text.PrimaryBrush}"/>
+                                    </StackPanel>
+                                    <StackPanel Grid.Column="2">
+                                        <TextBlock Text="PENDING SEED" Style="{StaticResource Text.SectionHeader}" Margin="0"/>
+                                        <TextBlock Text="{Binding SecurityPendingSeedText, FallbackValue='—'}"
+                                                   Style="{StaticResource Text.Mono}"
+                                                   Foreground="{StaticResource Text.PrimaryBrush}"
+                                                   ToolTip="Level and bytes of the last requestSeed response — cleared on successful unlock or lockout arm."/>
+                                    </StackPanel>
+                                </Grid>
+                            </Border>
+
+                            <DataGrid ItemsSource="{Binding SecurityModuleConfigEntries}"
                                       AutoGenerateColumns="False"
-                                      CanUserAddRows="False"
-                                      CanUserDeleteRows="False"
-                                      HeadersVisibility="Column"
-                                      GridLinesVisibility="Horizontal"
-                                      FontFamily="Consolas" FontSize="11"
-                                      RowHeight="22"
-                                      Margin="6">
+                                      CanUserAddRows="True"
+                                      CanUserDeleteRows="True"
+                                      Margin="0">
                                 <DataGrid.Columns>
-                                    <DataGridTextColumn Header="Service"
-                                                        Binding="{Binding ServiceLabel}"
-                                                        IsReadOnly="True" Width="*"/>
-                                    <DataGridTextColumn Header="Probability"
-                                                        Binding="{Binding ProbabilityPercent, UpdateSourceTrigger=LostFocus}"
-                                                        Width="100"/>
-                                    <DataGridTemplateColumn Header="Action" Width="160">
-                                        <DataGridTemplateColumn.CellTemplate>
-                                            <DataTemplate>
-                                                <ComboBox ItemsSource="{Binding Source={StaticResource GlitchActions}}"
-                                                          SelectedItem="{Binding Action, UpdateSourceTrigger=PropertyChanged}"
-                                                          BorderThickness="0" Background="Transparent"/>
-                                            </DataTemplate>
-                                        </DataGridTemplateColumn.CellTemplate>
-                                    </DataGridTemplateColumn>
+                                    <DataGridTextColumn Header="Key"
+                                                        Binding="{Binding Key, UpdateSourceTrigger=LostFocus}"
+                                                        Width="280"/>
+                                    <DataGridTextColumn Header="Value"
+                                                        Binding="{Binding Value, UpdateSourceTrigger=LostFocus}"
+                                                        Width="*"/>
                                 </DataGrid.Columns>
                             </DataGrid>
+                        </DockPanel>
+                    </TabItem>
 
-                            <!-- NRC pool -->
-                            <DockPanel Grid.Column="1" Margin="6">
-                                <TextBlock DockPanel.Dock="Top" Text="NRC pool" FontWeight="Bold" Margin="0,0,0,4"/>
-                                <TextBlock DockPanel.Dock="Top"
-                                           Text="When EmitNrc fires, an NRC is randomly chosen from the ticked entries."
-                                           TextWrapping="Wrap" Foreground="Gray" FontSize="10"
-                                           Margin="0,0,0,6"/>
-                                <StackPanel>
-                                    <CheckBox Content="$11 serviceNotSupported"      IsChecked="{Binding Glitch.IncludeNrc11}" Margin="0,2"/>
-                                    <CheckBox Content="$12 subFunctionNotSupported"  IsChecked="{Binding Glitch.IncludeNrc12}" Margin="0,2"/>
-                                    <CheckBox Content="$22 conditionsNotCorrect"     IsChecked="{Binding Glitch.IncludeNrc22}" Margin="0,2"/>
-                                    <CheckBox Content="$31 requestOutOfRange"        IsChecked="{Binding Glitch.IncludeNrc31}" Margin="0,2"/>
-                                    <CheckBox Content="$33 securityAccessDenied"     IsChecked="{Binding Glitch.IncludeNrc33}" Margin="0,2"/>
-                                    <CheckBox Content="$78 busyResponsePending"      IsChecked="{Binding Glitch.IncludeNrc78}" Margin="0,2"/>
+                    <!-- Glitch settings tab -->
+                    <TabItem Header="Glitch settings">
+                        <DockPanel DataContext="{Binding SelectedEcu}" LastChildFill="True">
+                            <Border DockPanel.Dock="Top" Style="{StaticResource Toolbar}">
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock Text="ECU"
+                                               Style="{StaticResource Text.Caption}"
+                                               VerticalAlignment="Center"
+                                               Margin="0,0,8,0"/>
+                                    <TextBlock Text="{Binding Name, FallbackValue='(none selected)'}"
+                                               Style="{StaticResource Text.Body}"
+                                               FontWeight="SemiBold"
+                                               VerticalAlignment="Center"/>
+                                    <Rectangle Width="1" Margin="16,3" Fill="{StaticResource Border.SubtleBrush}"/>
+                                    <CheckBox Content="Enable glitch injection"
+                                              IsChecked="{Binding Glitch.Enabled}"
+                                              VerticalAlignment="Center"/>
+                                    <TextBlock Text="prep — not yet wired into bus logic"
+                                               Style="{StaticResource Text.Hint}"
+                                               Margin="14,0,0,0"
+                                               VerticalAlignment="Center"/>
                                 </StackPanel>
-                            </DockPanel>
-                        </Grid>
-                    </DockPanel>
-                </TabItem>
-            </TabControl>
+                            </Border>
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="280"/>
+                                </Grid.ColumnDefinitions>
+
+                                <DataGrid Grid.Column="0"
+                                          ItemsSource="{Binding Glitch.Services}"
+                                          AutoGenerateColumns="False"
+                                          CanUserAddRows="False"
+                                          CanUserDeleteRows="False"
+                                          BorderThickness="0,0,1,0">
+                                    <DataGrid.Columns>
+                                        <DataGridTextColumn Header="Service"
+                                                            Binding="{Binding ServiceLabel}"
+                                                            IsReadOnly="True" Width="*"/>
+                                        <DataGridTextColumn Header="Probability %"
+                                                            Binding="{Binding ProbabilityPercent, UpdateSourceTrigger=LostFocus}"
+                                                            Width="120"/>
+                                        <DataGridTemplateColumn Header="Action" Width="180">
+                                            <DataGridTemplateColumn.CellTemplate>
+                                                <DataTemplate>
+                                                    <ComboBox Style="{StaticResource ComboBox.Cell}"
+                                                              ItemsSource="{Binding Source={StaticResource GlitchActions}}"
+                                                              SelectedItem="{Binding Action, UpdateSourceTrigger=PropertyChanged}"/>
+                                                </DataTemplate>
+                                            </DataGridTemplateColumn.CellTemplate>
+                                        </DataGridTemplateColumn>
+                                    </DataGrid.Columns>
+                                </DataGrid>
+
+                                <Border Grid.Column="1" Padding="14,12">
+                                    <DockPanel>
+                                        <TextBlock DockPanel.Dock="Top" Text="NRC pool"
+                                                   Style="{StaticResource Text.Subtitle}"
+                                                   Margin="0,0,0,4"/>
+                                        <TextBlock DockPanel.Dock="Top"
+                                                   Text="When EmitNrc fires, an NRC is randomly chosen from the ticked entries."
+                                                   Style="{StaticResource Text.Hint}"
+                                                   TextWrapping="Wrap"
+                                                   Margin="0,0,0,10"/>
+                                        <StackPanel>
+                                            <CheckBox Content="$11 serviceNotSupported"     IsChecked="{Binding Glitch.IncludeNrc11}" Margin="0,4"/>
+                                            <CheckBox Content="$12 subFunctionNotSupported" IsChecked="{Binding Glitch.IncludeNrc12}" Margin="0,4"/>
+                                            <CheckBox Content="$22 conditionsNotCorrect"    IsChecked="{Binding Glitch.IncludeNrc22}" Margin="0,4"/>
+                                            <CheckBox Content="$31 requestOutOfRange"       IsChecked="{Binding Glitch.IncludeNrc31}" Margin="0,4"/>
+                                            <CheckBox Content="$33 securityAccessDenied"    IsChecked="{Binding Glitch.IncludeNrc33}" Margin="0,4"/>
+                                            <CheckBox Content="$78 busyResponsePending"     IsChecked="{Binding Glitch.IncludeNrc78}" Margin="0,4"/>
+                                        </StackPanel>
+                                    </DockPanel>
+                                </Border>
+                            </Grid>
+                        </DockPanel>
+                    </TabItem>
+                </TabControl>
+            </Border>
         </Grid>
     </DockPanel>
 </Window>

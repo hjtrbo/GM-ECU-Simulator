@@ -1,5 +1,7 @@
 using System.Windows;
 using System.Windows.Input;
+using System.Windows.Media;
+using System.Windows.Shapes;
 using System.Windows.Threading;
 using Core.Bus;
 using GmEcuSimulator.ViewModels;
@@ -30,6 +32,32 @@ public partial class MainWindow : Window
             Command = new RelayCommand(() => vm?.SaveCommand.Execute(null)) });
         InputBindings.Add(new KeyBinding { Key = Key.S, Modifiers = ModifierKeys.Control | ModifierKeys.Shift,
             Command = new RelayCommand(() => vm?.SaveAsCommand.Execute(null)) });
+
+        // Swap the maximize / restore glyph when WindowState flips.
+        StateChanged += (_, _) => UpdateMaximizeIcon();
+    }
+
+    // ---- Custom-chrome window controls ----
+    //
+    // The XAML titlebar replaces the OS caption buttons with three templated
+    // Buttons that route through these handlers. Keeping them in code-behind
+    // (rather than using SystemCommands) means the buttons stay testable via
+    // x:Name in the designer and we don't depend on the WindowChrome command
+    // bindings that some Win10/Win11 versions render inconsistently.
+
+    private void OnMinimizeClicked(object sender, RoutedEventArgs e)
+        => WindowState = WindowState.Minimized;
+
+    private void OnMaximizeClicked(object sender, RoutedEventArgs e)
+        => WindowState = WindowState == WindowState.Maximized ? WindowState.Normal : WindowState.Maximized;
+
+    private void OnCloseWindowClicked(object sender, RoutedEventArgs e) => Close();
+
+    private void UpdateMaximizeIcon()
+    {
+        if (MaxIcon == null) return;
+        var key = WindowState == WindowState.Maximized ? "Icon.Restore" : "Icon.Maximize";
+        if (TryFindResource(key) is Geometry geom) MaxIcon.Data = geom;
     }
 
     // General-purpose log sink. Routed to the RIGHT pane (IpcLogBox) - used
@@ -94,7 +122,7 @@ public partial class MainWindow : Window
     private void OnMaximizeBusLogUnchecked(object sender, RoutedEventArgs e)
     {
         EditorRow.Height = new System.Windows.GridLength(1, System.Windows.GridUnitType.Star);
-        LogRow.Height    = new System.Windows.GridLength(220);
+        LogRow.Height    = new System.Windows.GridLength(320);
     }
 
     private void OnClearLogClicked(object sender, RoutedEventArgs e)

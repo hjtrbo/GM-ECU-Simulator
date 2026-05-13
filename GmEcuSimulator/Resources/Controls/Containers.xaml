@@ -1,0 +1,151 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <ResourceDictionary.MergedDictionaries>
+        <ResourceDictionary Source="/Resources/Theme/Brushes.xaml"/>
+        <ResourceDictionary Source="/Resources/Theme/Typography.xaml"/>
+    </ResourceDictionary.MergedDictionaries>
+
+    <!-- Card: a generic surface used for panes ("ECUs", "PIDs", "Waveform").
+         Subtle border, modest corner radius, padded body. -->
+    <Style x:Key="Card" TargetType="Border">
+        <Setter Property="Background" Value="{StaticResource Bg.SurfaceBrush}"/>
+        <Setter Property="BorderBrush" Value="{StaticResource Border.SubtleBrush}"/>
+        <Setter Property="BorderThickness" Value="1"/>
+        <Setter Property="CornerRadius" Value="4"/>
+        <Setter Property="Padding" Value="12"/>
+        <Setter Property="SnapsToDevicePixels" Value="True"/>
+    </Style>
+
+    <!-- Toolbar strip: horizontal bar sitting on an elevated surface above a
+         card body. Used at the top of Bin Replay, Security, etc. -->
+    <Style x:Key="Toolbar" TargetType="Border">
+        <Setter Property="Background" Value="{StaticResource Bg.ElevatedBrush}"/>
+        <Setter Property="BorderBrush" Value="{StaticResource Border.SubtleBrush}"/>
+        <Setter Property="BorderThickness" Value="0,0,0,1"/>
+        <Setter Property="Padding" Value="12,8"/>
+        <Setter Property="SnapsToDevicePixels" Value="True"/>
+    </Style>
+
+    <!-- GroupBox: dark surface, header on the elevated surface above. -->
+    <Style TargetType="GroupBox">
+        <Setter Property="Background" Value="Transparent"/>
+        <Setter Property="BorderBrush" Value="{StaticResource Border.SubtleBrush}"/>
+        <Setter Property="BorderThickness" Value="1"/>
+        <Setter Property="Foreground" Value="{StaticResource Text.SecondaryBrush}"/>
+        <Setter Property="FontFamily" Value="{StaticResource Font.Sans}"/>
+        <Setter Property="FontSize" Value="{StaticResource Font.Size.Caption}"/>
+        <Setter Property="Margin" Value="0,12,0,0"/>
+        <Setter Property="Padding" Value="10,8,10,10"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="GroupBox">
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="*"/>
+                        </Grid.RowDefinitions>
+                        <Border Grid.Row="0"
+                                Background="{StaticResource Bg.ElevatedBrush}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="1,1,1,0"
+                                CornerRadius="3,3,0,0"
+                                Padding="10,4">
+                            <ContentPresenter ContentSource="Header"
+                                              TextElement.Foreground="{TemplateBinding Foreground}"
+                                              TextElement.FontWeight="SemiBold"
+                                              TextElement.FontSize="{StaticResource Font.Size.Caption}"/>
+                        </Border>
+                        <Border Grid.Row="1"
+                                Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="1,0,1,1"
+                                CornerRadius="0,0,3,3"
+                                Padding="{TemplateBinding Padding}">
+                            <ContentPresenter TextElement.Foreground="{StaticResource Text.PrimaryBrush}"/>
+                        </Border>
+                    </Grid>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- StatusBar: dark elevated surface at the bottom. Items separated by
+         thin dividers. -->
+    <Style TargetType="StatusBar">
+        <Setter Property="Background" Value="{StaticResource Chrome.BgBrush}"/>
+        <Setter Property="BorderBrush" Value="{StaticResource Border.SubtleBrush}"/>
+        <Setter Property="BorderThickness" Value="0,1,0,0"/>
+        <Setter Property="Foreground" Value="{StaticResource Text.SecondaryBrush}"/>
+        <Setter Property="FontFamily" Value="{StaticResource Font.Sans}"/>
+        <Setter Property="FontSize" Value="{StaticResource Font.Size.Caption}"/>
+        <Setter Property="MinHeight" Value="26"/>
+        <Setter Property="Padding" Value="12,0"/>
+    </Style>
+
+    <Style TargetType="StatusBarItem">
+        <Setter Property="Foreground" Value="{StaticResource Text.SecondaryBrush}"/>
+        <Setter Property="Padding" Value="0,4"/>
+        <Setter Property="VerticalContentAlignment" Value="Center"/>
+    </Style>
+
+    <!-- GridSplitter: subtle divider that brightens on hover. -->
+    <Style TargetType="GridSplitter">
+        <Setter Property="Background" Value="{StaticResource Border.SubtleBrush}"/>
+        <Setter Property="ShowsPreview" Value="False"/>
+        <Setter Property="SnapsToDevicePixels" Value="True"/>
+        <Style.Triggers>
+            <Trigger Property="IsMouseOver" Value="True">
+                <Setter Property="Background" Value="{StaticResource Accent.PrimaryBrush}"/>
+            </Trigger>
+            <Trigger Property="IsDragging" Value="True">
+                <Setter Property="Background" Value="{StaticResource Accent.HoverBrush}"/>
+            </Trigger>
+        </Style.Triggers>
+    </Style>
+
+    <!-- TextBlock implicit default to keep stray TextBlocks legible on dark. -->
+    <Style TargetType="TextBlock">
+        <Setter Property="FontFamily" Value="{StaticResource Font.Sans}"/>
+        <Setter Property="FontSize" Value="{StaticResource Font.Size.Body}"/>
+        <Setter Property="Foreground" Value="{StaticResource Text.PrimaryBrush}"/>
+        <Setter Property="TextOptions.TextFormattingMode" Value="Ideal"/>
+        <Setter Property="TextOptions.TextRenderingMode" Value="ClearType"/>
+    </Style>
+
+    <!-- ToolTip: subtle popover; placed above the cursor so it doesn't block
+         the row it describes. -->
+    <Style TargetType="ToolTip">
+        <Setter Property="Background" Value="{StaticResource Bg.ElevatedBrush}"/>
+        <Setter Property="Foreground" Value="{StaticResource Text.PrimaryBrush}"/>
+        <Setter Property="BorderBrush" Value="{StaticResource Border.StrongBrush}"/>
+        <Setter Property="BorderThickness" Value="1"/>
+        <Setter Property="FontFamily" Value="{StaticResource Font.Sans}"/>
+        <Setter Property="FontSize" Value="{StaticResource Font.Size.Caption}"/>
+        <Setter Property="Padding" Value="8,6"/>
+        <Setter Property="Placement" Value="Bottom"/>
+        <Setter Property="HasDropShadow" Value="True"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="ToolTip">
+                    <Border Background="{TemplateBinding Background}"
+                            BorderBrush="{TemplateBinding BorderBrush}"
+                            BorderThickness="{TemplateBinding BorderThickness}"
+                            CornerRadius="3"
+                            Padding="{TemplateBinding Padding}"
+                            MaxWidth="380"
+                            SnapsToDevicePixels="True">
+                        <ContentPresenter TextElement.Foreground="{TemplateBinding Foreground}">
+                            <ContentPresenter.Resources>
+                                <Style TargetType="TextBlock" BasedOn="{StaticResource {x:Type TextBlock}}">
+                                    <Setter Property="TextWrapping" Value="Wrap"/>
+                                </Style>
+                            </ContentPresenter.Resources>
+                        </ContentPresenter>
+                    </Border>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+</ResourceDictionary>

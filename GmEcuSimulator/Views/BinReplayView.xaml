@@ -11,43 +11,96 @@
         </ObjectDataProvider>
     </UserControl.Resources>
 
-    <DockPanel>
-        <Border DockPanel.Dock="Top" BorderBrush="#FFCCCCCC" BorderThickness="0,0,0,1" Padding="6,4">
+    <DockPanel LastChildFill="True">
+        <Border DockPanel.Dock="Top" Style="{StaticResource Toolbar}">
             <StackPanel>
-                <StackPanel Orientation="Horizontal">
-                    <Button Content="Load…"
+                <!-- Row 1: load actions + state pill + elapsed -->
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <Button Grid.Column="0" Content="Load…"
+                            Style="{StaticResource Button.Primary}"
                             Command="{Binding LoadFileCommand}"
-                            Padding="10,3" Margin="0,0,4,0"
+                            Margin="0,0,8,0"
                             ToolTip="Open a .bin or .csv. CSVs are converted on-the-fly via CsvParser (HP Tuners / PCMTEC / GMLAN formats)."/>
-                    <Button Content="Load synthetic demo"
+                    <Button Grid.Column="1" Content="Load synthetic demo"
                             Command="{Binding LoadDemoCommand}"
-                            Padding="10,3" Margin="0,0,4,0"
+                            Margin="0,0,8,0"
                             ToolTip="Loads a deterministic 4-channel in-memory bin (RPM/TPS/Coolant/TransTemp). For wiring up the start/stop hooks before the real bin loader lands."/>
-                    <Button Content="Unload"
-                            Command="{Binding UnloadCommand}"
-                            Padding="10,3"/>
-                    <Separator Width="12" Visibility="Hidden"/>
-                    <TextBlock Text="State:" VerticalAlignment="Center" Margin="12,0,4,0"/>
-                    <TextBlock Text="{Binding StateLabel}" FontWeight="Bold" VerticalAlignment="Center"/>
-                    <TextBlock Text="•" Margin="10,0" VerticalAlignment="Center" Foreground="Gray"/>
-                    <TextBlock Text="{Binding ElapsedSummary}" FontFamily="Consolas" VerticalAlignment="Center"/>
-                </StackPanel>
-                <StackPanel Orientation="Horizontal" Margin="0,4,0,0">
-                    <TextBlock Text="File:" VerticalAlignment="Center" Margin="0,0,4,0"/>
-                    <TextBlock Text="{Binding FilePathLabel}" FontFamily="Consolas" VerticalAlignment="Center"
-                               TextTrimming="CharacterEllipsis" MaxWidth="700"/>
-                    <TextBlock Text="•" Margin="10,0" VerticalAlignment="Center" Foreground="Gray"/>
-                    <TextBlock Text="{Binding ChannelSummary}" VerticalAlignment="Center"/>
-                </StackPanel>
-                <StackPanel Orientation="Horizontal" Margin="0,4,0,0">
-                    <TextBlock Text="Loop mode:" VerticalAlignment="Center" Margin="0,0,4,0"/>
+                    <Button Grid.Column="2" Content="Unload"
+                            Command="{Binding UnloadCommand}"/>
+
+                    <Border Grid.Column="4"
+                            Background="{StaticResource Bg.SurfaceBrush}"
+                            BorderBrush="{StaticResource Border.SubtleBrush}"
+                            BorderThickness="1"
+                            CornerRadius="11"
+                            Padding="10,3"
+                            VerticalAlignment="Center">
+                        <StackPanel Orientation="Horizontal">
+                            <Ellipse Width="6" Height="6"
+                                     Fill="{StaticResource Accent.PrimaryBrush}"
+                                     VerticalAlignment="Center" Margin="0,0,8,0"/>
+                            <TextBlock Text="{Binding StateLabel}"
+                                       Style="{StaticResource Text.Caption}"
+                                       FontWeight="SemiBold"
+                                       Foreground="{StaticResource Text.PrimaryBrush}"
+                                       VerticalAlignment="Center"/>
+                            <TextBlock Text="•" Margin="10,0" Style="{StaticResource Text.Caption}"
+                                       Foreground="{StaticResource Text.TertiaryBrush}"
+                                       VerticalAlignment="Center"/>
+                            <TextBlock Text="{Binding ElapsedSummary}"
+                                       Style="{StaticResource Text.Mono}"
+                                       VerticalAlignment="Center"/>
+                        </StackPanel>
+                    </Border>
+                </Grid>
+
+                <!-- Row 2: file path and channel summary -->
+                <Grid Margin="0,8,0,0">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Grid.Column="0" Text="File"
+                               Style="{StaticResource Text.Caption}"
+                               VerticalAlignment="Center"
+                               Margin="0,0,8,0"/>
+                    <TextBlock Grid.Column="1" Text="{Binding FilePathLabel}"
+                               Style="{StaticResource Text.Mono}"
+                               VerticalAlignment="Center"
+                               TextTrimming="CharacterEllipsis"/>
+                    <TextBlock Grid.Column="2" Text="•"
+                               Style="{StaticResource Text.Caption}"
+                               Foreground="{StaticResource Text.TertiaryBrush}"
+                               Margin="10,0"
+                               VerticalAlignment="Center"/>
+                    <TextBlock Grid.Column="3" Text="{Binding ChannelSummary}"
+                               Style="{StaticResource Text.Caption}"
+                               VerticalAlignment="Center"/>
+                </Grid>
+
+                <!-- Row 3: loop mode + autoload -->
+                <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+                    <TextBlock Text="Loop mode"
+                               Style="{StaticResource Text.Caption}"
+                               VerticalAlignment="Center"
+                               Margin="0,0,8,0"/>
                     <ComboBox ItemsSource="{Binding Source={StaticResource LoopModes}}"
                               SelectedItem="{Binding LoopMode}"
-                              MinWidth="100" Padding="4,1"
+                              MinWidth="140"
                               ToolTip="HoldLast freezes at the last sample. Loop wraps to the start. Stop transitions to Stopped at end-of-bin."/>
+                    <Rectangle Width="1" Margin="16,4" Fill="{StaticResource Border.SubtleBrush}"/>
                     <CheckBox Content="Auto-load on app start"
                               IsChecked="{Binding AutoLoadOnStart}"
-                              VerticalAlignment="Center" Margin="20,0,0,0"
+                              VerticalAlignment="Center"
                               ToolTip="Persists the loaded bin path in ecu_config.json and re-loads on next launch."/>
                 </StackPanel>
             </StackPanel>
@@ -58,17 +111,14 @@
                   CanUserAddRows="False"
                   CanUserDeleteRows="False"
                   IsReadOnly="True"
-                  HeadersVisibility="Column"
-                  GridLinesVisibility="Horizontal"
-                  FontFamily="Consolas" FontSize="11"
-                  RowHeight="22">
+                  BorderThickness="0">
             <DataGrid.Columns>
-                <DataGridTextColumn Header="ECU"      Binding="{Binding EcuLabel}"   Width="200"/>
-                <DataGridTextColumn Header="Address"  Binding="{Binding AddressHex}" Width="80"/>
-                <DataGridTextColumn Header="Name"     Binding="{Binding Name}"       Width="*"/>
-                <DataGridTextColumn Header="Unit"     Binding="{Binding Unit}"       Width="60"/>
-                <DataGridTextColumn Header="Size"     Binding="{Binding SizeBytes}"  Width="50"/>
-                <DataGridTextColumn Header="Live"     Binding="{Binding LiveValue}"  Width="100"/>
+                <DataGridTextColumn Header="ECU"     Binding="{Binding EcuLabel}"   Width="220"/>
+                <DataGridTextColumn Header="Address" Binding="{Binding AddressHex}" Width="90"/>
+                <DataGridTextColumn Header="Name"    Binding="{Binding Name}"       Width="*" MinWidth="160"/>
+                <DataGridTextColumn Header="Unit"    Binding="{Binding Unit}"       Width="70"/>
+                <DataGridTextColumn Header="Size"    Binding="{Binding SizeBytes}"  Width="60"/>
+                <DataGridTextColumn Header="Live"    Binding="{Binding LiveValue}"  Width="120"/>
             </DataGrid.Columns>
         </DataGrid>
     </DockPanel>
