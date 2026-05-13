@@ -172,8 +172,14 @@ public partial class MainWindow : Window
     // goes edge-to-edge against the menu bar and side walls. Without
     // hiding those, a ~28-px gap remained at the top even with
     // EditorRow.Height=0.
+    // EditorRow.MinHeight=270 in XAML so the user can't drag the splitter
+    // up and squash the editor cards. Maximize bypasses that floor by
+    // zeroing MinHeight here; the Unchecked path restores both.
+    private const double EditorMinHeightNormal = 270;
+
     private void OnMaximizeBusLogChecked(object sender, RoutedEventArgs e)
     {
+        EditorRow.MinHeight    = 0;
         EditorRow.Height       = new System.Windows.GridLength(0);
         LogRow.Height          = new System.Windows.GridLength(1, System.Windows.GridUnitType.Star);
         EditorSplitter.Visibility = Visibility.Collapsed;
@@ -182,6 +188,7 @@ public partial class MainWindow : Window
 
     private void OnMaximizeBusLogUnchecked(object sender, RoutedEventArgs e)
     {
+        EditorRow.MinHeight    = EditorMinHeightNormal;
         EditorRow.Height       = new System.Windows.GridLength(1, System.Windows.GridUnitType.Star);
         LogRow.Height          = new System.Windows.GridLength(320);
         EditorSplitter.Visibility = Visibility.Visible;
