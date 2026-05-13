@@ -16,11 +16,14 @@ public sealed class StatusToBrushConverter : IValueConverter
     public object Convert(object? value, Type targetType, object? parameter, CultureInfo culture)
     {
         var s = value as string ?? string.Empty;
+        // Order matters: "Not registered" starts with "Not", so check warning
+        // before success or "Registered" would also match "Not registered".
         var key =
-            s.StartsWith("✓") || s.StartsWith("OK", StringComparison.OrdinalIgnoreCase) ? "Status.SuccessBrush"
-          : s.StartsWith("Not", StringComparison.OrdinalIgnoreCase)                          ? "Status.WarningBrush"
-          : s.Contains("failed", StringComparison.OrdinalIgnoreCase)                         ? "Status.ErrorBrush"
-          :                                                                                    "Text.TertiaryBrush";
+            s.StartsWith("Not", StringComparison.OrdinalIgnoreCase)        ? "Status.WarningBrush"
+          : s.StartsWith("Registered", StringComparison.OrdinalIgnoreCase) ? "Status.SuccessBrush"
+          : s.StartsWith("OK", StringComparison.OrdinalIgnoreCase)         ? "Status.SuccessBrush"
+          : s.Contains("failed", StringComparison.OrdinalIgnoreCase)       ? "Status.ErrorBrush"
+          :                                                                  "Text.TertiaryBrush";
         return (Application.Current?.Resources[key] as Brush) ?? Brushes.Gray;
     }
 

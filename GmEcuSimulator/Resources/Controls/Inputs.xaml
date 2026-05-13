@@ -218,15 +218,18 @@
         </Setter>
     </Style>
 
-    <!-- Inline-edit combobox used inside DataGrid cells. No border, no padding,
-         transparent background until hover so the cell reads as a static label
-         until the user interacts. -->
+    <!-- Inline-edit combobox used inside DataGrid cells. No border, transparent
+         background until hover so the cell reads as a static label until the
+         user interacts. MinHeight=0 lets the combobox shrink to the cell's
+         available interior; without this it inherits 28-px MinHeight from the
+         base ComboBox style and clips descenders against the cell's bottom. -->
     <Style x:Key="ComboBox.Cell" TargetType="ComboBox" BasedOn="{StaticResource {x:Type ComboBox}}">
         <Setter Property="Background" Value="Transparent"/>
         <Setter Property="BorderBrush" Value="Transparent"/>
         <Setter Property="BorderThickness" Value="1"/>
-        <Setter Property="Padding" Value="6,2"/>
-        <Setter Property="MinHeight" Value="20"/>
+        <Setter Property="Padding" Value="6,0"/>
+        <Setter Property="MinHeight" Value="0"/>
+        <Setter Property="VerticalContentAlignment" Value="Center"/>
     </Style>
 
     <!-- Label: aligned right (for form-pair layouts), secondary colour. -->

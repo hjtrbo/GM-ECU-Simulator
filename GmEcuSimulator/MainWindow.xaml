@@ -9,8 +9,8 @@
         xmlns:glitch="clr-namespace:Common.Glitch;assembly=EcuSim.Common"
         xmlns:shell="clr-namespace:System.Windows.Shell;assembly=PresentationFramework"
         Title="{Binding WindowTitle, FallbackValue='GM ECU Simulator'}"
-        Height="800" Width="1280"
-        MinHeight="540" MinWidth="960"
+        Height="900" Width="1280"
+        MinHeight="640" MinWidth="960"
         WindowStartupLocation="CenterScreen"
         Style="{StaticResource Window.AppShell}">
 
@@ -18,11 +18,17 @@
         <conv:BoolToVisibilityConverter x:Key="BoolToVis"/>
         <conv:StatusToBrushConverter    x:Key="StatusToBrush"/>
 
-        <ObjectDataProvider x:Key="WaveformShapes" MethodName="GetValues" ObjectType="{x:Type sys:Enum}">
-            <ObjectDataProvider.MethodParameters>
-                <x:Type TypeName="wave:WaveformShape"/>
-            </ObjectDataProvider.MethodParameters>
-        </ObjectDataProvider>
+        <!-- User-selectable waveform shapes. FileStream is intentionally
+             omitted: it's an internal marker the bin-replay path sets on
+             bin-derived PIDs, not a manual choice. The Bin Replay tab is
+             the user-facing surface for bin-streamed values. -->
+        <x:Array x:Key="WaveformShapes" Type="{x:Type wave:WaveformShape}">
+            <wave:WaveformShape>Sin</wave:WaveformShape>
+            <wave:WaveformShape>Triangle</wave:WaveformShape>
+            <wave:WaveformShape>Square</wave:WaveformShape>
+            <wave:WaveformShape>Sawtooth</wave:WaveformShape>
+            <wave:WaveformShape>Constant</wave:WaveformShape>
+        </x:Array>
         <ObjectDataProvider x:Key="PidSizes" MethodName="GetValues" ObjectType="{x:Type sys:Enum}">
             <ObjectDataProvider.MethodParameters>
                 <x:Type TypeName="proto:PidSize"/>
@@ -280,7 +286,8 @@
                                  DisplayMemberPath="Name"
                                  BorderThickness="0"
                                  Background="Transparent"
-                                 Padding="0"/>
+                                 Padding="0"
+                                 MinHeight="80"/>
                     </DockPanel>
                 </Border>
 

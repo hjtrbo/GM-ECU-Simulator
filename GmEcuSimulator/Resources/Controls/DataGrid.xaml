@@ -182,7 +182,7 @@
         <Setter Property="HeadersVisibility" Value="Column"/>
         <Setter Property="RowBackground" Value="Transparent"/>
         <Setter Property="AlternatingRowBackground" Value="Transparent"/>
-        <Setter Property="RowHeight" Value="28"/>
+        <Setter Property="RowHeight" Value="30"/>
         <Setter Property="FontFamily" Value="{StaticResource Font.Mono}"/>
         <Setter Property="FontSize" Value="{StaticResource Font.Size.Mono}"/>
         <Setter Property="SnapsToDevicePixels" Value="True"/>

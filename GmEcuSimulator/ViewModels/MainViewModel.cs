@@ -327,9 +327,9 @@ public sealed class MainViewModel : NotifyPropertyChangedBase
             var s = J2534Registration.Check();
             J2534Status = (s.Has32, s.Has64) switch
             {
-                (true, true) => "✓ Registered (32-bit + 64-bit)",
-                (true, false) => "✓ Registered (32-bit only)",
-                (false, true) => "✓ Registered (64-bit only)",
+                (true, true) => "Registered (32-bit + 64-bit)",
+                (true, false) => "Registered (32-bit only)",
+                (false, true) => "Registered (64-bit only)",
                 (false, false) => "Not registered",
             };
         }
