@@ -36,7 +36,7 @@ public static class ThemeManager
     /// </summary>
     public static readonly string[] CategoryOrder = { CategoryDark, CategoryMid, CategoryLight, CategoryUser };
 
-    private const string DefaultPaletteName = "Midnight";
+    private const string DefaultPaletteName = "GraphiteSoft";
 
     private static readonly (string Name, string Category)[] BuiltIns =
     {

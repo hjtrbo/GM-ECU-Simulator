@@ -104,11 +104,16 @@
         </Style.Triggers>
     </Style>
 
-    <!-- TextBlock implicit default to keep stray TextBlocks legible on dark. -->
+    <!-- TextBlock implicit default - font only. Foreground is INTENTIONALLY
+         not set: a Setter here wins over the Foreground inheritance from the
+         parent visual, which breaks Button.Primary (whose Setter sets the
+         Button's Foreground - but the auto-wrapped TextBlock for the Button's
+         string Content picks up the implicit Setter instead of inheriting).
+         Window.xaml sets Foreground at the Window level, so every TextBlock
+         in the visual tree still inherits a legible default. -->
     <Style TargetType="TextBlock">
         <Setter Property="FontFamily" Value="{StaticResource Font.Sans}"/>
         <Setter Property="FontSize" Value="{StaticResource Font.Size.Body}"/>
-        <Setter Property="Foreground" Value="{DynamicResource Text.PrimaryBrush}"/>
         <Setter Property="TextOptions.TextFormattingMode" Value="Ideal"/>
         <Setter Property="TextOptions.TextRenderingMode" Value="ClearType"/>
     </Style>
