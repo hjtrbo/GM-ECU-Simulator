@@ -6,7 +6,7 @@ using Core.Utilities;
 namespace Core.Ipc;
 
 // Dispatches inbound IPC frames to per-message-type handlers and returns the
-// payload to send back. Pure CPU work — no blocking I/O. The pipe server
+// payload to send back. Pure CPU work - no blocking I/O. The pipe server
 // owns the actual stream and serialization.
 public sealed class RequestDispatcher
 {
@@ -175,7 +175,7 @@ public sealed class RequestDispatcher
         return (IpcMessageTypes.ReadVersionResponse, w.ToArray());
     }
 
-    // Reserved canary endpoint — echoes any payload back. The shim doesn't
+    // Reserved canary endpoint - echoes any payload back. The shim doesn't
     // currently send these; if a future handshake needs to verify wire-format
     // bytes survive the round trip, this is the path.
     private (byte, byte[]) Canary(ReadOnlySpan<byte> payload)
@@ -201,25 +201,25 @@ public sealed class RequestDispatcher
         if (r.Remaining < 16) return ProtocolFail(IpcMessageTypes.ConnectResponse, ResultCode.ERR_INVALID_MSG);
         _ = r.ReadU32();                                  // deviceId (unused for now)
         var proto = (ProtocolID)r.ReadU32();
-        var flags = r.ReadU32();                          // CAN_29BIT_ID etc — see ChannelSession.ConnectFlags
+        var flags = r.ReadU32();                          // CAN_29BIT_ID etc - see ChannelSession.ConnectFlags
         var baud = r.ReadU32();
 
-        // CAN only — the sim doesn't implement the ISO15765 protocol layer.
-        // Hosts must use ProtocolID.CAN and do their own ISO-TP framing in the
-        // PassThruWriteMsgs payload (PCI byte + data).
+        // CAN only - the shim is a thin frame-forwarder and doesn't implement
+        // the ISO15765 protocol layer. Hosts must use ProtocolID.CAN and do their
+        // own ISO-TP framing in the PassThruWriteMsgs payload (PCI byte + data).
         if (proto != ProtocolID.CAN)
         {
             state.Bus.LogDiagnostic?.Invoke(
-                $"[connect] rejected: protocol {proto} not supported — sim is CAN-only (use ProtocolID.CAN with manual ISO-TP framing)");
+                $"[connect] rejected: protocol {proto} not supported - shim is CAN-only (use ProtocolID.CAN with manual ISO-TP framing)");
             state.Bus.OnStatusMessage?.Invoke(
-                $"Rejected J2534 connect: {proto} not supported — sim is CAN-only");
+                $"Rejected J2534 connect: {proto} not supported - shim is CAN-only");
             return ProtocolFail(IpcMessageTypes.ConnectResponse, ResultCode.ERR_INVALID_PROTOCOL_ID);
         }
 
         var ch = state.AllocateChannel(proto, baud, flags);
         // Clear any stale rejection notice left over from a prior bad connect.
         state.Bus.OnStatusMessage?.Invoke(
-            $"J2534 host connected — channel {ch.Id}, CAN @ {baud} baud");
+            $"J2534 host connected - channel {ch.Id}, CAN @ {baud} baud");
         var w = new IpcWriter();
         w.WriteU32((uint)ResultCode.STATUS_NOERROR);
         w.WriteU32(ch.Id);
@@ -247,7 +247,7 @@ public sealed class RequestDispatcher
         var requestedRaw = r.ReadU32();
         var timeoutMs = (int)r.ReadU32();
 
-        // Reject malformed counts early — a u32 cast straight to int would let
+        // Reject malformed counts early - a u32 cast straight to int would let
         // a host-controlled value > Int32.MaxValue allocate a multi-GB list.
         if (requestedRaw == 0 || requestedRaw > MaxMsgsPerCall)
             return ProtocolFail(IpcMessageTypes.ReadMsgsResponse, ResultCode.ERR_INVALID_MSG);
@@ -277,7 +277,7 @@ public sealed class RequestDispatcher
                 if (!ch.RxAvailable.Wait(timeoutMs == 0 ? 0 : remaining)) break;
             }
             catch (ObjectDisposedException) { break; }   // channel torn down mid-wait
-            // Drain again — Release count and queue length aren't synchronised one-to-one
+            // Drain again - Release count and queue length aren't synchronised one-to-one
             // (an Enqueue can land between our TryDequeue and the next Wait).
             while (msgs.Count < requested && ch.RxQueue.TryDequeue(out var m))
                 msgs.Add(m);
@@ -300,7 +300,7 @@ public sealed class RequestDispatcher
         if (r.Remaining < 12) return ProtocolFail(IpcMessageTypes.WriteMsgsResponse, ResultCode.ERR_INVALID_MSG);
         var chId = r.ReadU32();
         var numMsgsRaw = r.ReadU32();
-        _ = r.ReadU32();                                  // timeoutMs (unused — sim is instant)
+        _ = r.ReadU32();                                  // timeoutMs (unused - sim is instant)
 
         if (numMsgsRaw > MaxMsgsPerCall)
             return ProtocolFail(IpcMessageTypes.WriteMsgsResponse, ResultCode.ERR_INVALID_MSG);
@@ -338,7 +338,7 @@ public sealed class RequestDispatcher
             return ProtocolFail(IpcMessageTypes.StartFilterResponse, ResultCode.ERR_INVALID_CHANNEL_ID);
 
         var filterId = state.AllocateFilterId();
-        _ = flowCtlMsg;          // FLOW_CONTROL_FILTER template is parsed but unused —
+        _ = flowCtlMsg;          // FLOW_CONTROL_FILTER template is parsed but unused -
                                  // the reassembler emits a hardcoded BS=0/STmin=0 FC.
         ch.AddFilter(new ChannelFilter
         {
@@ -427,7 +427,7 @@ public sealed class RequestDispatcher
         var r = new IpcReader(payload);
         if (r.Remaining >= 8)
         {
-            _ = r.ReadU32();             // channelId — unused; we look up by periodicId
+            _ = r.ReadU32();             // channelId - unused; we look up by periodicId
             uint periodicId = r.ReadU32();
             state.RemovePeriodicTimer(periodicId);
             state.Bus.LogDiagnostic?.Invoke($"[periodic] unregister id={periodicId}");
@@ -446,8 +446,8 @@ public sealed class RequestDispatcher
     //   0x01 GET_CONFIG  : in=[u32 nP][nP × u32 paramId]                      out=[u32 nP][nP × u32 value]
     //   0x02 SET_CONFIG  : in=[u32 nP][nP × (u32 paramId, u32 value)]          out=empty
     //   0x03 READ_VBATT  : in=empty                                           out=[u32 mV]
-    //   0x04 FIVE_BAUD   : (rejected — pre-CAN init, ERR_NOT_SUPPORTED)
-    //   0x05 FAST_INIT   : (rejected — KWP2000 init, ERR_NOT_SUPPORTED)
+    //   0x04 FIVE_BAUD   : (rejected - pre-CAN init, ERR_NOT_SUPPORTED)
+    //   0x05 FAST_INIT   : (rejected - KWP2000 init, ERR_NOT_SUPPORTED)
     //   0x07 CLEAR_TX    : in=empty                                           out=empty
     //   0x08 CLEAR_RX    : drains RxQueue                                      out=empty
     //   0x09 CLEAR_PER   : cancels all periodic timers for this channel        out=empty
@@ -467,7 +467,7 @@ public sealed class RequestDispatcher
         var inBytes = inLen > 0 ? r.ReadBytes((int)inLen) : Array.Empty<byte>();
 
         // Device-level Ioctls (READ_VBATT, READ_PROG_VOLTAGE) are tolerated
-        // even if the channel handle isn't valid — the J2534 spec calls them
+        // even if the channel handle isn't valid - the J2534 spec calls them
         // through PassThruIoctl(deviceId, ...) but the host wrapper passes
         // whatever ID it has.
         bool isDeviceLevel = ioctlId == 0x03 || ioctlId == 0x0E;
@@ -514,7 +514,7 @@ public sealed class RequestDispatcher
                 case 0x03: // READ_VBATT
                     ow.WriteU32(13800);
                     break;
-                case 0x07: // CLEAR_TX_BUFFER — no real Tx buffer; writes go straight through
+                case 0x07: // CLEAR_TX_BUFFER - no real Tx buffer; writes go straight through
                     break;
                 case 0x08: // CLEAR_RX_BUFFER
                     ch!.ClearRxQueue();
@@ -533,7 +533,7 @@ public sealed class RequestDispatcher
                     // no effect on routing. Accept the IOCTL silently.
                     _ = ch;
                     break;
-                case 0x0E: // READ_PROG_VOLTAGE — software simulator: no programming pin
+                case 0x0E: // READ_PROG_VOLTAGE - software simulator: no programming pin
                     ow.WriteU32(0);
                     break;
                 case 0x04: // FIVE_BAUD_INIT
