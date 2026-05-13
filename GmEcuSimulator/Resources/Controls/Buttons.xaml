@@ -56,7 +56,10 @@
                         </Trigger>
                         <Trigger Property="IsEnabled" Value="False">
                             <Setter TargetName="Bd" Property="Background" Value="{DynamicResource Bg.DisabledBrush}"/>
-                            <Setter TargetName="Bd" Property="BorderBrush" Value="{DynamicResource Border.SubtleBrush}"/>
+                            <!-- Keep the border at StrongBrush so the button outline is still
+                                 clearly visible in the disabled state - SubtleBrush blends
+                                 into the disabled background and the button reads as text. -->
+                            <Setter TargetName="Bd" Property="BorderBrush" Value="{DynamicResource Border.StrongBrush}"/>
                             <Setter TargetName="Cp" Property="TextElement.Foreground" Value="{DynamicResource Text.DisabledBrush}"/>
                             <Setter Property="Cursor" Value="Arrow"/>
                         </Trigger>
@@ -99,7 +102,10 @@
                         </Trigger>
                         <Trigger Property="IsEnabled" Value="False">
                             <Setter TargetName="Bd" Property="Background" Value="{DynamicResource Bg.DisabledBrush}"/>
-                            <Setter TargetName="Bd" Property="BorderBrush" Value="{DynamicResource Border.SubtleBrush}"/>
+                            <!-- Keep the border at StrongBrush so the button outline is still
+                                 clearly visible in the disabled state - SubtleBrush blends
+                                 into the disabled background and the button reads as text. -->
+                            <Setter TargetName="Bd" Property="BorderBrush" Value="{DynamicResource Border.StrongBrush}"/>
                             <Setter TargetName="Cp" Property="TextElement.Foreground" Value="{DynamicResource Text.DisabledBrush}"/>
                             <Setter Property="Cursor" Value="Arrow"/>
                         </Trigger>

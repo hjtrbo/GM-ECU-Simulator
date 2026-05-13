@@ -268,7 +268,7 @@
                                              Text="{Binding UudtResponseCanIdHex, UpdateSourceTrigger=LostFocus}"
                                              FontFamily="{StaticResource Font.Mono}"/>
                                     <CheckBox Grid.Row="4" Grid.Column="1" Margin="0,8,0,0"
-                                              Content="HW $3E keepalives"
+                                              Content="HW $3E"
                                               IsChecked="{Binding AllowPeriodicTesterPresent}"
                                               ToolTip="Simulator drives $3E keepalives for hosts using PassThruStartPeriodicMsg"/>
                                 </Grid>
@@ -464,7 +464,6 @@
                                               Unchecked="OnLogTrafficUnchecked"
                                               ToolTip="Master gate for both panes: CAN frames (left) and J2534 calls (right). Off by default â€” at $AA Fast 25Hz the bus frames alone can flood the textbox quickly."/>
                                     <Button Content="Clear" Click="OnClearLogClicked"
-                                            Style="{StaticResource Button.Ghost}"
                                             Margin="16,0,0,0"/>
                                     <Rectangle Width="1" Margin="12,4" Fill="{DynamicResource Border.SubtleBrush}"/>
                                     <CheckBox x:Name="MaximizeBusLogCheck"
