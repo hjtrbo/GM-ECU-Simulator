@@ -72,8 +72,10 @@
         <Setter Property="Padding" Value="4"/>
         <Setter Property="SnapsToDevicePixels" Value="True"/>
         <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
-        <Setter Property="ScrollViewer.VerticalScrollBarVisibility" Value="Auto"/>
-        <Setter Property="ScrollViewer.HorizontalScrollBarVisibility" Value="Disabled"/>
+        <!-- Scrollbar visibility is hardcoded on the inner ScrollViewer below.
+             TemplateBinding to the ScrollViewer.* attached properties is
+             unreliable on .NET 9 WPF - the bindings can silently no-op and
+             the scrollbar never appears even when content overflows. -->
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="ListBox">
@@ -82,15 +84,10 @@
                             BorderThickness="{TemplateBinding BorderThickness}"
                             CornerRadius="4"
                             SnapsToDevicePixels="True">
-                        <!-- Honour the ScrollViewer.* setters declared on the
-                             ListBox style. Without the explicit TemplateBinding
-                             these attached properties don't reach the inner
-                             ScrollViewer and the scrollbar never appears even
-                             when content overflows. -->
                         <ScrollViewer Padding="{TemplateBinding Padding}"
                                       Focusable="False"
-                                      VerticalScrollBarVisibility="{TemplateBinding ScrollViewer.VerticalScrollBarVisibility}"
-                                      HorizontalScrollBarVisibility="{TemplateBinding ScrollViewer.HorizontalScrollBarVisibility}">
+                                      VerticalScrollBarVisibility="Auto"
+                                      HorizontalScrollBarVisibility="Disabled">
                             <ItemsPresenter SnapsToDevicePixels="{TemplateBinding SnapsToDevicePixels}"/>
                         </ScrollViewer>
                     </Border>
