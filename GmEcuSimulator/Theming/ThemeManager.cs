@@ -43,7 +43,6 @@ public static class ThemeManager
         ("Midnight",  CategoryDark),
         ("Graphite",  CategoryDark),
         ("Solarized", CategoryDark),
-        ("Nord",      CategoryDark),
         ("Tokyo",     CategoryDark),
         ("Daylight",  CategoryLight),
         ("Frost",     CategoryLight),
