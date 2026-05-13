@@ -1,0 +1,87 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <!--
+        SEPIA  -  mid-tone warm brown.
+        Workshop-leather feel; mid-intensity dark with a warm amber accent
+        that recalls vintage automotive interiors. Easier on the eyes
+        late at night than the cool-tone darks.
+    -->
+
+    <Color x:Key="Bg.Base">#3D352A</Color>
+    <Color x:Key="Bg.Surface">#473E33</Color>
+    <Color x:Key="Bg.Elevated">#52483B</Color>
+    <Color x:Key="Bg.Hover">#5F5448</Color>
+    <Color x:Key="Bg.Active">#6D6154</Color>
+    <Color x:Key="Bg.Selected">#604527</Color>
+    <Color x:Key="Bg.Disabled">#3D352A</Color>
+    <Color x:Key="Border.Subtle">#544A3D</Color>
+    <Color x:Key="Border.Strong">#6D6154</Color>
+    <Color x:Key="Border.Divider">#332C23</Color>
+    <Color x:Key="Text.Primary">#F2E9DD</Color>
+    <Color x:Key="Text.Secondary">#BCAFA0</Color>
+    <Color x:Key="Text.Tertiary">#8B7F71</Color>
+    <Color x:Key="Text.Disabled">#635950</Color>
+    <Color x:Key="Text.Inverse">#2A231C</Color>
+    <Color x:Key="Accent.Primary">#E8A053</Color>
+    <Color x:Key="Accent.Hover">#EFB370</Color>
+    <Color x:Key="Accent.Active">#C68538</Color>
+    <Color x:Key="Accent.Subtle">#604220</Color>
+    <Color x:Key="Status.Success">#87C26B</Color>
+    <Color x:Key="Status.Success.Subtle">#374026</Color>
+    <Color x:Key="Status.Warning">#E8A053</Color>
+    <Color x:Key="Status.Warning.Subtle">#4E3823</Color>
+    <Color x:Key="Status.Error">#E26464</Color>
+    <Color x:Key="Status.Error.Subtle">#4D2C28</Color>
+    <Color x:Key="Status.Info">#E8A053</Color>
+    <Color x:Key="Mono.Bg">#2E2820</Color>
+    <Color x:Key="Mono.Text">#DAC9B5</Color>
+    <Color x:Key="Mono.Dim">#8B7F71</Color>
+    <Color x:Key="Chrome.Bg">#2E2820</Color>
+    <Color x:Key="Chrome.Border">#544A3D</Color>
+
+    <SolidColorBrush x:Key="Bg.BaseBrush"      Color="#3D352A"/>
+    <SolidColorBrush x:Key="Bg.SurfaceBrush"   Color="#473E33"/>
+    <SolidColorBrush x:Key="Bg.ElevatedBrush"  Color="#52483B"/>
+    <SolidColorBrush x:Key="Bg.HoverBrush"     Color="#5F5448"/>
+    <SolidColorBrush x:Key="Bg.ActiveBrush"    Color="#6D6154"/>
+    <SolidColorBrush x:Key="Bg.SelectedBrush"  Color="#604527"/>
+    <SolidColorBrush x:Key="Bg.DisabledBrush"  Color="#3D352A"/>
+
+    <SolidColorBrush x:Key="Border.SubtleBrush"   Color="#544A3D"/>
+    <SolidColorBrush x:Key="Border.StrongBrush"   Color="#6D6154"/>
+    <SolidColorBrush x:Key="Border.DividerBrush"  Color="#332C23"/>
+    <SolidColorBrush x:Key="Border.FocusBrush"    Color="#E8A053"/>
+
+    <SolidColorBrush x:Key="Text.PrimaryBrush"    Color="#F2E9DD"/>
+    <SolidColorBrush x:Key="Text.SecondaryBrush"  Color="#BCAFA0"/>
+    <SolidColorBrush x:Key="Text.TertiaryBrush"   Color="#8B7F71"/>
+    <SolidColorBrush x:Key="Text.DisabledBrush"   Color="#635950"/>
+    <SolidColorBrush x:Key="Text.InverseBrush"    Color="#2A231C"/>
+
+    <SolidColorBrush x:Key="Accent.PrimaryBrush"  Color="#E8A053"/>
+    <SolidColorBrush x:Key="Accent.HoverBrush"    Color="#EFB370"/>
+    <SolidColorBrush x:Key="Accent.ActiveBrush"   Color="#C68538"/>
+    <SolidColorBrush x:Key="Accent.SubtleBrush"   Color="#604220"/>
+
+    <SolidColorBrush x:Key="Status.SuccessBrush"         Color="#87C26B"/>
+    <SolidColorBrush x:Key="Status.SuccessSubtleBrush"   Color="#374026"/>
+    <SolidColorBrush x:Key="Status.WarningBrush"         Color="#E8A053"/>
+    <SolidColorBrush x:Key="Status.WarningSubtleBrush"   Color="#4E3823"/>
+    <SolidColorBrush x:Key="Status.ErrorBrush"           Color="#E26464"/>
+    <SolidColorBrush x:Key="Status.ErrorSubtleBrush"     Color="#4D2C28"/>
+    <SolidColorBrush x:Key="Status.InfoBrush"            Color="#E8A053"/>
+
+    <SolidColorBrush x:Key="Mono.BgBrush"    Color="#2E2820"/>
+    <SolidColorBrush x:Key="Mono.TextBrush"  Color="#DAC9B5"/>
+    <SolidColorBrush x:Key="Mono.DimBrush"   Color="#8B7F71"/>
+
+    <SolidColorBrush x:Key="Chrome.BgBrush"      Color="#2E2820"/>
+    <SolidColorBrush x:Key="Chrome.BorderBrush"  Color="#544A3D"/>
+
+    <LinearGradientBrush x:Key="Chrome.GradientBrush" StartPoint="0,0" EndPoint="0,1">
+        <GradientStop Offset="0" Color="#2E2820"/>
+        <GradientStop Offset="1" Color="#3D352A"/>
+    </LinearGradientBrush>
+
+</ResourceDictionary>

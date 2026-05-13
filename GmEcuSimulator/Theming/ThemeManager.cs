@@ -29,10 +29,18 @@ public static class ThemeManager
 
     private static readonly string[] BuiltIns =
     {
+        // Dark
         "Midnight",
         "Graphite",
         "Solarized",
+        // Mid
+        "Slate",
+        "Sepia",
+        "Forest",
+        // Light
         "Daylight",
+        "Paper",
+        "Frost",
     };
 
     public static IReadOnlyList<PaletteEntry> AvailablePalettes { get; private set; } = Array.Empty<PaletteEntry>();

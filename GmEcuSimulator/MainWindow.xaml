@@ -11,7 +11,7 @@
         xmlns:av="http://schemas.microsoft.com/expression/blend/2008" xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" mc:Ignorable="av" x:Class="GmEcuSimulator.MainWindow"
         Title="{Binding WindowTitle, FallbackValue=GM ECU Simulator}"
         Height="900" Width="1280"
-        MinHeight="720" MinWidth="960"
+        MinHeight="720" MinWidth="760"
         WindowStartupLocation="CenterScreen"
         >
 
@@ -203,7 +203,7 @@
                 <!-- EditorRow MinHeight is the editor area's floor when the
                      user drags the horizontal splitter up. Maximize toggles
                      it to 0 from code-behind so the row can fully collapse. -->
-                <RowDefinition x:Name="EditorRow" Height="*" MinHeight="280"/>
+                <RowDefinition x:Name="EditorRow" Height="*" MinHeight="286"/>
                 <RowDefinition Height="Auto"/>
                 <RowDefinition x:Name="LogRow"    Height="320" MinHeight="80"/>
             </Grid.RowDefinitions>
@@ -417,7 +417,7 @@
                         <TextBlock DockPanel.Dock="Top"
                                    Text="Generator for the selected PID."
                                    Style="{StaticResource Text.Hint}"
-                                   Margin="0,-6,0,8"/>
+                                   Margin="0,-4,0,12"/>
 
                         <!-- ScrollViewer surfaces a scrollbar when the
                              editor row is too short for all six waveform
