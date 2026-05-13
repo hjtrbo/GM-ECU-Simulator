@@ -25,10 +25,10 @@ public static class ThemeManager
 {
     public sealed record PaletteEntry(string Name, string DisplayName, string? FilePath, bool IsUser, string Category);
 
-    public const string CategoryDark = "Dark";
-    public const string CategoryMid = "Mid";
+    public const string CategoryDark  = "Dark";
+    public const string CategoryMid   = "Mid";
     public const string CategoryLight = "Light";
-    public const string CategoryUser = "User";
+    public const string CategoryUser  = "User";
 
     /// <summary>
     /// Canonical render order for category headers in the View > Theme menu.

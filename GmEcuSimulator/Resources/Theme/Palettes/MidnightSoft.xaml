@@ -29,6 +29,7 @@
     <Color x:Key="Accent.Hover">#4A95EF</Color>
     <Color x:Key="Accent.Active">#1E6BC8</Color>
     <Color x:Key="Accent.Subtle">#1B3654</Color>
+    <Color x:Key="Accent.OnPrimary">#FFFFFF</Color>
     <Color x:Key="Status.Success">#5BC289</Color>
     <Color x:Key="Status.Success.Subtle">#1F3A2C</Color>
     <Color x:Key="Status.Warning">#E6B547</Color>
@@ -65,6 +66,7 @@
     <SolidColorBrush x:Key="Accent.HoverBrush"    Color="#4A95EF"/>
     <SolidColorBrush x:Key="Accent.ActiveBrush"   Color="#1E6BC8"/>
     <SolidColorBrush x:Key="Accent.SubtleBrush"   Color="#1B3654"/>
+    <SolidColorBrush x:Key="Accent.OnPrimaryBrush"   Color="#FFFFFF"/>
 
     <SolidColorBrush x:Key="Status.SuccessBrush"         Color="#5BC289"/>
     <SolidColorBrush x:Key="Status.SuccessSubtleBrush"   Color="#1F3A2C"/>

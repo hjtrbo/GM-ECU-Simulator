@@ -36,7 +36,7 @@
                                 SnapsToDevicePixels="True">
                             <Path x:Name="Tick"
                                   Data="M 2 6 L 6 10 L 12 3"
-                                  Stroke="White"
+                                  Stroke="{DynamicResource Accent.OnPrimaryBrush}"
                                   StrokeThickness="1.6"
                                   StrokeStartLineCap="Round"
                                   StrokeEndLineCap="Round"

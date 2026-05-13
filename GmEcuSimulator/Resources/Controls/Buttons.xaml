@@ -73,7 +73,10 @@
     <Style x:Key="Button.Primary" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
         <Setter Property="Background"  Value="{DynamicResource Accent.PrimaryBrush}"/>
         <Setter Property="BorderBrush" Value="{DynamicResource Accent.PrimaryBrush}"/>
-        <Setter Property="Foreground"  Value="White"/>
+        <!-- Per-palette: some accents (mid-luminance teal, light electric blue) read
+             poorly under white text. Each palette declares Accent.OnPrimaryBrush
+             with the color that contrasts cleanly on its own Accent.Primary. -->
+        <Setter Property="Foreground"  Value="{DynamicResource Accent.OnPrimaryBrush}"/>
         <Setter Property="FontWeight"  Value="SemiBold"/>
         <Setter Property="Template">
             <Setter.Value>
