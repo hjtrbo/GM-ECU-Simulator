@@ -1,0 +1,87 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <!--
+        MAUVE  -  dusty pink / purple mid-tone.
+        Mid-intensity surfaces with a desaturated lilac wash, paired with
+        a brighter rose-violet accent. Warmer than Slate, more
+        contemporary than the dark plums.
+    -->
+
+    <Color x:Key="Bg.Base">#4A4054</Color>
+    <Color x:Key="Bg.Surface">#564A60</Color>
+    <Color x:Key="Bg.Elevated">#62546D</Color>
+    <Color x:Key="Bg.Hover">#6E5F79</Color>
+    <Color x:Key="Bg.Active">#7A6A85</Color>
+    <Color x:Key="Bg.Selected">#614F8C</Color>
+    <Color x:Key="Bg.Disabled">#4A4054</Color>
+    <Color x:Key="Border.Subtle">#564A60</Color>
+    <Color x:Key="Border.Strong">#6E5F79</Color>
+    <Color x:Key="Border.Divider">#2F2935</Color>
+    <Color x:Key="Text.Primary">#EDE6F2</Color>
+    <Color x:Key="Text.Secondary">#C2B6CC</Color>
+    <Color x:Key="Text.Tertiary">#8E8398</Color>
+    <Color x:Key="Text.Disabled">#5E5266</Color>
+    <Color x:Key="Text.Inverse">#2F2935</Color>
+    <Color x:Key="Accent.Primary">#D89CDF</Color>
+    <Color x:Key="Accent.Hover">#E5B0EC</Color>
+    <Color x:Key="Accent.Active">#B57BBE</Color>
+    <Color x:Key="Accent.Subtle">#4D3D57</Color>
+    <Color x:Key="Status.Success">#99D69E</Color>
+    <Color x:Key="Status.Success.Subtle">#2F432E</Color>
+    <Color x:Key="Status.Warning">#E5C56A</Color>
+    <Color x:Key="Status.Warning.Subtle">#4A3F23</Color>
+    <Color x:Key="Status.Error">#E47373</Color>
+    <Color x:Key="Status.Error.Subtle">#4A2A2A</Color>
+    <Color x:Key="Status.Info">#B499E8</Color>
+    <Color x:Key="Mono.Bg">#383040</Color>
+    <Color x:Key="Mono.Text">#DCD0E8</Color>
+    <Color x:Key="Mono.Dim">#8E8398</Color>
+    <Color x:Key="Chrome.Bg">#383040</Color>
+    <Color x:Key="Chrome.Border">#564A60</Color>
+
+    <SolidColorBrush x:Key="Bg.BaseBrush"      Color="#4A4054"/>
+    <SolidColorBrush x:Key="Bg.SurfaceBrush"   Color="#564A60"/>
+    <SolidColorBrush x:Key="Bg.ElevatedBrush"  Color="#62546D"/>
+    <SolidColorBrush x:Key="Bg.HoverBrush"     Color="#6E5F79"/>
+    <SolidColorBrush x:Key="Bg.ActiveBrush"    Color="#7A6A85"/>
+    <SolidColorBrush x:Key="Bg.SelectedBrush"  Color="#614F8C"/>
+    <SolidColorBrush x:Key="Bg.DisabledBrush"  Color="#4A4054"/>
+
+    <SolidColorBrush x:Key="Border.SubtleBrush"   Color="#564A60"/>
+    <SolidColorBrush x:Key="Border.StrongBrush"   Color="#6E5F79"/>
+    <SolidColorBrush x:Key="Border.DividerBrush"  Color="#2F2935"/>
+    <SolidColorBrush x:Key="Border.FocusBrush"    Color="#D89CDF"/>
+
+    <SolidColorBrush x:Key="Text.PrimaryBrush"    Color="#EDE6F2"/>
+    <SolidColorBrush x:Key="Text.SecondaryBrush"  Color="#C2B6CC"/>
+    <SolidColorBrush x:Key="Text.TertiaryBrush"   Color="#8E8398"/>
+    <SolidColorBrush x:Key="Text.DisabledBrush"   Color="#5E5266"/>
+    <SolidColorBrush x:Key="Text.InverseBrush"    Color="#2F2935"/>
+
+    <SolidColorBrush x:Key="Accent.PrimaryBrush"  Color="#D89CDF"/>
+    <SolidColorBrush x:Key="Accent.HoverBrush"    Color="#E5B0EC"/>
+    <SolidColorBrush x:Key="Accent.ActiveBrush"   Color="#B57BBE"/>
+    <SolidColorBrush x:Key="Accent.SubtleBrush"   Color="#4D3D57"/>
+
+    <SolidColorBrush x:Key="Status.SuccessBrush"         Color="#99D69E"/>
+    <SolidColorBrush x:Key="Status.SuccessSubtleBrush"   Color="#2F432E"/>
+    <SolidColorBrush x:Key="Status.WarningBrush"         Color="#E5C56A"/>
+    <SolidColorBrush x:Key="Status.WarningSubtleBrush"   Color="#4A3F23"/>
+    <SolidColorBrush x:Key="Status.ErrorBrush"           Color="#E47373"/>
+    <SolidColorBrush x:Key="Status.ErrorSubtleBrush"     Color="#4A2A2A"/>
+    <SolidColorBrush x:Key="Status.InfoBrush"            Color="#B499E8"/>
+
+    <SolidColorBrush x:Key="Mono.BgBrush"    Color="#383040"/>
+    <SolidColorBrush x:Key="Mono.TextBrush"  Color="#DCD0E8"/>
+    <SolidColorBrush x:Key="Mono.DimBrush"   Color="#8E8398"/>
+
+    <SolidColorBrush x:Key="Chrome.BgBrush"      Color="#383040"/>
+    <SolidColorBrush x:Key="Chrome.BorderBrush"  Color="#564A60"/>
+
+    <LinearGradientBrush x:Key="Chrome.GradientBrush" StartPoint="0,0" EndPoint="0,1">
+        <GradientStop Offset="0" Color="#383040"/>
+        <GradientStop Offset="1" Color="#4A4054"/>
+    </LinearGradientBrush>
+
+</ResourceDictionary>

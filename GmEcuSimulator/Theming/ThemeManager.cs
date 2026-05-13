@@ -33,14 +33,16 @@ public static class ThemeManager
         "Midnight",
         "Graphite",
         "Solarized",
+        "Nord",
+        "Dracula",
+        "Tokyo",
         // Mid
         "Slate",
-        "Sepia",
-        "Forest",
+        "Mauve",
         // Light
         "Daylight",
-        "Paper",
         "Frost",
+        "Lavender",
     };
 
     public static IReadOnlyList<PaletteEntry> AvailablePalettes { get; private set; } = Array.Empty<PaletteEntry>();
