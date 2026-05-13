@@ -7,18 +7,32 @@ namespace Core.Ipc;
 
 // Pipe server. Each accepted connection gets its own IpcSessionState +
 // RequestDispatcher; all sessions share the global VirtualBus.
+//
+// Lifecycle: Start / StopAsync are paired and may be cycled. The simulator
+// uses this to bind the pipe to J2534 registration state: when the user
+// unregisters the shim DLL, the pipe stops accepting and any in-flight
+// client handlers are cancelled and disposed. That guarantees a host can
+// no longer reach the simulator once unregister succeeds, instead of the
+// pre-fix behaviour where an already-connected host stayed live forever
+// because the registry write was the only thing Unregister touched.
 public sealed class NamedPipeServer : IAsyncDisposable
 {
     public const string PipeName = "GmEcuSim.PassThru";
 
-    private readonly CancellationTokenSource cts = new();
     private readonly Action<string> log;
     private readonly VirtualBus bus;
+
+    // Recreated on every Start so Stop -> Start cycles work cleanly. Null
+    // while the server is idle. The lifecycle lock serialises mutations to
+    // cts + acceptLoop so concurrent Start / Stop calls can't tear state.
+    private CancellationTokenSource? cts;
     private Task? acceptLoop;
-    // Tracks every active client-handler task. DisposeAsync awaits them all
-    // so a fresh server created on the same pipe name (e.g. between xUnit
-    // tests) doesn't race against a still-running handler from the previous
-    // server instance.
+    private readonly Lock lifecycleLock = new();
+
+    // Tracks every active client-handler task. StopAsync awaits the accept
+    // loop first (so no new handlers can be appended), then awaits every
+    // outstanding handler so the next Start on the same pipe name doesn't
+    // race against a still-draining handler from the previous run.
     private readonly List<Task> clientHandlers = new();
     private readonly Lock handlersLock = new();
 
@@ -28,11 +42,65 @@ public sealed class NamedPipeServer : IAsyncDisposable
         this.log = log ?? Console.WriteLine;
     }
 
+    /// <summary>True while the accept loop is running.</summary>
+    public bool IsRunning
+    {
+        get { lock (lifecycleLock) return acceptLoop != null; }
+    }
+
+    /// <summary>
+    /// Starts accepting clients. Idempotent: a call while the server is
+    /// already running is a no-op (no exception). Pairs with StopAsync.
+    /// </summary>
     public void Start()
     {
-        if (acceptLoop != null) throw new InvalidOperationException("Server already started.");
-        acceptLoop = Task.Run(() => AcceptLoopAsync(cts.Token));
-        log($"NamedPipeServer listening on \\\\.\\pipe\\{PipeName}");
+        lock (lifecycleLock)
+        {
+            if (acceptLoop != null) return;
+            cts = new CancellationTokenSource();
+            var token = cts.Token;
+            acceptLoop = Task.Run(() => AcceptLoopAsync(token));
+            log($"NamedPipeServer listening on \\\\.\\pipe\\{PipeName}");
+        }
+    }
+
+    /// <summary>
+    /// Cancels the accept loop and waits for it + every in-flight handler
+    /// to drain. Each handler's pipe is disposed via its own `await using`,
+    /// which forces the connected client to see a broken pipe on its next
+    /// read or write. Safe to call when already stopped (no-op).
+    /// </summary>
+    public async Task StopAsync()
+    {
+        Task? loopToAwait;
+        CancellationTokenSource? toDispose;
+        lock (lifecycleLock)
+        {
+            if (acceptLoop == null) return;
+            cts?.Cancel();
+            loopToAwait = acceptLoop;
+            toDispose = cts;
+            // Clear state up-front so a Start() that races behind us can
+            // begin a fresh listener as soon as we return.
+            acceptLoop = null;
+            cts = null;
+        }
+
+        // Order matters: await the accept loop first. Once it has exited,
+        // no new tasks can be appended to clientHandlers, so the snapshot
+        // we take below is exhaustive.
+        if (loopToAwait != null) try { await loopToAwait.ConfigureAwait(false); } catch { }
+
+        Task[] handlersToAwait;
+        lock (handlersLock)
+        {
+            handlersToAwait = clientHandlers.ToArray();
+            clientHandlers.Clear();
+        }
+        foreach (var h in handlersToAwait) try { await h.ConfigureAwait(false); } catch { }
+
+        toDispose?.Dispose();
+        log("NamedPipeServer stopped.");
     }
 
     private async Task AcceptLoopAsync(CancellationToken ct)
@@ -44,7 +112,9 @@ public sealed class NamedPipeServer : IAsyncDisposable
 
         while (!ct.IsCancellationRequested)
         {
-            NamedPipeServerStream pipe;
+            // Nullable + assigned-null so the catch blocks can dispose the
+            // pipe if WaitForConnectionAsync throws after construction.
+            NamedPipeServerStream? pipe = null;
             try
             {
                 pipe = new NamedPipeServerStream(
@@ -56,19 +126,26 @@ public sealed class NamedPipeServer : IAsyncDisposable
                 await pipe.WaitForConnectionAsync(ct).ConfigureAwait(false);
                 consecutiveFailures = 0;
             }
-            catch (OperationCanceledException) { break; }
+            catch (OperationCanceledException)
+            {
+                pipe?.Dispose();
+                break;
+            }
             catch (Exception ex)
             {
+                pipe?.Dispose();
                 consecutiveFailures++;
                 int backoffMs = Math.Min(MaxBackoffMs, 100 * (1 << Math.Min(consecutiveFailures - 1, 6)));
-                log($"Pipe accept error ({consecutiveFailures}): {ex.Message} — retrying in {backoffMs} ms");
+                log($"Pipe accept error ({consecutiveFailures}): {ex.Message} - retrying in {backoffMs} ms");
                 try { await Task.Delay(backoffMs, ct).ConfigureAwait(false); }
                 catch (OperationCanceledException) { break; }
                 continue;
             }
 
+            // Control only reaches here on the happy path: pipe was constructed,
+            // a client connected, no exception escaped the try block.
             log("Pipe client connected.");
-            var handler = Task.Run(() => HandleClientAsync(pipe, ct), ct);
+            var handler = Task.Run(() => HandleClientAsync(pipe!, ct), ct);
             lock (handlersLock)
             {
                 clientHandlers.RemoveAll(t => t.IsCompleted);
@@ -124,15 +201,5 @@ public sealed class NamedPipeServer : IAsyncDisposable
         }
     }
 
-    public async ValueTask DisposeAsync()
-    {
-        cts.Cancel();
-        if (acceptLoop != null) try { await acceptLoop.ConfigureAwait(false); } catch { }
-
-        Task[] handlers;
-        lock (handlersLock) handlers = clientHandlers.ToArray();
-        foreach (var h in handlers) try { await h.ConfigureAwait(false); } catch { }
-
-        cts.Dispose();
-    }
+    public async ValueTask DisposeAsync() => await StopAsync().ConfigureAwait(false);
 }
