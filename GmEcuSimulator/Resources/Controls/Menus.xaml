@@ -4,6 +4,7 @@
     <ResourceDictionary.MergedDictionaries>
         <ResourceDictionary Source="/Resources/Theme/Brushes.xaml"/>
         <ResourceDictionary Source="/Resources/Theme/Typography.xaml"/>
+        <ResourceDictionary Source="/Resources/Theme/Icons.xaml"/>
     </ResourceDictionary.MergedDictionaries>
 
     <!-- Menu bar: dark, flat, no separator strip. Sits in the title-bar area
