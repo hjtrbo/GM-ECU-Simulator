@@ -45,7 +45,6 @@ public static class ThemeManager
         ("Graphite",     CategoryDark),
         ("GraphiteSoft", CategoryDark),
         ("Solarized",    CategoryDark),
-        ("Tokyo",        CategoryDark),
         ("Daylight",     CategoryLight),
         ("Frost",        CategoryLight),
     };
