@@ -16,7 +16,7 @@ A host that calls `PassThruConnect` with `ProtocolID.ISO15765` is therefore refu
 
 Point your tester at `Protocol.CAN` and frame each USDT message yourself: PCI byte first (single-frame / first-frame / consecutive-frame / flow-control), then the diagnostic payload. The simulator handles the ECU-side half of ISO-TP; the host plays the role the shim isn't playing.
 
-On real GM hardware ISO15765 is the more common choice because the J2534 driver hides ISO-TP from the tester. Here, with a passthrough shim, the host has to frame it itself.
+On real GM hardware ISO15765 is the more common choice because the J2534 driver hides ISO-TP from the tester. Here, with a passthrough shim, the host has to frame it itself. A future shim enhancement could add ISO15765 support transparently, without any changes to the simulator.
 
 ## What it does
 
