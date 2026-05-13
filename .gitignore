@@ -29,7 +29,6 @@ scripts/
 # Scratch / output
 *.cjs
 *.txt
-*.docx
 claude-context.md
 CLAUDE.md
 
