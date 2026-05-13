@@ -113,11 +113,20 @@ public partial class App : Application
     {
         // Auto-save the current bus to the LocalAppData config so the next
         // launch picks up the user's edits. Use the stored mainWindow reference
-        // rather than Current.MainWindow — WPF nulls the latter before OnExit fires.
+        // rather than Current.MainWindow - WPF nulls the latter before OnExit fires.
         mainWindow?.AutoSave();
 
-        if (pipeServer != null) await pipeServer.DisposeAsync();
-        if (Services is IDisposable d) d.Dispose();
+        // Async path is mandatory here: NamedPipeServer is IAsyncDisposable
+        // (no IDisposable). ServiceProvider.Dispose() walks its singletons
+        // and throws InvalidOperationException the moment it hits one that
+        // is IAsyncDisposable but not IDisposable. DisposeAsync handles both
+        // shapes correctly. The container disposes singletons in reverse
+        // construction order, which fans out cleanly to NamedPipeServer's
+        // StopAsync (idempotent) and BinReplayCoordinator.Dispose().
+        if (Services is IAsyncDisposable dAsync)
+            await dAsync.DisposeAsync();
+        else if (Services is IDisposable d)
+            d.Dispose();
         base.OnExit(e);
     }
 }
