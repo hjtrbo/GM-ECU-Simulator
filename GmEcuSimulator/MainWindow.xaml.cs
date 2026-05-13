@@ -223,6 +223,7 @@ public partial class MainWindow : Window
         LogRow.Height          = new System.Windows.GridLength(1, System.Windows.GridUnitType.Star);
         EditorSplitter.Visibility = Visibility.Collapsed;
         MainContentGrid.Margin = new Thickness(0);
+        SetTabHeaderVisible(Visibility.Collapsed);
     }
 
     private void OnMaximizeBusLogUnchecked(object sender, RoutedEventArgs e)
@@ -232,6 +233,17 @@ public partial class MainWindow : Window
         LogRow.Height          = new System.Windows.GridLength(320);
         EditorSplitter.Visibility = Visibility.Visible;
         MainContentGrid.Margin = new Thickness(14);
+        SetTabHeaderVisible(Visibility.Visible);
+    }
+
+    // The TabControl's tab strip is the named Border (PART_HeaderHost) at
+    // Grid.Row=0 inside the templated TabControl. Walking the template by
+    // name keeps the maximize behaviour independent of any reshuffling
+    // of the Border's children.
+    private void SetTabHeaderVisible(Visibility v)
+    {
+        if (BusLogTabControl.Template?.FindName("PART_HeaderHost", BusLogTabControl) is FrameworkElement hdr)
+            hdr.Visibility = v;
     }
 
     private void OnClearLogClicked(object sender, RoutedEventArgs e)

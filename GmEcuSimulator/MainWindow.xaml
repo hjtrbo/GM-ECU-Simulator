@@ -505,7 +505,7 @@
                     BorderBrush="{DynamicResource Border.SubtleBrush}"
                     BorderThickness="1"
                     CornerRadius="4">
-                <TabControl Margin="0">
+                <TabControl x:Name="BusLogTabControl" Margin="0">
                     <!-- Bus log tab -->
                     <TabItem Header="Bus log">
                         <DockPanel LastChildFill="True">

@@ -77,7 +77,8 @@
                             <RowDefinition Height="Auto"/>
                             <RowDefinition Height="*"/>
                         </Grid.RowDefinitions>
-                        <Border Grid.Row="0"
+                        <Border x:Name="PART_HeaderHost"
+                                Grid.Row="0"
                                 Background="{DynamicResource Bg.BaseBrush}"
                                 BorderBrush="{DynamicResource Border.SubtleBrush}"
                                 BorderThickness="0,0,0,1">
