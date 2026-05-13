@@ -84,10 +84,28 @@ public partial class App : Application
         bus.IdleSupervisor.Start();
 
         pipeServer = Services.GetRequiredService<NamedPipeServer>();
-        pipeServer.Start();
+
+        // Bind the IPC pipe to registration state. If the shim DLL isn't
+        // registered, no host can discover us through HKLM, so there's no
+        // point listening - and crucially, if a previous run left the
+        // shim registered and a host has it loaded, starting the pipe here
+        // would let that host connect even though the user has since
+        // unregistered. RegisterJ2534 / UnregisterJ2534 in MainViewModel
+        // drive Start / StopAsync from the buttons.
+        bool registered;
+        try { registered = J2534Registration.Check().IsRegistered; }
+        catch (Exception ex)
+        {
+            registered = false;
+            bus.LogDiagnostic?.Invoke($"J2534 registration probe failed: {ex.Message}; assuming unregistered");
+        }
+        if (registered)
+            pipeServer.Start();
+        else
+            bus.LogDiagnostic?.Invoke("J2534 not registered - IPC pipe not started; register from Tools to enable host connections");
 
         mainWindow = new MainWindow();
-        mainWindow.Bind(bus, replay);
+        mainWindow.Bind(bus, replay, pipeServer);
         mainWindow.Show();
     }
 

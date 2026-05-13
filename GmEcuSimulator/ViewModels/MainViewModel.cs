@@ -7,6 +7,7 @@ using System.Windows;
 using Common.Persistence;
 using Core.Bus;
 using Core.Ecu;
+using Core.Ipc;
 using Core.Persistence;
 using Core.Replay;
 using Microsoft.Win32;
@@ -17,6 +18,7 @@ public sealed class MainViewModel : NotifyPropertyChangedBase
 {
     private readonly VirtualBus bus;
     private readonly BinReplayCoordinator replay;
+    private readonly NamedPipeServer pipeServer;
     public ObservableCollection<EcuViewModel> Ecus { get; } = new();
     private EcuViewModel? selectedEcu;
     private string? currentFilePath;
@@ -45,10 +47,11 @@ public sealed class MainViewModel : NotifyPropertyChangedBase
     public RelayCommand UnregisterJ2534Command { get; }
     public RelayCommand ShowRegisteredDevicesCommand { get; }
 
-    public MainViewModel(VirtualBus bus, BinReplayCoordinator replay)
+    public MainViewModel(VirtualBus bus, BinReplayCoordinator replay, NamedPipeServer pipeServer)
     {
         this.bus = bus;
         this.replay = replay;
+        this.pipeServer = pipeServer;
         BinReplay = new BinReplayViewModel(replay, bus, OnBinReplayLoad, OnBinReplayUnload);
         Rebuild();
 
@@ -84,7 +87,7 @@ public sealed class MainViewModel : NotifyPropertyChangedBase
 
     public string WindowTitle => string.IsNullOrEmpty(CurrentFilePath)
         ? "GM ECU Simulator"
-        : $"GM ECU Simulator — {Path.GetFileName(CurrentFilePath)}";
+        : $"GM ECU Simulator - {Path.GetFileName(CurrentFilePath)}";
 
     public string StatusText
     {
@@ -150,7 +153,7 @@ public sealed class MainViewModel : NotifyPropertyChangedBase
         catch (Exception ex) { Error("Save failed", ex); }
     }
 
-    // Import is identical to Open but does not change CurrentFilePath —
+    // Import is identical to Open but does not change CurrentFilePath -
     // intent is "merge a profile in" without committing the working file.
     // For now we replace the bus state; future work could MERGE instead.
     private void Import()
@@ -222,7 +225,7 @@ public sealed class MainViewModel : NotifyPropertyChangedBase
     //
     // Writing HKLM\SOFTWARE\PassThruSupport.04.04 needs admin. The simulator
     // runs unelevated, so we shell out to the existing PowerShell scripts
-    // with Verb=runas — UAC prompts the user, the script does the registry
+    // with Verb=runas - UAC prompts the user, the script does the registry
     // work, then exits. Reading the registry (the diagnostic / status check)
     // doesn't need elevation, so List.ps1 runs without UAC.
 
@@ -251,14 +254,24 @@ public sealed class MainViewModel : NotifyPropertyChangedBase
         return Path.Combine(exeDir, "Installer", name);
     }
 
-    // async void is only acceptable on event/command handlers — this is one.
+    // async void is only acceptable on event/command handlers - this is one.
     private async void RegisterJ2534()
     {
         StatusText = "Awaiting UAC approval…";
         var (ok, canceled) = await RunPwshAsync(ScriptPath("Register.ps1"));
-        StatusText = ok        ? "Registered. Restart your J2534 host to pick up the new device."
-                   : canceled  ? "Registration cancelled (UAC declined)."
-                   :             "Registration failed — see the PowerShell window for details.";
+        if (ok)
+        {
+            // Open the IPC pipe so hosts that just discovered us through
+            // HKLM can actually connect. Start is idempotent.
+            try { pipeServer.Start(); }
+            catch (Exception ex) { bus.LogDiagnostic?.Invoke($"Pipe server Start after Register failed: {ex.Message}"); }
+            StatusText = "Registered. Restart your J2534 host to pick up the new device.";
+        }
+        else
+        {
+            StatusText = canceled ? "Registration cancelled (UAC declined)."
+                                  : "Registration failed - see the PowerShell window for details.";
+        }
         RefreshJ2534Status();
     }
 
@@ -266,9 +279,22 @@ public sealed class MainViewModel : NotifyPropertyChangedBase
     {
         StatusText = "Awaiting UAC approval…";
         var (ok, canceled) = await RunPwshAsync(ScriptPath("Unregister.ps1"));
-        StatusText = ok        ? "Unregistered."
-                   : canceled  ? "Unregister cancelled (UAC declined)."
-                   :             "Unregister failed — see the PowerShell window for details.";
+        if (ok)
+        {
+            // Tear the pipe down. Any host currently connected sees a broken
+            // pipe on its next IPC frame and disconnects; new PassThruOpen
+            // calls fail because nothing is listening. Without this the
+            // host stayed connected and kept streaming data even after the
+            // registry write claimed we were gone.
+            try { await pipeServer.StopAsync(); }
+            catch (Exception ex) { bus.LogDiagnostic?.Invoke($"Pipe server Stop after Unregister failed: {ex.Message}"); }
+            StatusText = "Unregistered.";
+        }
+        else
+        {
+            StatusText = canceled ? "Unregister cancelled (UAC declined)."
+                                  : "Unregister failed - see the PowerShell window for details.";
+        }
         RefreshJ2534Status();
     }
 
@@ -298,14 +324,8 @@ public sealed class MainViewModel : NotifyPropertyChangedBase
     {
         try
         {
-            const string key32 = @"SOFTWARE\WOW6432Node\PassThruSupport.04.04\GmEcuSim";
-            const string key64 = @"SOFTWARE\PassThruSupport.04.04\GmEcuSim";
-            using var k32 = Microsoft.Win32.Registry.LocalMachine.OpenSubKey(key32);
-            using var k64 = Microsoft.Win32.Registry.LocalMachine.OpenSubKey(key64);
-            var has32 = k32?.GetValue("FunctionLibrary") is string p32 && File.Exists(p32);
-            var has64 = k64?.GetValue("FunctionLibrary") is string p64 && File.Exists(p64);
-
-            J2534Status = (has32, has64) switch
+            var s = J2534Registration.Check();
+            J2534Status = (s.Has32, s.Has64) switch
             {
                 (true, true) => "✓ Registered (32-bit + 64-bit)",
                 (true, false) => "✓ Registered (32-bit only)",
@@ -346,7 +366,7 @@ public sealed class MainViewModel : NotifyPropertyChangedBase
                 }
                 catch (Win32Exception wex) when (wex.NativeErrorCode == 1223)
                 {
-                    // ERROR_CANCELLED — user dismissed UAC.
+                    // ERROR_CANCELLED - user dismissed UAC.
                     return (false, true);
                 }
                 catch (Exception ex)
@@ -419,7 +439,7 @@ public sealed class MainViewModel : NotifyPropertyChangedBase
         }
         catch
         {
-            // Auto-save failure on shutdown shouldn't crash the app — the user's
+            // Auto-save failure on shutdown shouldn't crash the app - the user's
             // explicit File>Save still works. A clean retry will save on next exit.
         }
     }

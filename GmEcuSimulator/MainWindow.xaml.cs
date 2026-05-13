@@ -32,7 +32,7 @@ public partial class MainWindow : Window
             Command = new RelayCommand(() => vm?.SaveAsCommand.Execute(null)) });
     }
 
-    // General-purpose log sink. Routed to the RIGHT pane (IpcLogBox) — used
+    // General-purpose log sink. Routed to the RIGHT pane (IpcLogBox) - used
     // for control-plane events: pipe connect/disconnect, J2534 calls received
     // by the shim, [periodic] register/unregister diagnostics, auto-load
     // failures, etc. Gated by the master "Log traffic" checkbox so neither
@@ -44,7 +44,7 @@ public partial class MainWindow : Window
     }
 
     // Frame-level traffic sink → LEFT pane (LogBox). Same master gate as
-    // AppendLog — the checkbox controls both panes together.
+    // AppendLog - the checkbox controls both panes together.
     public static void AppendBusFrame(string line)
     {
         if (!logTraffic) return;
@@ -52,7 +52,7 @@ public partial class MainWindow : Window
     }
 
     // High-prominence status update routed to the bottom status bar. Used for
-    // events the user should see without having to look at any log pane —
+    // events the user should see without having to look at any log pane -
     // currently just rejected non-CAN connect attempts. Always shown, not
     // gated by Log traffic.
     public static void SetStatus(string line)
@@ -103,9 +103,9 @@ public partial class MainWindow : Window
         IpcLogBox.Clear();
     }
 
-    public void Bind(VirtualBus bus, Core.Replay.BinReplayCoordinator replay)
+    public void Bind(VirtualBus bus, Core.Replay.BinReplayCoordinator replay, Core.Ipc.NamedPipeServer pipeServer)
     {
-        vm = new MainViewModel(bus, replay);
+        vm = new MainViewModel(bus, replay, pipeServer);
         DataContext = vm;
         bus.NodesChanged += (_, _) => Dispatcher.BeginInvoke(() => vm?.Rebuild());
 
