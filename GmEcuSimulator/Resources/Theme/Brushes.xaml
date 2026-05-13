@@ -2,23 +2,19 @@
                     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
 
     <!--
-        Brushes.xaml is the stable indirection between control styles and
-        whatever palette is currently active. It merges ONE palette file
-        (the default startup palette) and re-exports its brushes.
+        DELIBERATELY EMPTY.
 
-        At runtime, ThemeManager.Apply does NOT swap this merge - instead
-        it mutates the live brush instances in place (SolidColorBrush.Color
-        is a DependencyProperty, so every templated control re-renders
-        without a parse-time re-merge). This keeps every {StaticResource ...}
-        reference in control templates working as-is.
+        Earlier this file merged a palette so brushes were resolvable at
+        parse time. Now every brush reference in the codebase uses
+        {DynamicResource ...} (deferred resolution), and ThemeManager
+        installs the active palette directly into Application.Resources
+        at startup as the SOLE source of brush instances.
 
-        To add a new palette, drop a new .xaml under Theme/Palettes/ that
-        declares the same key set, then register its name in
-        ThemeManager.AvailablePalettes.
+        Keeping this file empty (rather than deleting it) lets all the
+        control dictionaries keep their existing merge of Brushes.xaml
+        without churning every file. Brush hot-swap works because there's
+        no shadowed copy in a nested merge to keep consumers stuck on the
+        old palette.
     -->
-
-    <ResourceDictionary.MergedDictionaries>
-        <ResourceDictionary Source="/Resources/Theme/Palettes/Midnight.xaml"/>
-    </ResourceDictionary.MergedDictionaries>
 
 </ResourceDictionary>

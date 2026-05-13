@@ -4,6 +4,7 @@ using Core.Bus;
 using Core.Ipc;
 using Core.Persistence;
 using Core.Replay;
+using GmEcuSimulator.Theming;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace GmEcuSimulator;
@@ -17,6 +18,14 @@ public partial class App : Application
     protected override void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
+
+        // Install the active palette into Application.Resources BEFORE any
+        // window is constructed - that way DynamicResource lookups in the
+        // first MainWindow already resolve through the swap dictionary.
+        // Without this the initial window picks up Theme.xaml's hard-coded
+        // default and Apply() has no installed slot to replace.
+        ThemeManager.RefreshAvailable();
+        ThemeManager.InstallInitialPalette();
 
         var services = new ServiceCollection();
         services.AddSingleton<VirtualBus>();

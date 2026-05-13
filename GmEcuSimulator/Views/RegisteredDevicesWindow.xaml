@@ -1,4 +1,4 @@
-<Window x:Class="GmEcuSimulator.Views.RegisteredDevicesWindow"
+﻿<Window x:Class="GmEcuSimulator.Views.RegisteredDevicesWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:shell="clr-namespace:System.Windows.Shell;assembly=PresentationFramework"
@@ -11,7 +11,7 @@
     <DockPanel LastChildFill="True">
 
         <!-- Custom titlebar (matches the main shell) -->
-        <Grid DockPanel.Dock="Top" Background="{StaticResource Chrome.GradientBrush}" Height="32">
+        <Grid DockPanel.Dock="Top" Background="{DynamicResource Chrome.GradientBrush}" Height="32">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="*"/>
                 <ColumnDefinition Width="Auto"/>
@@ -35,8 +35,8 @@
 
         <!-- Footer with close button -->
         <Border DockPanel.Dock="Bottom"
-                Background="{StaticResource Chrome.BgBrush}"
-                BorderBrush="{StaticResource Border.SubtleBrush}"
+                Background="{DynamicResource Chrome.BgBrush}"
+                BorderBrush="{DynamicResource Border.SubtleBrush}"
                 BorderThickness="0,1,0,0"
                 Padding="14,10">
             <Button HorizontalAlignment="Right"
@@ -51,7 +51,7 @@
             <StackPanel>
                 <TextBlock Text="J2534 device registry"
                            Style="{StaticResource Text.Subtitle}"/>
-                <TextBlock Text="Output of Installer\List.ps1 — every J2534 PassThru device registered on this machine, both bitnesses. Read-only diagnostic."
+                <TextBlock Text="Output of Installer\List.ps1 â€” every J2534 PassThru device registered on this machine, both bitnesses. Read-only diagnostic."
                            Style="{StaticResource Text.Caption}"
                            TextWrapping="Wrap"
                            Margin="0,4,0,0"/>
@@ -61,7 +61,7 @@
         <!-- Log output -->
         <Border Margin="14,0,14,12"
                 CornerRadius="4"
-                BorderBrush="{StaticResource Border.SubtleBrush}"
+                BorderBrush="{DynamicResource Border.SubtleBrush}"
                 BorderThickness="1"
                 ClipToBounds="True">
             <TextBox x:Name="OutputBox"

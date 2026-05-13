@@ -1,4 +1,4 @@
-<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+﻿<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
                     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
 
     <ResourceDictionary.MergedDictionaries>
@@ -10,14 +10,14 @@
     <Style TargetType="TextBox">
         <Setter Property="FontFamily" Value="{StaticResource Font.Sans}"/>
         <Setter Property="FontSize"   Value="{StaticResource Font.Size.Body}"/>
-        <Setter Property="Foreground" Value="{StaticResource Text.PrimaryBrush}"/>
-        <Setter Property="Background" Value="{StaticResource Bg.SurfaceBrush}"/>
-        <Setter Property="BorderBrush" Value="{StaticResource Border.StrongBrush}"/>
+        <Setter Property="Foreground" Value="{DynamicResource Text.PrimaryBrush}"/>
+        <Setter Property="Background" Value="{DynamicResource Bg.SurfaceBrush}"/>
+        <Setter Property="BorderBrush" Value="{DynamicResource Border.StrongBrush}"/>
         <Setter Property="BorderThickness" Value="1"/>
         <Setter Property="Padding" Value="8,5"/>
         <Setter Property="MinHeight" Value="28"/>
-        <Setter Property="CaretBrush" Value="{StaticResource Accent.PrimaryBrush}"/>
-        <Setter Property="SelectionBrush" Value="{StaticResource Accent.SubtleBrush}"/>
+        <Setter Property="CaretBrush" Value="{DynamicResource Accent.PrimaryBrush}"/>
+        <Setter Property="SelectionBrush" Value="{DynamicResource Accent.SubtleBrush}"/>
         <Setter Property="SelectionOpacity" Value="0.85"/>
         <Setter Property="SnapsToDevicePixels" Value="True"/>
         <Setter Property="VerticalContentAlignment" Value="Center"/>
@@ -40,18 +40,18 @@
                     </Border>
                     <ControlTemplate.Triggers>
                         <Trigger Property="IsMouseOver" Value="True">
-                            <Setter TargetName="Bd" Property="BorderBrush" Value="{StaticResource Accent.SubtleBrush}"/>
+                            <Setter TargetName="Bd" Property="BorderBrush" Value="{DynamicResource Accent.SubtleBrush}"/>
                         </Trigger>
                         <Trigger Property="IsKeyboardFocusWithin" Value="True">
-                            <Setter TargetName="Bd" Property="BorderBrush" Value="{StaticResource Border.FocusBrush}"/>
+                            <Setter TargetName="Bd" Property="BorderBrush" Value="{DynamicResource Border.FocusBrush}"/>
                         </Trigger>
                         <Trigger Property="IsReadOnly" Value="True">
-                            <Setter TargetName="Bd" Property="Background" Value="{StaticResource Mono.BgBrush}"/>
-                            <Setter TargetName="Bd" Property="BorderBrush" Value="{StaticResource Border.SubtleBrush}"/>
+                            <Setter TargetName="Bd" Property="Background" Value="{DynamicResource Mono.BgBrush}"/>
+                            <Setter TargetName="Bd" Property="BorderBrush" Value="{DynamicResource Border.SubtleBrush}"/>
                         </Trigger>
                         <Trigger Property="IsEnabled" Value="False">
-                            <Setter TargetName="Bd" Property="Background" Value="{StaticResource Bg.DisabledBrush}"/>
-                            <Setter Property="Foreground" Value="{StaticResource Text.DisabledBrush}"/>
+                            <Setter TargetName="Bd" Property="Background" Value="{DynamicResource Bg.DisabledBrush}"/>
+                            <Setter Property="Foreground" Value="{DynamicResource Text.DisabledBrush}"/>
                         </Trigger>
                     </ControlTemplate.Triggers>
                 </ControlTemplate>
@@ -63,8 +63,8 @@
     <Style x:Key="TextBox.Log" TargetType="TextBox" BasedOn="{StaticResource {x:Type TextBox}}">
         <Setter Property="FontFamily" Value="{StaticResource Font.Mono}"/>
         <Setter Property="FontSize"   Value="{StaticResource Font.Size.Mono}"/>
-        <Setter Property="Foreground" Value="{StaticResource Mono.TextBrush}"/>
-        <Setter Property="Background" Value="{StaticResource Mono.BgBrush}"/>
+        <Setter Property="Foreground" Value="{DynamicResource Mono.TextBrush}"/>
+        <Setter Property="Background" Value="{DynamicResource Mono.BgBrush}"/>
         <Setter Property="BorderThickness" Value="0"/>
         <Setter Property="Padding" Value="8,6"/>
         <Setter Property="VerticalContentAlignment" Value="Top"/>
@@ -104,7 +104,7 @@
                 </Grid.ColumnDefinitions>
                 <Path x:Name="Arrow" Grid.Column="1"
                       Data="M 0 0 L 4 4 L 8 0 Z"
-                      Fill="{StaticResource Text.SecondaryBrush}"
+                      Fill="{DynamicResource Text.SecondaryBrush}"
                       Width="8" Height="4"
                       HorizontalAlignment="Center"
                       VerticalAlignment="Center"
@@ -116,9 +116,9 @@
     <Style TargetType="ComboBox">
         <Setter Property="FontFamily" Value="{StaticResource Font.Sans}"/>
         <Setter Property="FontSize"   Value="{StaticResource Font.Size.Body}"/>
-        <Setter Property="Foreground" Value="{StaticResource Text.PrimaryBrush}"/>
-        <Setter Property="Background" Value="{StaticResource Bg.SurfaceBrush}"/>
-        <Setter Property="BorderBrush" Value="{StaticResource Border.StrongBrush}"/>
+        <Setter Property="Foreground" Value="{DynamicResource Text.PrimaryBrush}"/>
+        <Setter Property="Background" Value="{DynamicResource Bg.SurfaceBrush}"/>
+        <Setter Property="BorderBrush" Value="{DynamicResource Border.StrongBrush}"/>
         <Setter Property="BorderThickness" Value="1"/>
         <Setter Property="Padding" Value="8,4"/>
         <Setter Property="MinHeight" Value="28"/>
@@ -157,8 +157,8 @@
                                     SnapsToDevicePixels="True"
                                     MinWidth="{TemplateBinding ActualWidth}"
                                     MaxHeight="{TemplateBinding MaxDropDownHeight}"
-                                    Background="{StaticResource Bg.ElevatedBrush}"
-                                    BorderBrush="{StaticResource Border.StrongBrush}"
+                                    Background="{DynamicResource Bg.ElevatedBrush}"
+                                    BorderBrush="{DynamicResource Border.StrongBrush}"
                                     BorderThickness="1"
                                     CornerRadius="3"
                                     Margin="0,2,0,0">
@@ -171,14 +171,14 @@
                     </Grid>
                     <ControlTemplate.Triggers>
                         <Trigger Property="IsMouseOver" Value="True">
-                            <Setter Property="BorderBrush" Value="{StaticResource Accent.SubtleBrush}"/>
+                            <Setter Property="BorderBrush" Value="{DynamicResource Accent.SubtleBrush}"/>
                         </Trigger>
                         <Trigger Property="IsKeyboardFocusWithin" Value="True">
-                            <Setter Property="BorderBrush" Value="{StaticResource Border.FocusBrush}"/>
+                            <Setter Property="BorderBrush" Value="{DynamicResource Border.FocusBrush}"/>
                         </Trigger>
                         <Trigger Property="IsEnabled" Value="False">
-                            <Setter Property="Background" Value="{StaticResource Bg.DisabledBrush}"/>
-                            <Setter Property="Foreground" Value="{StaticResource Text.DisabledBrush}"/>
+                            <Setter Property="Background" Value="{DynamicResource Bg.DisabledBrush}"/>
+                            <Setter Property="Foreground" Value="{DynamicResource Text.DisabledBrush}"/>
                         </Trigger>
                     </ControlTemplate.Triggers>
                 </ControlTemplate>
@@ -188,7 +188,7 @@
             <Setter.Value>
                 <Style TargetType="ComboBoxItem">
                     <Setter Property="Padding" Value="8,5"/>
-                    <Setter Property="Foreground" Value="{StaticResource Text.PrimaryBrush}"/>
+                    <Setter Property="Foreground" Value="{DynamicResource Text.PrimaryBrush}"/>
                     <Setter Property="Background" Value="Transparent"/>
                     <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
                     <Setter Property="Template">
@@ -204,10 +204,10 @@
                                 </Border>
                                 <ControlTemplate.Triggers>
                                     <Trigger Property="IsHighlighted" Value="True">
-                                        <Setter TargetName="Bd" Property="Background" Value="{StaticResource Bg.HoverBrush}"/>
+                                        <Setter TargetName="Bd" Property="Background" Value="{DynamicResource Bg.HoverBrush}"/>
                                     </Trigger>
                                     <Trigger Property="IsSelected" Value="True">
-                                        <Setter TargetName="Bd" Property="Background" Value="{StaticResource Accent.SubtleBrush}"/>
+                                        <Setter TargetName="Bd" Property="Background" Value="{DynamicResource Accent.SubtleBrush}"/>
                                     </Trigger>
                                 </ControlTemplate.Triggers>
                             </ControlTemplate>
@@ -233,7 +233,7 @@
     <Style TargetType="Label">
         <Setter Property="FontFamily" Value="{StaticResource Font.Sans}"/>
         <Setter Property="FontSize"   Value="{StaticResource Font.Size.Body}"/>
-        <Setter Property="Foreground" Value="{StaticResource Text.SecondaryBrush}"/>
+        <Setter Property="Foreground" Value="{DynamicResource Text.SecondaryBrush}"/>
         <Setter Property="Padding"    Value="0,5,10,0"/>
         <Setter Property="HorizontalContentAlignment" Value="Right"/>
         <Setter Property="VerticalContentAlignment" Value="Center"/>
@@ -241,7 +241,7 @@
 
     <!-- Separator: thin divider on the divider colour. -->
     <Style TargetType="Separator">
-        <Setter Property="Background" Value="{StaticResource Border.DividerBrush}"/>
+        <Setter Property="Background" Value="{DynamicResource Border.DividerBrush}"/>
         <Setter Property="Height" Value="1"/>
         <Setter Property="Margin" Value="0,4"/>
     </Style>
