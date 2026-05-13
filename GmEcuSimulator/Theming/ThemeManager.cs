@@ -40,12 +40,14 @@ public static class ThemeManager
 
     private static readonly (string Name, string Category)[] BuiltIns =
     {
-        ("Midnight",  CategoryDark),
-        ("Graphite",  CategoryDark),
-        ("Solarized", CategoryDark),
-        ("Tokyo",     CategoryDark),
-        ("Daylight",  CategoryLight),
-        ("Frost",     CategoryLight),
+        ("Midnight",     CategoryDark),
+        ("MidnightSoft", CategoryDark),
+        ("Graphite",     CategoryDark),
+        ("GraphiteSoft", CategoryDark),
+        ("Solarized",    CategoryDark),
+        ("Tokyo",        CategoryDark),
+        ("Daylight",     CategoryLight),
+        ("Frost",        CategoryLight),
     };
 
     public static IReadOnlyList<PaletteEntry> AvailablePalettes { get; private set; } = Array.Empty<PaletteEntry>();

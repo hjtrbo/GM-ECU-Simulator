@@ -1,0 +1,89 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <!--
+        MIDNIGHT-SOFT  -  test variant of Midnight.
+        Identical to Midnight except Text.Primary and Mono.Text are dropped
+        from near-white to a soft off-white. Reduces eye-strain on the
+        deepest Bg.Base / Mono.Bg surfaces; lighter interactive surfaces
+        (buttons / Bg.Hover etc.) keep the same brush so their contrast
+        ratio is unchanged. Compare side-by-side with Midnight to decide.
+    -->
+
+    <Color x:Key="Bg.Base">#14171F</Color>
+    <Color x:Key="Bg.Surface">#1A1E29</Color>
+    <Color x:Key="Bg.Elevated">#232838</Color>
+    <Color x:Key="Bg.Hover">#2A3045</Color>
+    <Color x:Key="Bg.Active">#313858</Color>
+    <Color x:Key="Bg.Selected">#1E3A5F</Color>
+    <Color x:Key="Bg.Disabled">#1F2330</Color>
+    <Color x:Key="Border.Subtle">#262C3A</Color>
+    <Color x:Key="Border.Strong">#3A4256</Color>
+    <Color x:Key="Border.Divider">#20242F</Color>
+    <Color x:Key="Text.Primary">#BFC4D4</Color>
+    <Color x:Key="Text.Secondary">#9CA3B7</Color>
+    <Color x:Key="Text.Tertiary">#6B7186</Color>
+    <Color x:Key="Text.Disabled">#4A4F60</Color>
+    <Color x:Key="Text.Inverse">#0B0E14</Color>
+    <Color x:Key="Accent.Primary">#2D80E6</Color>
+    <Color x:Key="Accent.Hover">#4A95EF</Color>
+    <Color x:Key="Accent.Active">#1E6BC8</Color>
+    <Color x:Key="Accent.Subtle">#1B3654</Color>
+    <Color x:Key="Status.Success">#5BC289</Color>
+    <Color x:Key="Status.Success.Subtle">#1F3A2C</Color>
+    <Color x:Key="Status.Warning">#E6B547</Color>
+    <Color x:Key="Status.Warning.Subtle">#3D3320</Color>
+    <Color x:Key="Status.Error">#E25C5C</Color>
+    <Color x:Key="Status.Error.Subtle">#3B2125</Color>
+    <Color x:Key="Status.Info">#2D80E6</Color>
+    <Color x:Key="Mono.Bg">#0F1219</Color>
+    <Color x:Key="Mono.Text">#AFB6C5</Color>
+    <Color x:Key="Mono.Dim">#6B7186</Color>
+    <Color x:Key="Chrome.Bg">#10131B</Color>
+    <Color x:Key="Chrome.Border">#262C3A</Color>
+
+    <SolidColorBrush x:Key="Bg.BaseBrush"      Color="#14171F"/>
+    <SolidColorBrush x:Key="Bg.SurfaceBrush"   Color="#1A1E29"/>
+    <SolidColorBrush x:Key="Bg.ElevatedBrush"  Color="#232838"/>
+    <SolidColorBrush x:Key="Bg.HoverBrush"     Color="#2A3045"/>
+    <SolidColorBrush x:Key="Bg.ActiveBrush"    Color="#313858"/>
+    <SolidColorBrush x:Key="Bg.SelectedBrush"  Color="#1E3A5F"/>
+    <SolidColorBrush x:Key="Bg.DisabledBrush"  Color="#1F2330"/>
+
+    <SolidColorBrush x:Key="Border.SubtleBrush"   Color="#262C3A"/>
+    <SolidColorBrush x:Key="Border.StrongBrush"   Color="#3A4256"/>
+    <SolidColorBrush x:Key="Border.DividerBrush"  Color="#20242F"/>
+    <SolidColorBrush x:Key="Border.FocusBrush"    Color="#2D80E6"/>
+
+    <SolidColorBrush x:Key="Text.PrimaryBrush"    Color="#BFC4D4"/>
+    <SolidColorBrush x:Key="Text.SecondaryBrush"  Color="#9CA3B7"/>
+    <SolidColorBrush x:Key="Text.TertiaryBrush"   Color="#6B7186"/>
+    <SolidColorBrush x:Key="Text.DisabledBrush"   Color="#4A4F60"/>
+    <SolidColorBrush x:Key="Text.InverseBrush"    Color="#0B0E14"/>
+
+    <SolidColorBrush x:Key="Accent.PrimaryBrush"  Color="#2D80E6"/>
+    <SolidColorBrush x:Key="Accent.HoverBrush"    Color="#4A95EF"/>
+    <SolidColorBrush x:Key="Accent.ActiveBrush"   Color="#1E6BC8"/>
+    <SolidColorBrush x:Key="Accent.SubtleBrush"   Color="#1B3654"/>
+
+    <SolidColorBrush x:Key="Status.SuccessBrush"         Color="#5BC289"/>
+    <SolidColorBrush x:Key="Status.SuccessSubtleBrush"   Color="#1F3A2C"/>
+    <SolidColorBrush x:Key="Status.WarningBrush"         Color="#E6B547"/>
+    <SolidColorBrush x:Key="Status.WarningSubtleBrush"   Color="#3D3320"/>
+    <SolidColorBrush x:Key="Status.ErrorBrush"           Color="#E25C5C"/>
+    <SolidColorBrush x:Key="Status.ErrorSubtleBrush"     Color="#3B2125"/>
+    <SolidColorBrush x:Key="Status.InfoBrush"            Color="#2D80E6"/>
+
+    <SolidColorBrush x:Key="Mono.BgBrush"    Color="#0F1219"/>
+    <SolidColorBrush x:Key="Mono.TextBrush"  Color="#AFB6C5"/>
+    <SolidColorBrush x:Key="Mono.DimBrush"   Color="#6B7186"/>
+
+    <SolidColorBrush x:Key="Chrome.BgBrush"      Color="#10131B"/>
+    <SolidColorBrush x:Key="Chrome.BorderBrush"  Color="#262C3A"/>
+
+    <LinearGradientBrush x:Key="Chrome.GradientBrush" StartPoint="0,0" EndPoint="0,1">
+        <GradientStop Offset="0" Color="#10131B"/>
+        <GradientStop Offset="1" Color="#14171F"/>
+    </LinearGradientBrush>
+
+</ResourceDictionary>
