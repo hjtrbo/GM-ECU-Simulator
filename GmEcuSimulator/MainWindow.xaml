@@ -157,6 +157,10 @@
                               Command="{Binding ShowRegisteredDevicesCommand}"
                               ToolTip="Lists every J2534 device on this machine in both registry views. Read-only — no UAC."/>
                 </MenuItem>
+                <MenuItem Header="_View">
+                    <MenuItem Header="_Theme" x:Name="ThemeMenu"
+                              ToolTip="Switch the colour palette. Drop your own .xaml palette into %APPDATA%\GmEcuSimulator\Palettes\ to see it listed here."/>
+                </MenuItem>
             </Menu>
         </Border>
 

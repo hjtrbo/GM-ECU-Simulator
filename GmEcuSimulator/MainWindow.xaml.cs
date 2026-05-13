@@ -1,9 +1,12 @@
+using System.Diagnostics;
 using System.Windows;
+using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Shapes;
 using System.Windows.Threading;
 using Core.Bus;
+using GmEcuSimulator.Theming;
 using GmEcuSimulator.ViewModels;
 
 namespace GmEcuSimulator;
@@ -35,6 +38,58 @@ public partial class MainWindow : Window
 
         // Swap the maximize / restore glyph when WindowState flips.
         StateChanged += (_, _) => UpdateMaximizeIcon();
+
+        // Populate the View > Theme submenu from ThemeManager and keep its
+        // check-marks in sync when the active palette changes.
+        ThemeManager.RefreshAvailable();
+        RebuildThemeMenu();
+        ThemeManager.PaletteChanged += _ => Dispatcher.BeginInvoke(RebuildThemeMenu);
+    }
+
+    // Rebuilds View > Theme. Each palette is an IsCheckable item; selecting
+    // one calls ThemeManager.Apply, which mutates the live brushes - we don't
+    // need to do anything else to refresh the UI.
+    private void RebuildThemeMenu()
+    {
+        ThemeMenu.Items.Clear();
+        foreach (var p in ThemeManager.AvailablePalettes)
+        {
+            var mi = new MenuItem
+            {
+                Header = p.IsUser ? $"{p.DisplayName}  (user)" : p.DisplayName,
+                IsCheckable = true,
+                IsChecked = string.Equals(p.Name, ThemeManager.ActivePalette, StringComparison.OrdinalIgnoreCase),
+                StaysOpenOnClick = false,
+            };
+            var paletteName = p.Name;
+            mi.Click += (_, _) => ThemeManager.Apply(paletteName);
+            ThemeMenu.Items.Add(mi);
+        }
+
+        ThemeMenu.Items.Add(new Separator());
+
+        var openFolder = new MenuItem { Header = "Open palettes folder…" };
+        openFolder.Click += (_, _) =>
+        {
+            try
+            {
+                Process.Start(new ProcessStartInfo
+                {
+                    FileName = ThemeManager.UserPaletteDirectory,
+                    UseShellExecute = true,
+                });
+            }
+            catch { /* explorer launch failure is non-fatal */ }
+        };
+        ThemeMenu.Items.Add(openFolder);
+
+        var reload = new MenuItem { Header = "Reload palettes from disk" };
+        reload.Click += (_, _) =>
+        {
+            ThemeManager.RefreshAvailable();
+            RebuildThemeMenu();
+        };
+        ThemeMenu.Items.Add(reload);
     }
 
     // ---- Custom-chrome window controls ----

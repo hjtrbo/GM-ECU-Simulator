@@ -2,13 +2,17 @@
                     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
 
     <!--
-        Master theme. Merged once from App.xaml. The merge order matters —
-        Palette feeds Brushes, Brushes and Typography feed every control style.
+        Master theme. Merged once from App.xaml. The merge order matters -
+        Brushes (whose merged palette decides the colour set) and Typography
+        feed every control style below.
+
+        To change the startup palette, edit Brushes.xaml's merge. To switch at
+        runtime, call ThemeManager.Apply (which mutates the live brush
+        instances declared by the active palette file).
     -->
 
     <ResourceDictionary.MergedDictionaries>
         <!-- Foundations -->
-        <ResourceDictionary Source="/Resources/Theme/Palette.xaml"/>
         <ResourceDictionary Source="/Resources/Theme/Brushes.xaml"/>
         <ResourceDictionary Source="/Resources/Theme/Typography.xaml"/>
         <ResourceDictionary Source="/Resources/Theme/Icons.xaml"/>
