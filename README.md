@@ -12,7 +12,7 @@ The **PassThruShim is deliberately a thin frame-forwarder**. It does not impleme
 
 In other words, the role mapping is: PassThruShim plays the **J2534 device** (Tactrix / Mongoose firmware in the real world), and the simulator plays the **ECU** sitting on the far side of the bus. ISO15765 is a J2534-device concern, not an ECU concern, so the gap lives in the shim, not in the simulator.
 
-A host that calls `PassThruConnect` with `ProtocolID.ISO15765` is therefore refused end-to-end: the request is forwarded through the shim, the simulator returns `ERR_INVALID_PROTOCOL_ID`, the J2534 calls log records the rejection, and the status bar names the rejected protocol so a third-party user can see why their connect failed.
+A host that calls `PassThruConnect` with `ProtocolID.ISO15765` is therefore refused end-to-end: the request is forwarded through the shim, the simulator returns `ERR_INVALID_PROTOCOL_ID`, the J2534 calls log records the rejection, and the status bar names the rejected protocol so a third-party user can see why their connection failed.
 
 Point your tester at `Protocol.CAN` and frame each USDT message yourself: PCI byte first (single-frame / first-frame / consecutive-frame / flow-control), then the diagnostic payload. The simulator handles the ECU-side half of ISO-TP; the host plays the role the shim isn't playing.
 
