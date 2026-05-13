@@ -175,7 +175,7 @@ public partial class MainWindow : Window
     // EditorRow.MinHeight=270 in XAML so the user can't drag the splitter
     // up and squash the editor cards. Maximize bypasses that floor by
     // zeroing MinHeight here; the Unchecked path restores both.
-    private const double EditorMinHeightNormal = 270;
+    private const double EditorMinHeightNormal = 290;
 
     private void OnMaximizeBusLogChecked(object sender, RoutedEventArgs e)
     {

@@ -198,7 +198,7 @@
                 <!-- EditorRow MinHeight is the editor area's floor when the
                      user drags the horizontal splitter up. Maximize toggles
                      it to 0 from code-behind so the row can fully collapse. -->
-                <RowDefinition x:Name="EditorRow" Height="*" MinHeight="270"/>
+                <RowDefinition x:Name="EditorRow" Height="*" MinHeight="290"/>
                 <RowDefinition Height="Auto"/>
                 <RowDefinition x:Name="LogRow"    Height="320" MinHeight="80"/>
             </Grid.RowDefinitions>
