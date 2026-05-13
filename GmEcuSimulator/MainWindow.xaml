@@ -10,7 +10,7 @@
         xmlns:shell="clr-namespace:System.Windows.Shell;assembly=PresentationFramework"
         Title="{Binding WindowTitle, FallbackValue='GM ECU Simulator'}"
         Height="900" Width="1280"
-        MinHeight="640" MinWidth="960"
+        MinHeight="720" MinWidth="960"
         WindowStartupLocation="CenterScreen"
         Style="{StaticResource Window.AppShell}">
 
@@ -245,50 +245,61 @@
                                  Background="Transparent"
                                  Padding="0"/>
 
-                        <!-- Selected-ECU inspector -->
+                        <!-- Selected-ECU inspector.
+                             MaxHeight caps the panel so it cannot grow into
+                             the Add/Remove buttons below; the inner
+                             ScrollViewer surfaces a vertical scrollbar if
+                             the contained fields ever exceed that cap. -->
                         <Border Grid.Row="2" Margin="0,12,0,0"
                                 Background="{DynamicResource Bg.ElevatedBrush}"
                                 BorderBrush="{DynamicResource Border.SubtleBrush}"
                                 BorderThickness="1"
                                 CornerRadius="3"
                                 Padding="10"
+                                MaxHeight="280"
                                 DataContext="{Binding SelectedEcu}"
                                 Visibility="{Binding Converter={StaticResource BoolToVis}, FallbackValue=Collapsed, ConverterParameter=NotNull}">
-                            <StackPanel>
-                                <TextBlock Text="SELECTED" Style="{StaticResource Text.SectionHeader}" Margin="0,0,0,8"/>
-                                <Grid>
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="Auto" MinWidth="72"/>
-                                        <ColumnDefinition Width="*"/>
-                                    </Grid.ColumnDefinitions>
-                                    <Grid.RowDefinitions>
-                                        <RowDefinition Height="Auto"/>
-                                        <RowDefinition Height="Auto"/>
-                                        <RowDefinition Height="Auto"/>
-                                        <RowDefinition Height="Auto"/>
-                                        <RowDefinition Height="Auto"/>
-                                    </Grid.RowDefinitions>
-                                    <Label   Grid.Row="0" Grid.Column="0" Content="Name"/>
-                                    <TextBox Grid.Row="0" Grid.Column="1" Margin="0,2"
-                                             Text="{Binding Name, UpdateSourceTrigger=PropertyChanged}"/>
-                                    <Label   Grid.Row="1" Grid.Column="0" Content="Req CAN"/>
-                                    <TextBox Grid.Row="1" Grid.Column="1" Margin="0,2"
-                                             Text="{Binding PhysicalRequestCanIdHex, UpdateSourceTrigger=LostFocus}"
-                                             FontFamily="{StaticResource Font.Mono}"/>
-                                    <Label   Grid.Row="2" Grid.Column="0" Content="USDT resp"/>
-                                    <TextBox Grid.Row="2" Grid.Column="1" Margin="0,2"
-                                             Text="{Binding UsdtResponseCanIdHex, UpdateSourceTrigger=LostFocus}"
-                                             FontFamily="{StaticResource Font.Mono}"/>
-                                    <Label   Grid.Row="3" Grid.Column="0" Content="UUDT resp"/>
-                                    <TextBox Grid.Row="3" Grid.Column="1" Margin="0,2"
-                                             Text="{Binding UudtResponseCanIdHex, UpdateSourceTrigger=LostFocus}"
-                                             FontFamily="{StaticResource Font.Mono}"/>
-                                    <CheckBox Grid.Row="4" Grid.Column="1" Margin="0,8,0,0"
-                                              Content="HW $3E"
-                                              IsChecked="{Binding AllowPeriodicTesterPresent}"
-                                              ToolTip="Simulator drives $3E keepalives for hosts using PassThruStartPeriodicMsg"/>
-                                </Grid>
-                            </StackPanel>
+                            <DockPanel LastChildFill="True">
+                                <TextBlock DockPanel.Dock="Top"
+                                           Text="SELECTED"
+                                           Style="{StaticResource Text.SectionHeader}"
+                                           Margin="0,0,0,8"/>
+                                <ScrollViewer VerticalScrollBarVisibility="Auto"
+                                              HorizontalScrollBarVisibility="Disabled">
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="Auto" MinWidth="72"/>
+                                            <ColumnDefinition Width="*"/>
+                                        </Grid.ColumnDefinitions>
+                                        <Grid.RowDefinitions>
+                                            <RowDefinition Height="Auto"/>
+                                            <RowDefinition Height="Auto"/>
+                                            <RowDefinition Height="Auto"/>
+                                            <RowDefinition Height="Auto"/>
+                                            <RowDefinition Height="Auto"/>
+                                        </Grid.RowDefinitions>
+                                        <Label   Grid.Row="0" Grid.Column="0" Content="Name"/>
+                                        <TextBox Grid.Row="0" Grid.Column="1" Margin="0,2"
+                                                 Text="{Binding Name, UpdateSourceTrigger=PropertyChanged}"/>
+                                        <Label   Grid.Row="1" Grid.Column="0" Content="Req CAN"/>
+                                        <TextBox Grid.Row="1" Grid.Column="1" Margin="0,2"
+                                                 Text="{Binding PhysicalRequestCanIdHex, UpdateSourceTrigger=LostFocus}"
+                                                 FontFamily="{StaticResource Font.Mono}"/>
+                                        <Label   Grid.Row="2" Grid.Column="0" Content="USDT resp"/>
+                                        <TextBox Grid.Row="2" Grid.Column="1" Margin="0,2"
+                                                 Text="{Binding UsdtResponseCanIdHex, UpdateSourceTrigger=LostFocus}"
+                                                 FontFamily="{StaticResource Font.Mono}"/>
+                                        <Label   Grid.Row="3" Grid.Column="0" Content="UUDT resp"/>
+                                        <TextBox Grid.Row="3" Grid.Column="1" Margin="0,2"
+                                                 Text="{Binding UudtResponseCanIdHex, UpdateSourceTrigger=LostFocus}"
+                                                 FontFamily="{StaticResource Font.Mono}"/>
+                                        <CheckBox Grid.Row="4" Grid.Column="1" Margin="0,8,0,0"
+                                                  Content="HW $3E"
+                                                  IsChecked="{Binding AllowPeriodicTesterPresent}"
+                                                  ToolTip="Simulator drives $3E keepalives for hosts using PassThruStartPeriodicMsg"/>
+                                    </Grid>
+                                </ScrollViewer>
+                            </DockPanel>
                         </Border>
 
                         <!-- Add / Remove -->
@@ -395,57 +406,63 @@
                                    Style="{StaticResource Text.Hint}"
                                    Margin="0,0,0,12"/>
 
-                        <Grid VerticalAlignment="Top">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="Auto" MinWidth="74"/>
-                                <ColumnDefinition Width="*"/>
-                            </Grid.ColumnDefinitions>
-                            <Grid.RowDefinitions>
-                                <RowDefinition Height="Auto"/>
-                                <RowDefinition Height="Auto"/>
-                                <RowDefinition Height="Auto"/>
-                                <RowDefinition Height="Auto"/>
-                                <RowDefinition Height="Auto"/>
-                                <RowDefinition Height="Auto"/>
-                            </Grid.RowDefinitions>
-                            <Label Grid.Row="0" Grid.Column="0" Content="Shape"/>
-                            <ComboBox Grid.Row="0" Grid.Column="1" Margin="0,2"
-                                      ItemsSource="{Binding Source={StaticResource WaveformShapes}}"
-                                      SelectedItem="{Binding Shape, UpdateSourceTrigger=PropertyChanged}"/>
+                        <!-- ScrollViewer surfaces a scrollbar when the
+                             editor row is too short for all six waveform
+                             fields (e.g., narrow window with tall bus log). -->
+                        <ScrollViewer VerticalScrollBarVisibility="Auto"
+                                      HorizontalScrollBarVisibility="Disabled">
+                            <Grid VerticalAlignment="Top">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" MinWidth="74"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="Auto"/>
+                                </Grid.RowDefinitions>
+                                <Label Grid.Row="0" Grid.Column="0" Content="Shape"/>
+                                <ComboBox Grid.Row="0" Grid.Column="1" Margin="0,2"
+                                          ItemsSource="{Binding Source={StaticResource WaveformShapes}}"
+                                          SelectedItem="{Binding Shape, UpdateSourceTrigger=PropertyChanged}"/>
 
-                            <Label Grid.Row="1" Grid.Column="0" Content="Amplitude"
-                                   Visibility="{Binding SupportsAmplitude, Converter={StaticResource BoolToVis}}"/>
-                            <TextBox Grid.Row="1" Grid.Column="1" Margin="0,2"
-                                     Text="{Binding Amplitude, UpdateSourceTrigger=LostFocus, StringFormat=G}"
-                                     Visibility="{Binding SupportsAmplitude, Converter={StaticResource BoolToVis}}"
-                                     FontFamily="{StaticResource Font.Mono}"/>
+                                <Label Grid.Row="1" Grid.Column="0" Content="Amplitude"
+                                       Visibility="{Binding SupportsAmplitude, Converter={StaticResource BoolToVis}}"/>
+                                <TextBox Grid.Row="1" Grid.Column="1" Margin="0,2"
+                                         Text="{Binding Amplitude, UpdateSourceTrigger=LostFocus, StringFormat=G}"
+                                         Visibility="{Binding SupportsAmplitude, Converter={StaticResource BoolToVis}}"
+                                         FontFamily="{StaticResource Font.Mono}"/>
 
-                            <Label Grid.Row="2" Grid.Column="0" Content="Offset"/>
-                            <TextBox Grid.Row="2" Grid.Column="1" Margin="0,2"
-                                     Text="{Binding Offset, UpdateSourceTrigger=LostFocus, StringFormat=G}"
-                                     FontFamily="{StaticResource Font.Mono}"/>
+                                <Label Grid.Row="2" Grid.Column="0" Content="Offset"/>
+                                <TextBox Grid.Row="2" Grid.Column="1" Margin="0,2"
+                                         Text="{Binding Offset, UpdateSourceTrigger=LostFocus, StringFormat=G}"
+                                         FontFamily="{StaticResource Font.Mono}"/>
 
-                            <Label Grid.Row="3" Grid.Column="0" Content="Freq (Hz)"
-                                   Visibility="{Binding SupportsFrequency, Converter={StaticResource BoolToVis}}"/>
-                            <TextBox Grid.Row="3" Grid.Column="1" Margin="0,2"
-                                     Text="{Binding FrequencyHz, UpdateSourceTrigger=LostFocus, StringFormat=G}"
-                                     Visibility="{Binding SupportsFrequency, Converter={StaticResource BoolToVis}}"
-                                     FontFamily="{StaticResource Font.Mono}"/>
+                                <Label Grid.Row="3" Grid.Column="0" Content="Freq (Hz)"
+                                       Visibility="{Binding SupportsFrequency, Converter={StaticResource BoolToVis}}"/>
+                                <TextBox Grid.Row="3" Grid.Column="1" Margin="0,2"
+                                         Text="{Binding FrequencyHz, UpdateSourceTrigger=LostFocus, StringFormat=G}"
+                                         Visibility="{Binding SupportsFrequency, Converter={StaticResource BoolToVis}}"
+                                         FontFamily="{StaticResource Font.Mono}"/>
 
-                            <Label Grid.Row="4" Grid.Column="0" Content="Phase (Â°)"
-                                   Visibility="{Binding SupportsFrequency, Converter={StaticResource BoolToVis}}"/>
-                            <TextBox Grid.Row="4" Grid.Column="1" Margin="0,2"
-                                     Text="{Binding PhaseDeg, UpdateSourceTrigger=LostFocus, StringFormat=G}"
-                                     Visibility="{Binding SupportsFrequency, Converter={StaticResource BoolToVis}}"
-                                     FontFamily="{StaticResource Font.Mono}"/>
+                                <Label Grid.Row="4" Grid.Column="0" Content="Phase (°)"
+                                       Visibility="{Binding SupportsFrequency, Converter={StaticResource BoolToVis}}"/>
+                                <TextBox Grid.Row="4" Grid.Column="1" Margin="0,2"
+                                         Text="{Binding PhaseDeg, UpdateSourceTrigger=LostFocus, StringFormat=G}"
+                                         Visibility="{Binding SupportsFrequency, Converter={StaticResource BoolToVis}}"
+                                         FontFamily="{StaticResource Font.Mono}"/>
 
-                            <Label Grid.Row="5" Grid.Column="0" Content="Duty (0..1)"
-                                   Visibility="{Binding SupportsDuty, Converter={StaticResource BoolToVis}}"/>
-                            <TextBox Grid.Row="5" Grid.Column="1" Margin="0,2"
-                                     Text="{Binding DutyCycle, UpdateSourceTrigger=LostFocus, StringFormat=G}"
-                                     Visibility="{Binding SupportsDuty, Converter={StaticResource BoolToVis}}"
-                                     FontFamily="{StaticResource Font.Mono}"/>
-                        </Grid>
+                                <Label Grid.Row="5" Grid.Column="0" Content="Duty (0..1)"
+                                       Visibility="{Binding SupportsDuty, Converter={StaticResource BoolToVis}}"/>
+                                <TextBox Grid.Row="5" Grid.Column="1" Margin="0,2"
+                                         Text="{Binding DutyCycle, UpdateSourceTrigger=LostFocus, StringFormat=G}"
+                                         Visibility="{Binding SupportsDuty, Converter={StaticResource BoolToVis}}"
+                                         FontFamily="{StaticResource Font.Mono}"/>
+                            </Grid>
+                        </ScrollViewer>
                     </DockPanel>
                 </Border>
             </Grid>
