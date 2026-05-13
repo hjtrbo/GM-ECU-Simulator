@@ -201,7 +201,19 @@ public partial class MainWindow : Window
         IpcLogBox.Clear();
     }
 
-    public void Bind(VirtualBus bus, Core.Replay.BinReplayCoordinator replay, Core.Ipc.NamedPipeServer pipeServer)
+    // Double-click on the splitter between CAN frames and J2534 calls panes
+    // restores the 50/50 split. After a drag, the column widths land at e.g.
+    // "1.4*" / "0.6*" - resetting both to plain "1*" puts the divider back
+    // in the middle.
+    private void OnBusLogSplitterDoubleClick(object sender, MouseButtonEventArgs e)
+    {
+        var oneStar = new System.Windows.GridLength(1, System.Windows.GridUnitType.Star);
+        LogBoxColumn.Width    = oneStar;
+        IpcLogBoxColumn.Width = oneStar;
+        e.Handled = true;
+    }
+
+    public void Bind(VirtualBus bus, Core.Replay.BinReplayCoordinator replay)
     {
         vm = new MainViewModel(bus, replay, pipeServer);
         DataContext = vm;
