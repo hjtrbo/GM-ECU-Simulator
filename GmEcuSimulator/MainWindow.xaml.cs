@@ -167,17 +167,25 @@ public partial class MainWindow : Window
     private void OnLogTrafficChecked(object sender, RoutedEventArgs e)   => logTraffic = true;
     private void OnLogTrafficUnchecked(object sender, RoutedEventArgs e) => logTraffic = false;
 
-    // Maximize the bus log: collapse the editor row, expand the log row.
+    // Maximize the bus log: collapse the editor row AND the surrounding
+    // chrome (outer 14-px margin, GridSplitter) so the tabbed workspace
+    // goes edge-to-edge against the menu bar and side walls. Without
+    // hiding those, a ~28-px gap remained at the top even with
+    // EditorRow.Height=0.
     private void OnMaximizeBusLogChecked(object sender, RoutedEventArgs e)
     {
-        EditorRow.Height = new System.Windows.GridLength(0);
-        LogRow.Height    = new System.Windows.GridLength(1, System.Windows.GridUnitType.Star);
+        EditorRow.Height       = new System.Windows.GridLength(0);
+        LogRow.Height          = new System.Windows.GridLength(1, System.Windows.GridUnitType.Star);
+        EditorSplitter.Visibility = Visibility.Collapsed;
+        MainContentGrid.Margin = new Thickness(0);
     }
 
     private void OnMaximizeBusLogUnchecked(object sender, RoutedEventArgs e)
     {
-        EditorRow.Height = new System.Windows.GridLength(1, System.Windows.GridUnitType.Star);
-        LogRow.Height    = new System.Windows.GridLength(320);
+        EditorRow.Height       = new System.Windows.GridLength(1, System.Windows.GridUnitType.Star);
+        LogRow.Height          = new System.Windows.GridLength(320);
+        EditorSplitter.Visibility = Visibility.Visible;
+        MainContentGrid.Margin = new Thickness(14);
     }
 
     private void OnClearLogClicked(object sender, RoutedEventArgs e)

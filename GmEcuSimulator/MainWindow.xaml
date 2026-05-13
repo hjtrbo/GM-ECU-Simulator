@@ -189,12 +189,13 @@
         <!--
             MAIN WORKSPACE.
             Two rows split by a horizontal GridSplitter. The "Maximize"
-            checkbox in the bus-log tab collapses the editor row so the
-            tabbed workspace fills the window.
+            checkbox in the bus-log tab collapses the editor row AND
+            the outer margin / splitter so the tabbed workspace fills
+            edge-to-edge.
         -->
-        <Grid Margin="14">
+        <Grid x:Name="MainContentGrid" Margin="14">
             <Grid.RowDefinitions>
-                <RowDefinition x:Name="EditorRow" Height="*" MinHeight="8"/>
+                <RowDefinition x:Name="EditorRow" Height="*" MinHeight="0"/>
                 <RowDefinition Height="Auto"/>
                 <RowDefinition x:Name="LogRow"    Height="320" MinHeight="80"/>
             </Grid.RowDefinitions>
@@ -223,8 +224,8 @@
                                  window is short - that lets its ScrollViewer
                                  engage AND keeps the Add/Remove row visible. -->
                             <RowDefinition Height="Auto"/>
-                            <RowDefinition Height="*" MinHeight="60"/>
-                            <RowDefinition Height="*" MinHeight="80" MaxHeight="280"/>
+                            <RowDefinition Height="1*" MinHeight="60"/>
+                            <RowDefinition Height="2*" MinHeight="80" MaxHeight="280"/>
                             <RowDefinition Height="Auto"/>
                         </Grid.RowDefinitions>
 
@@ -474,7 +475,7 @@
             </Grid>
 
             <!-- Horizontal splitter (Row 1) -->
-            <GridSplitter Grid.Row="1" Height="6"
+            <GridSplitter x:Name="EditorSplitter" Grid.Row="1" Height="6"
                           HorizontalAlignment="Stretch"
                           VerticalAlignment="Center"
                           Margin="0,6"
