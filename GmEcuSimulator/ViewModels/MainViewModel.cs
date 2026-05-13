@@ -257,45 +257,52 @@ public sealed class MainViewModel : NotifyPropertyChangedBase
     // async void is only acceptable on event/command handlers - this is one.
     private async void RegisterJ2534()
     {
-        StatusText = "Awaiting UAC approval…";
-        var (ok, canceled) = await RunPwshAsync(ScriptPath("Register.ps1"));
+        StatusText = "Awaiting UAC approval...";
+        var (ok, canceled, output, logPath) = await RunPwshAsync(ScriptPath("Register.ps1"));
         if (ok)
-        {
-            // Open the IPC pipe so hosts that just discovered us through
-            // HKLM can actually connect. Start is idempotent.
-            try { pipeServer.Start(); }
-            catch (Exception ex) { bus.LogDiagnostic?.Invoke($"Pipe server Start after Register failed: {ex.Message}"); }
             StatusText = "Registered. Restart your J2534 host to pick up the new device.";
-        }
+        else if (canceled)
+            StatusText = "Registration cancelled (UAC declined).";
         else
         {
-            StatusText = canceled ? "Registration cancelled (UAC declined)."
-                                  : "Registration failed - see the PowerShell window for details.";
+            StatusText = $"Registration failed - log at {logPath}";
+            ShowScriptFailureDialog("J2534 Registration failed", "Register.ps1", logPath, output);
         }
         RefreshJ2534Status();
     }
 
     private async void UnregisterJ2534()
     {
-        StatusText = "Awaiting UAC approval…";
-        var (ok, canceled) = await RunPwshAsync(ScriptPath("Unregister.ps1"));
+        StatusText = "Awaiting UAC approval...";
+        var (ok, canceled, output, logPath) = await RunPwshAsync(ScriptPath("Unregister.ps1"));
         if (ok)
-        {
-            // Tear the pipe down. Any host currently connected sees a broken
-            // pipe on its next IPC frame and disconnects; new PassThruOpen
-            // calls fail because nothing is listening. Without this the
-            // host stayed connected and kept streaming data even after the
-            // registry write claimed we were gone.
-            try { await pipeServer.StopAsync(); }
-            catch (Exception ex) { bus.LogDiagnostic?.Invoke($"Pipe server Stop after Unregister failed: {ex.Message}"); }
             StatusText = "Unregistered.";
-        }
+        else if (canceled)
+            StatusText = "Unregister cancelled (UAC declined).";
         else
         {
-            StatusText = canceled ? "Unregister cancelled (UAC declined)."
-                                  : "Unregister failed - see the PowerShell window for details.";
+            StatusText = $"Unregister failed - log at {logPath}";
+            ShowScriptFailureDialog("J2534 Unregister failed", "Unregister.ps1", logPath, output);
         }
         RefreshJ2534Status();
+    }
+
+    // Surfaces the captured PowerShell output in the same dialog used for
+    // "Show registered devices", with a failure-flavoured title and the log
+    // path included so the user can copy / share it.
+    private static void ShowScriptFailureDialog(string title, string scriptName, string logPath, string output)
+    {
+        var win = new GmEcuSimulator.Views.RegisteredDevicesWindow(
+            title: title,
+            subtitle: title,
+            description: $"Captured stdout/stderr from {scriptName}. A copy is saved at {logPath} - reference it when reporting the failure.",
+            output: string.IsNullOrWhiteSpace(output)
+                ? "(no output was captured - the script may have failed before Start-Transcript started)"
+                : output)
+        {
+            Owner = Application.Current?.MainWindow,
+        };
+        win.ShowDialog();
     }
 
     private async void ShowRegisteredDevices()
@@ -339,13 +346,63 @@ public sealed class MainViewModel : NotifyPropertyChangedBase
         }
     }
 
-    // Elevated PowerShell launch (UAC via Verb=runas). The wait happens on a
-    // background thread so the WPF UI keeps drawing while UAC and the script
-    // run; the resulting Task continues back on the UI sync context.
-    // Returns (ok, canceled): canceled=true means the user dismissed UAC.
-    private async Task<(bool ok, bool canceled)> RunPwshAsync(string scriptPath)
+    // Elevated PowerShell launch (UAC via Verb=runas).
+    //
+    // Verb=runas forces UseShellExecute=true, which precludes piping
+    // stdout/stderr back through Process. The elevated console window opens,
+    // runs the script, and closes - if the script throws, the error text
+    // dies with the window and the user never sees it.
+    //
+    // Workaround: build a small PowerShell wrapper that opens a transcript
+    // BEFORE invoking the target script, catches any terminating error to
+    // write it into the transcript, then closes it. The transcript path is
+    // chosen on this side (the unelevated app) so we always know where to
+    // read after the process exits. Pass the wrapper via -EncodedCommand to
+    // avoid any quoting nightmares.
+    //
+    // Returns:
+    //   ok       - script reported exit 0
+    //   canceled - user dismissed the UAC prompt
+    //   output   - everything the elevated session printed (or "" if nothing)
+    //   logPath  - on-disk copy of `output`, kept around for share / repro
+    private async Task<(bool ok, bool canceled, string output, string logPath)> RunPwshAsync(string scriptPath)
     {
         SetJ2534Busy(true);
+
+        // Stable per-run log file. Lives under LocalAppData so an admin
+        // elevation in the same user session writes back where we can read it.
+        var logDir = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "GmEcuSimulator", "logs");
+        Directory.CreateDirectory(logDir);
+        var scriptBase = Path.GetFileNameWithoutExtension(scriptPath);
+        var logPath = Path.Combine(
+            logDir,
+            $"{scriptBase}-{DateTime.Now:yyyyMMdd-HHmmss}.log");
+
+        // PowerShell wrapper. Single-quoted string literals so embedded '$' is
+        // not interpolated by C#. Doubled single quotes inside literals are
+        // PowerShell's escape for an embedded single quote.
+        var psWrapper =
+            $"Start-Transcript -Path '{logPath.Replace("'", "''")}' -Force | Out-Null; " +
+            "$ec = 0; " +
+            "try { " +
+            $"  & '{scriptPath.Replace("'", "''")}'; " +
+            "  if ($LASTEXITCODE -ne $null -and $LASTEXITCODE -ne 0) { $ec = $LASTEXITCODE } " +
+            "} catch { " +
+            "  Write-Host ('ERROR: ' + $_); " +
+            "  Write-Host ('ScriptStackTrace:'); " +
+            "  Write-Host $_.ScriptStackTrace; " +
+            "  $ec = 1 " +
+            "} finally { " +
+            "  try { Stop-Transcript | Out-Null } catch { } " +
+            "} " +
+            "exit $ec";
+
+        // EncodedCommand expects UTF-16LE base64. Sidesteps every quoting
+        // gotcha that lives between cmd.exe, the runas verb, and PowerShell.
+        var encoded = Convert.ToBase64String(System.Text.Encoding.Unicode.GetBytes(psWrapper));
+
         try
         {
             return await Task.Run(() =>
@@ -355,25 +412,26 @@ public sealed class MainViewModel : NotifyPropertyChangedBase
                     var psi = new ProcessStartInfo
                     {
                         FileName = "powershell.exe",
-                        Arguments = $"-NoProfile -ExecutionPolicy Bypass -File \"{scriptPath}\"",
-                        UseShellExecute = true,         // required for Verb=runas
+                        Arguments = $"-NoProfile -ExecutionPolicy Bypass -EncodedCommand {encoded}",
+                        UseShellExecute = true,
                         Verb = "runas",
                     };
                     using var p = Process.Start(psi);
-                    if (p == null) return (false, false);
+                    if (p == null) return (false, false, "", logPath);
                     p.WaitForExit();
-                    return (p.ExitCode == 0, false);
+                    var output = ReadLogSafe(logPath);
+                    return (p.ExitCode == 0, false, output, logPath);
                 }
                 catch (Win32Exception wex) when (wex.NativeErrorCode == 1223)
                 {
-                    // ERROR_CANCELLED - user dismissed UAC.
-                    return (false, true);
+                    // ERROR_CANCELLED - user dismissed UAC. Nothing was logged.
+                    return (false, true, "", logPath);
                 }
                 catch (Exception ex)
                 {
                     Application.Current?.Dispatcher.Invoke(() =>
                         MessageBox.Show(ex.Message, "PowerShell launch failed", MessageBoxButton.OK, MessageBoxImage.Error));
-                    return (false, false);
+                    return (false, false, ex.ToString(), logPath);
                 }
             }).ConfigureAwait(true);
         }
@@ -381,6 +439,19 @@ public sealed class MainViewModel : NotifyPropertyChangedBase
         {
             SetJ2534Busy(false);
         }
+    }
+
+    // Tolerant log read - Start-Transcript can be slightly delayed flushing,
+    // and the file may be missing entirely if powershell.exe crashed before
+    // running our wrapper. Return what's there, blank if nothing.
+    private static string ReadLogSafe(string path)
+    {
+        try
+        {
+            if (!File.Exists(path)) return "";
+            return File.ReadAllText(path);
+        }
+        catch (Exception ex) { return $"(could not read log: {ex.Message})"; }
     }
 
     // Runs a script unelevated and captures stdout/stderr for display.

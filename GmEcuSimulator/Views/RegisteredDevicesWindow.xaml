@@ -16,7 +16,8 @@
                 <ColumnDefinition Width="*"/>
                 <ColumnDefinition Width="Auto"/>
             </Grid.ColumnDefinitions>
-            <TextBlock Text="Registered J2534 Devices"
+            <TextBlock x:Name="ChromeTitle"
+                       Text="Registered J2534 Devices"
                        Style="{StaticResource Text.Body}"
                        FontWeight="SemiBold"
                        VerticalAlignment="Center"
@@ -49,9 +50,11 @@
         <!-- Subtitle / explanation -->
         <Border DockPanel.Dock="Top" Padding="14,12,14,10">
             <StackPanel>
-                <TextBlock Text="J2534 device registry"
+                <TextBlock x:Name="SubtitleBlock"
+                           Text="J2534 device registry"
                            Style="{StaticResource Text.Subtitle}"/>
-                <TextBlock Text="Output of Installer\List.ps1 - every J2534 PassThru device registered on this machine, both bitnesses. Read-only diagnostic."
+                <TextBlock x:Name="DescriptionBlock"
+                           Text="Output of Installer\List.ps1 - every J2534 PassThru device registered on this machine, both bitnesses. Read-only diagnostic."
                            Style="{StaticResource Text.Caption}"
                            TextWrapping="Wrap"
                            Margin="0,4,0,0"/>
