@@ -252,7 +252,7 @@ public partial class MainWindow : Window
         e.Handled = true;
     }
 
-    public void Bind(VirtualBus bus, Core.Replay.BinReplayCoordinator replay)
+    public void Bind(VirtualBus bus, Core.Replay.BinReplayCoordinator replay, Core.Ipc.NamedPipeServer pipeServer)
     {
         vm = new MainViewModel(bus, replay, pipeServer);
         DataContext = vm;

@@ -260,7 +260,13 @@ public sealed class MainViewModel : NotifyPropertyChangedBase
         StatusText = "Awaiting UAC approval...";
         var (ok, canceled, output, logPath) = await RunPwshAsync(ScriptPath("Register.ps1"));
         if (ok)
+        {
+            // Open the IPC pipe so hosts that just discovered us through
+            // HKLM can actually connect. Start is idempotent.
+            try { pipeServer.Start(); }
+            catch (Exception ex) { bus.LogDiagnostic?.Invoke($"Pipe server Start after Register failed: {ex.Message}"); }
             StatusText = "Registered. Restart your J2534 host to pick up the new device.";
+        }
         else if (canceled)
             StatusText = "Registration cancelled (UAC declined).";
         else
@@ -276,7 +282,16 @@ public sealed class MainViewModel : NotifyPropertyChangedBase
         StatusText = "Awaiting UAC approval...";
         var (ok, canceled, output, logPath) = await RunPwshAsync(ScriptPath("Unregister.ps1"));
         if (ok)
+        {
+            // Tear the pipe down. Any host currently connected sees a broken
+            // pipe on its next IPC frame and disconnects; new PassThruOpen
+            // calls fail because nothing is listening. Without this the
+            // host stayed connected and kept streaming data even after the
+            // registry write claimed we were gone.
+            try { await pipeServer.StopAsync(); }
+            catch (Exception ex) { bus.LogDiagnostic?.Invoke($"Pipe server Stop after Unregister failed: {ex.Message}"); }
             StatusText = "Unregistered.";
+        }
         else if (canceled)
             StatusText = "Unregister cancelled (UAC declined).";
         else
