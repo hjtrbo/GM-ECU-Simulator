@@ -207,10 +207,23 @@
                     <ColumnDefinition Width="240" MinWidth="200"/>
                 </Grid.ColumnDefinitions>
 
-                <!-- ECU sidebar -->
+                <!-- ECU sidebar.
+                     Grid (not DockPanel) so the ListBox row gets a real
+                     height budget: Header + SELECTED + Buttons take their
+                     natural sizes, the ListBox row absorbs the rest, and
+                     the inner ScrollViewer kicks in when ECU count
+                     exceeds the visible area. -->
                 <Border Grid.Column="0" Style="{StaticResource Card}" Margin="0,0,12,0">
-                    <DockPanel LastChildFill="True">
-                        <Grid DockPanel.Dock="Top" Margin="0,0,0,8">
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="*" MinHeight="80"/>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
+                        </Grid.RowDefinitions>
+
+                        <!-- Header -->
+                        <Grid Grid.Row="0" Margin="0,0,0,8">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="*"/>
                                 <ColumnDefinition Width="Auto"/>
@@ -223,20 +236,17 @@
                                        VerticalAlignment="Center"/>
                         </Grid>
 
-                        <Grid DockPanel.Dock="Bottom" Margin="0,8,0,0">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="*"/>
-                                <ColumnDefinition Width="8"/>
-                                <ColumnDefinition Width="*"/>
-                            </Grid.ColumnDefinitions>
-                            <Button Grid.Column="0" Content="Add"
-                                    Style="{StaticResource Button.Primary}"
-                                    Command="{Binding AddEcuCommand}"/>
-                            <Button Grid.Column="2" Content="Remove"
-                                    Command="{Binding RemoveEcuCommand}"/>
-                        </Grid>
+                        <!-- Scrollable ECU list -->
+                        <ListBox Grid.Row="1"
+                                 ItemsSource="{Binding Ecus}"
+                                 SelectedItem="{Binding SelectedEcu}"
+                                 DisplayMemberPath="Name"
+                                 BorderThickness="0"
+                                 Background="Transparent"
+                                 Padding="0"/>
 
-                        <Border DockPanel.Dock="Bottom" Margin="0,12,0,0"
+                        <!-- Selected-ECU inspector -->
+                        <Border Grid.Row="2" Margin="0,12,0,0"
                                 Background="{DynamicResource Bg.ElevatedBrush}"
                                 BorderBrush="{DynamicResource Border.SubtleBrush}"
                                 BorderThickness="1"
@@ -281,14 +291,20 @@
                             </StackPanel>
                         </Border>
 
-                        <ListBox ItemsSource="{Binding Ecus}"
-                                 SelectedItem="{Binding SelectedEcu}"
-                                 DisplayMemberPath="Name"
-                                 BorderThickness="0"
-                                 Background="Transparent"
-                                 Padding="0"
-                                 MinHeight="80"/>
-                    </DockPanel>
+                        <!-- Add / Remove -->
+                        <Grid Grid.Row="3" Margin="0,8,0,0">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="8"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <Button Grid.Column="0" Content="Add"
+                                    Style="{StaticResource Button.Primary}"
+                                    Command="{Binding AddEcuCommand}"/>
+                            <Button Grid.Column="2" Content="Remove"
+                                    Command="{Binding RemoveEcuCommand}"/>
+                        </Grid>
+                    </Grid>
                 </Border>
 
                 <!-- PIDs main pane -->

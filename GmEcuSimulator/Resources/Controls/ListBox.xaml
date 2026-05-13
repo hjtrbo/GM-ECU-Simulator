@@ -82,8 +82,15 @@
                             BorderThickness="{TemplateBinding BorderThickness}"
                             CornerRadius="4"
                             SnapsToDevicePixels="True">
+                        <!-- Honour the ScrollViewer.* setters declared on the
+                             ListBox style. Without the explicit TemplateBinding
+                             these attached properties don't reach the inner
+                             ScrollViewer and the scrollbar never appears even
+                             when content overflows. -->
                         <ScrollViewer Padding="{TemplateBinding Padding}"
-                                      Focusable="False">
+                                      Focusable="False"
+                                      VerticalScrollBarVisibility="{TemplateBinding ScrollViewer.VerticalScrollBarVisibility}"
+                                      HorizontalScrollBarVisibility="{TemplateBinding ScrollViewer.HorizontalScrollBarVisibility}">
                             <ItemsPresenter SnapsToDevicePixels="{TemplateBinding SnapsToDevicePixels}"/>
                         </ScrollViewer>
                     </Border>
