@@ -1,4 +1,4 @@
-﻿<Window x:Class="GmEcuSimulator.MainWindow"
+<Window x:Class="GmEcuSimulator.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:conv="clr-namespace:GmEcuSimulator.Converters"
@@ -135,27 +135,27 @@
             <Menu Padding="6,2" Background="Transparent">
                 <MenuItem Header="_File">
                     <MenuItem Header="_New"      Command="{Binding NewCommand}"    InputGestureText="Ctrl+N"/>
-                    <MenuItem Header="_Openâ€¦"    Command="{Binding OpenCommand}"   InputGestureText="Ctrl+O"/>
+                    <MenuItem Header="_Open…"    Command="{Binding OpenCommand}"   InputGestureText="Ctrl+O"/>
                     <Separator/>
                     <MenuItem Header="_Save"     Command="{Binding SaveCommand}"   InputGestureText="Ctrl+S"/>
-                    <MenuItem Header="Save _Asâ€¦" Command="{Binding SaveAsCommand}" InputGestureText="Ctrl+Shift+S"/>
+                    <MenuItem Header="Save _As…" Command="{Binding SaveAsCommand}" InputGestureText="Ctrl+Shift+S"/>
                     <Separator/>
-                    <MenuItem Header="_Importâ€¦"  Command="{Binding ImportCommand}"/>
-                    <MenuItem Header="_Exportâ€¦"  Command="{Binding ExportCommand}"/>
+                    <MenuItem Header="_Import…"  Command="{Binding ImportCommand}"/>
+                    <MenuItem Header="_Export…"  Command="{Binding ExportCommand}"/>
                     <Separator/>
                     <MenuItem Header="E_xit"     Click="OnExitClicked"/>
                 </MenuItem>
                 <MenuItem Header="_J2534">
-                    <MenuItem Header="_Register as J2534 deviceâ€¦"
+                    <MenuItem Header="_Register as J2534 device…"
                               Command="{Binding RegisterJ2534Command}"
                               ToolTip="Writes HKLM\SOFTWARE\PassThruSupport.04.04\GmEcuSim. Triggers a UAC prompt."/>
                     <MenuItem Header="_Unregister"
                               Command="{Binding UnregisterJ2534Command}"
                               ToolTip="Removes only the GmEcuSim entry; never touches other vendors. Triggers a UAC prompt."/>
                     <Separator/>
-                    <MenuItem Header="_Show registered devicesâ€¦"
+                    <MenuItem Header="_Show registered devices…"
                               Command="{Binding ShowRegisteredDevicesCommand}"
-                              ToolTip="Lists every J2534 device on this machine in both registry views. Read-only â€” no UAC."/>
+                              ToolTip="Lists every J2534 device on this machine in both registry views. Read-only - no UAC."/>
                 </MenuItem>
                 <MenuItem Header="_View">
                     <MenuItem Header="_Theme" x:Name="ThemeMenu"
@@ -462,7 +462,7 @@
                                               VerticalAlignment="Center"
                                               Checked="OnLogTrafficChecked"
                                               Unchecked="OnLogTrafficUnchecked"
-                                              ToolTip="Master gate for both panes: CAN frames (left) and J2534 calls (right). Off by default â€” at $AA Fast 25Hz the bus frames alone can flood the textbox quickly."/>
+                                              ToolTip="Master gate for both panes: CAN frames (left) and J2534 calls (right). Off by default - at $AA Fast 25Hz the bus frames alone can flood the textbox quickly."/>
                                     <Button Content="Clear" Click="OnClearLogClicked"
                                             Margin="16,0,0,0"/>
                                     <Rectangle Width="1" Margin="12,4" Fill="{DynamicResource Border.SubtleBrush}"/>
@@ -606,23 +606,23 @@
                                     </Grid.ColumnDefinitions>
                                     <StackPanel Grid.Column="0">
                                         <TextBlock Text="STATUS" Style="{StaticResource Text.SectionHeader}" Margin="0"/>
-                                        <TextBlock Text="{Binding SecurityStatusText, FallbackValue='â€”'}"
+                                        <TextBlock Text="{Binding SecurityStatusText, FallbackValue='-'}"
                                                    Style="{StaticResource Text.Mono}"
                                                    Foreground="{DynamicResource Text.PrimaryBrush}"
                                                    ToolTip="Live ECU lock state. Counts down during a 10s lockout window after 3 failed key attempts."/>
                                     </StackPanel>
                                     <StackPanel Grid.Column="1">
                                         <TextBlock Text="FAILED ATTEMPTS" Style="{StaticResource Text.SectionHeader}" Margin="0"/>
-                                        <TextBlock Text="{Binding SecurityFailedAttemptsText, FallbackValue='â€”'}"
+                                        <TextBlock Text="{Binding SecurityFailedAttemptsText, FallbackValue='-'}"
                                                    Style="{StaticResource Text.Mono}"
                                                    Foreground="{DynamicResource Text.PrimaryBrush}"/>
                                     </StackPanel>
                                     <StackPanel Grid.Column="2">
                                         <TextBlock Text="PENDING SEED" Style="{StaticResource Text.SectionHeader}" Margin="0"/>
-                                        <TextBlock Text="{Binding SecurityPendingSeedText, FallbackValue='â€”'}"
+                                        <TextBlock Text="{Binding SecurityPendingSeedText, FallbackValue='-'}"
                                                    Style="{StaticResource Text.Mono}"
                                                    Foreground="{DynamicResource Text.PrimaryBrush}"
-                                                   ToolTip="Level and bytes of the last requestSeed response â€” cleared on successful unlock or lockout arm."/>
+                                                   ToolTip="Level and bytes of the last requestSeed response - cleared on successful unlock or lockout arm."/>
                                     </StackPanel>
                                 </Grid>
                             </Border>
@@ -661,7 +661,7 @@
                                     <CheckBox Content="Enable glitch injection"
                                               IsChecked="{Binding Glitch.Enabled}"
                                               VerticalAlignment="Center"/>
-                                    <TextBlock Text="prep â€” not yet wired into bus logic"
+                                    <TextBlock Text="prep - not yet wired into bus logic"
                                                Style="{StaticResource Text.Hint}"
                                                Margin="14,0,0,0"
                                                VerticalAlignment="Center"/>
