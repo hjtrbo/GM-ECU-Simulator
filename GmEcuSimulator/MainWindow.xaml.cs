@@ -48,22 +48,41 @@ public partial class MainWindow : Window
 
     // Rebuilds View > Theme. Each palette is an IsCheckable item; selecting
     // one calls ThemeManager.Apply, which mutates the live brushes - we don't
-    // need to do anything else to refresh the UI.
+    // need to do anything else to refresh the UI. Palettes are grouped by
+    // Category (Dark / Mid / Light / User) with a small caption header.
     private void RebuildThemeMenu()
     {
         ThemeMenu.Items.Clear();
-        foreach (var p in ThemeManager.AvailablePalettes)
-        {
-            var mi = new MenuItem
+
+        var groups = ThemeManager.AvailablePalettes
+            .GroupBy(p => p.Category)
+            .OrderBy(g =>
             {
-                Header = p.IsUser ? $"{p.DisplayName}  (user)" : p.DisplayName,
-                IsCheckable = true,
-                IsChecked = string.Equals(p.Name, ThemeManager.ActivePalette, StringComparison.OrdinalIgnoreCase),
-                StaysOpenOnClick = false,
-            };
-            var paletteName = p.Name;
-            mi.Click += (_, _) => ThemeManager.Apply(paletteName);
-            ThemeMenu.Items.Add(mi);
+                var i = Array.IndexOf(ThemeManager.CategoryOrder, g.Key);
+                return i >= 0 ? i : ThemeManager.CategoryOrder.Length;
+            });
+
+        var firstGroup = true;
+        foreach (var group in groups)
+        {
+            if (!firstGroup) ThemeMenu.Items.Add(new Separator());
+            firstGroup = false;
+
+            ThemeMenu.Items.Add(MakeCategoryHeader(group.Key));
+
+            foreach (var p in group)
+            {
+                var mi = new MenuItem
+                {
+                    Header = p.IsUser ? $"{p.DisplayName}  (user)" : p.DisplayName,
+                    IsCheckable = true,
+                    IsChecked = string.Equals(p.Name, ThemeManager.ActivePalette, StringComparison.OrdinalIgnoreCase),
+                    StaysOpenOnClick = false,
+                };
+                var paletteName = p.Name;
+                mi.Click += (_, _) => ThemeManager.Apply(paletteName);
+                ThemeMenu.Items.Add(mi);
+            }
         }
 
         ThemeMenu.Items.Add(new Separator());
@@ -90,6 +109,26 @@ public partial class MainWindow : Window
             RebuildThemeMenu();
         };
         ThemeMenu.Items.Add(reload);
+    }
+
+    // Non-interactive caption row inside View > Theme. IsHitTestVisible=false
+    // means mouse never reaches it so the MenuItem hover trigger never fires.
+    private static MenuItem MakeCategoryHeader(string text)
+    {
+        var caption = new TextBlock
+        {
+            Text = text.ToUpperInvariant(),
+            FontWeight = FontWeights.SemiBold,
+            FontSize = 10,
+            Opacity = 0.55,
+        };
+        return new MenuItem
+        {
+            Header = caption,
+            IsHitTestVisible = false,
+            Focusable = false,
+            StaysOpenOnClick = true,
+        };
     }
 
     // ---- Custom-chrome window controls ----

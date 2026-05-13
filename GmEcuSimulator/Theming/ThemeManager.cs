@@ -23,26 +23,30 @@ namespace GmEcuSimulator.Theming;
 // .xaml files and they appear in AvailablePalettes alongside the built-ins.
 public static class ThemeManager
 {
-    public sealed record PaletteEntry(string Name, string DisplayName, string? FilePath, bool IsUser);
+    public sealed record PaletteEntry(string Name, string DisplayName, string? FilePath, bool IsUser, string Category);
+
+    public const string CategoryDark = "Dark";
+    public const string CategoryMid = "Mid";
+    public const string CategoryLight = "Light";
+    public const string CategoryUser = "User";
+
+    /// <summary>
+    /// Canonical render order for category headers in the View > Theme menu.
+    /// Anything not listed here is appended at the end.
+    /// </summary>
+    public static readonly string[] CategoryOrder = { CategoryDark, CategoryMid, CategoryLight, CategoryUser };
 
     private const string DefaultPaletteName = "Midnight";
 
-    private static readonly string[] BuiltIns =
+    private static readonly (string Name, string Category)[] BuiltIns =
     {
-        // Dark
-        "Midnight",
-        "Graphite",
-        "Solarized",
-        "Nord",
-        "Dracula",
-        "Tokyo",
-        // Mid
-        "Slate",
-        "Mauve",
-        // Light
-        "Daylight",
-        "Frost",
-        "Lavender",
+        ("Midnight",  CategoryDark),
+        ("Graphite",  CategoryDark),
+        ("Solarized", CategoryDark),
+        ("Nord",      CategoryDark),
+        ("Tokyo",     CategoryDark),
+        ("Daylight",  CategoryLight),
+        ("Frost",     CategoryLight),
     };
 
     public static IReadOnlyList<PaletteEntry> AvailablePalettes { get; private set; } = Array.Empty<PaletteEntry>();
@@ -75,8 +79,8 @@ public static class ThemeManager
     public static void RefreshAvailable()
     {
         var list = new List<PaletteEntry>();
-        foreach (var name in BuiltIns)
-            list.Add(new PaletteEntry(name, name, null, IsUser: false));
+        foreach (var (name, category) in BuiltIns)
+            list.Add(new PaletteEntry(name, name, null, IsUser: false, Category: category));
 
         try
         {
@@ -85,7 +89,7 @@ public static class ThemeManager
                 var name = Path.GetFileNameWithoutExtension(path);
                 if (string.IsNullOrWhiteSpace(name)) continue;
                 if (list.Any(p => string.Equals(p.Name, name, StringComparison.OrdinalIgnoreCase))) continue;
-                list.Add(new PaletteEntry(name, name, path, IsUser: true));
+                list.Add(new PaletteEntry(name, name, path, IsUser: true, Category: CategoryUser));
             }
         }
         catch
