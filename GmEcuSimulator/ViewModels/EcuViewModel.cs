@@ -116,6 +116,26 @@ public sealed class EcuViewModel : NotifyPropertyChangedBase
         }
     }
 
+    /// <summary>
+    /// Number of bytes in the $36 startingAddress field. Spec range 2..4;
+    /// the editor surfaces these as a fixed-options dropdown so a bad value
+    /// can't sneak in. Default 4 matches T43-era ECUs.
+    /// </summary>
+    public int DownloadAddressByteCount
+    {
+        get => Model.DownloadAddressByteCount;
+        set
+        {
+            if (value is < 2 or > 4) return;
+            if (Model.DownloadAddressByteCount == value) return;
+            Model.DownloadAddressByteCount = value;
+            OnPropertyChanged();
+        }
+    }
+
+    /// <summary>The fixed list of valid values for the editor dropdown.</summary>
+    public IReadOnlyList<int> DownloadAddressByteCountOptions { get; } = new[] { 2, 3, 4 };
+
     private static bool TryParseHexByte(string s, out byte v)
     {
         var trimmed = (s ?? "").Trim();

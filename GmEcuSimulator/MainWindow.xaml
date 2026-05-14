@@ -337,6 +337,7 @@
                                             <RowDefinition Height="Auto"/>
                                             <RowDefinition Height="Auto"/>
                                             <RowDefinition Height="Auto"/>
+                                            <RowDefinition Height="Auto"/>
                                         </Grid.RowDefinitions>
                                         <Label Style="{StaticResource Label.FormPair}"   Grid.Row="0" Grid.Column="0" Content="Name"/>
                                         <TextBox Grid.Row="0" Grid.Column="1" Margin="0,2"
@@ -363,7 +364,13 @@
                                                  Text="{Binding FlowControlSeparationTimeHex, UpdateSourceTrigger=LostFocus}"
                                                  FontFamily="{StaticResource Font.Mono}"
                                                  ToolTip="ISO 15765-2 FlowControl SeparationTime byte (FC.STmin). 0 = no inter-frame delay. Values 1..7F = N ms, F1..F9 = 100..900 us."/>
-                                        <CheckBox Grid.Row="6" Grid.Column="1" Margin="0,8,0,0"
+                                        <Label Style="{StaticResource Label.FormPair}"   Grid.Row="6" Grid.Column="0" Content="$36 addr"/>
+                                        <ComboBox Grid.Row="6" Grid.Column="1" Margin="0,2"
+                                                  ItemsSource="{Binding DownloadAddressByteCountOptions}"
+                                                  SelectedItem="{Binding DownloadAddressByteCount}"
+                                                  FontFamily="{StaticResource Font.Mono}"
+                                                  ToolTip="Number of bytes in the $36 TransferData startingAddress field. GMW3110 permits 2..4. T43-era ECUs use 4; 3 only fits up to 16 MiB and corrupts the captured image if the host sends a 4-byte address."/>
+                                        <CheckBox Grid.Row="7" Grid.Column="1" Margin="0,8,0,0"
                                                   Content="HW $3E"
                                                   IsChecked="{Binding AllowPeriodicTesterPresent}"
                                                   ToolTip="Simulator drives $3E keepalives for hosts using PassThruStartPeriodicMsg"/>

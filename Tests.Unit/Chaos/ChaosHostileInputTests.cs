@@ -38,6 +38,8 @@ public class ChaosHostileInputTests
     {
         var bus = new VirtualBus();
         var node = NodeFactory.CreateNodeWithGenericModule();
+        // 3-byte $36 starting addresses are baked into the test payloads.
+        node.DownloadAddressByteCount = 3;
         bus.AddNode(node);
         var ch = new ChannelSession { Id = 1, Protocol = ProtocolID.CAN, Baud = 500_000, Bus = bus };
         return (bus, node, ch);

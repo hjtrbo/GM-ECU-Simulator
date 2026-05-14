@@ -74,6 +74,7 @@ public static class ConfigStore
                 FlowControlBlockSize = node.FlowControlBlockSize,
                 FlowControlSeparationTime = node.FlowControlSeparationTime,
                 ProgrammedState = node.ProgrammedState,
+                DownloadAddressByteCount = node.DownloadAddressByteCount,
                 Pids = node.Pids.Select(PidDtoFrom).ToList(),
                 Identifiers = idMap.Count == 0
                     ? null
@@ -145,6 +146,12 @@ public static class ConfigStore
             FlowControlBlockSize = dto.FlowControlBlockSize,
             FlowControlSeparationTime = dto.FlowControlSeparationTime,
             ProgrammedState = dto.ProgrammedState,
+            // v1-v6 configs lack the field and deserialise it as 0; clamp to
+            // the GMW3110-permitted 2..4 range and fall back to the 4-byte
+            // default for any out-of-range value (including 0).
+            DownloadAddressByteCount = dto.DownloadAddressByteCount is >= 2 and <= 4
+                ? dto.DownloadAddressByteCount
+                : 4,
         };
         node.SecurityModule = SecurityModuleRegistry.Create(dto.SecurityModuleId);
         node.SecurityModule?.LoadConfig(dto.SecurityModuleConfig);

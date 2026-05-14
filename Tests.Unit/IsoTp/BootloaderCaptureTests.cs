@@ -28,6 +28,10 @@ public class BootloaderCaptureTests
         var bus = new VirtualBus();
         var algo = new FakeSeedKeyAlgorithm();
         var node = NodeFactory.CreateNodeWithGenericModule(algo);
+        // Test payloads use a 3-byte $36 starting address (0x003FB8).
+        // Override the 4-byte default so the existing fixture data stays valid;
+        // T43_4ByteAddressTests covers the 4-byte path explicitly.
+        node.DownloadAddressByteCount = 3;
         bus.AddNode(node);
         var ch = new ChannelSession { Id = 1, Protocol = ProtocolID.ISO15765, Baud = 500_000, Bus = bus };
         var iso = new Iso15765Channel(new IsoTpTimingParameters());
@@ -243,5 +247,52 @@ public class BootloaderCaptureTests
         Send(iso, [0x20]);
 
         Assert.False(Directory.Exists(tmp), "capture directory must not exist when capture is off");
+    }
+
+    /// <summary>
+    /// Regression: real T43-class ECUs use a 4-byte $36 startingAddress
+    /// (e.g. the SPS kernel destination 0x003FAFE0 from 6Speed.T43's
+    /// Pushspskernel). Hard-wiring 3 bytes used to absorb the low byte
+    /// 0xE0 into the data record, mis-parsing the address as 0x003FAF and
+    /// shifting every subsequent write by one byte. With per-ECU
+    /// DownloadAddressByteCount = 4 the address, the offset, and the
+    /// first data byte all line up.
+    /// </summary>
+    [Fact]
+    public void Capture_with_4byte_address_parses_correctly_for_T43_kernel()
+    {
+        var bus = new VirtualBus();
+        var algo = new FakeSeedKeyAlgorithm();
+        var node = NodeFactory.CreateNodeWithGenericModule(algo);
+        // Real T43: kernel destination is 0x003FAFE0 - needs all 4 bytes.
+        Assert.Equal(4, node.DownloadAddressByteCount);
+        bus.AddNode(node);
+        var ch = new ChannelSession { Id = 1, Protocol = ProtocolID.ISO15765, Baud = 500_000, Bus = bus };
+        var iso = new Iso15765Channel(new IsoTpTimingParameters());
+        iso.BusEgress = frame => bus.DispatchHostTx(frame, ch);
+        ch.IsoChannel = iso;
+        ch.IsoChannelInbound = (canId, frame) => iso.OnInboundCanFrame(canId, frame.AsSpan(4));
+        iso.AddFilter(new Iso15765Channel.IsoFilter
+        {
+            Id = 1, MaskCanId = 0xFFFFFFFF, PatternCanId = UsdtResp,
+            FlowCtlCanId = PhysReq, Format = AddressFormat.Normal,
+        });
+        bus.Capture.BootloaderCaptureEnabled = true;
+
+        DriveProgrammingPreconditions(iso);
+        Send(iso, [0x34, 0x00, 0x00, 0x0C, 0x20]);    // T43 first-kernel declared size 3104
+
+        // $36 with 4-byte address 0x003FAFE0, 8 bytes of recognisable data.
+        Assert.Equal(new byte[] { 0x76 }, Send(iso,
+            [0x36, 0x00, 0x00, 0x3F, 0xAF, 0xE0,
+             0xDE, 0xAD, 0xBE, 0xEF, 0xCA, 0xFE, 0xBA, 0xBE]));
+
+        Assert.Equal(0x003FAFE0u, node.State.DownloadCaptureBaseAddress);
+        Assert.Equal(8u, node.State.DownloadBytesReceived);
+        Assert.NotNull(node.State.DownloadBuffer);
+        // Data byte 0 in the buffer must be 0xDE, NOT 0xE0 (the 4th address
+        // byte) - that's the bug this regression guards against.
+        Assert.Equal(0xDE, node.State.DownloadBuffer[0]);
+        Assert.Equal(0xAD, node.State.DownloadBuffer[1]);
     }
 }

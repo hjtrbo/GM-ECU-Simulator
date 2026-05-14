@@ -34,9 +34,14 @@ namespace Common.Persistence;
 // override). v1-v5 files load with BootloaderCapture == null - the Bootloader
 // tab toggle stays at its default (off) and the spec-correct NRC $31 path
 // runs in Service36Handler.
+//
+// v7 added per-ECU DownloadAddressByteCount (number of bytes in the $36
+// startingAddress field, 2..4). v1-v6 files load with the field absent ->
+// the loader defaults it to 4 to match GMW3110-2010-era ECUs like T43;
+// older 3-byte ECUs need an explicit override in the saved config.
 public sealed class SimulatorConfig
 {
-    public const int CurrentVersion = 6;
+    public const int CurrentVersion = 7;
     public const int MinSupportedVersion = 1;
 
     public int Version { get; set; } = CurrentVersion;
@@ -110,6 +115,14 @@ public sealed class EcuDto
     // GMW3110-2010 §8.16 ReportProgrammedState ($A2) byte. Default 0x00
     // (FullyProgrammed) matches a normal running ECU.
     public byte ProgrammedState { get; set; }
+
+    // Number of bytes in the $36 TransferData startingAddress field.
+    // Spec-permitted values are 2..4. Default 4 matches GMW3110-2010-era
+    // ECUs like the T43 TCM whose kernel destinations (e.g. 0x003FAFE0)
+    // require the full 4 bytes; tools that hardcode 3 will corrupt the
+    // received image. v1-v6 configs deserialise this as 0 (the int default),
+    // which ConfigStore.EcuNodeFrom remaps to 4.
+    public int DownloadAddressByteCount { get; set; } = 4;
 
     public List<PidDto> Pids { get; set; } = new();
 

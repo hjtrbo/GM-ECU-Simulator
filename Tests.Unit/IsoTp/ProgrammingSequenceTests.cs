@@ -35,6 +35,9 @@ public class ProgrammingSequenceTests
         var bus = new VirtualBus();
         var algo = new FakeSeedKeyAlgorithm();
         var node = NodeFactory.CreateNodeWithGenericModule(algo);
+        // Test payloads here use 3-byte $36 starting addresses; override the
+        // 4-byte default so the existing fixture data stays valid.
+        node.DownloadAddressByteCount = 3;
         bus.AddNode(node);
 
         var ch = new ChannelSession

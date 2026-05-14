@@ -39,6 +39,17 @@ public sealed class EcuNode
     public byte FlowControlBlockSize { get; set; }
     public byte FlowControlSeparationTime { get; set; }
 
+    // Number of bytes the host uses for the startingAddress field of $36
+    // TransferData. Spec range is 2..4; 4 matches real T43-era ECUs and is
+    // the default. Pass-through to NodeState - the runtime fast path reads
+    // it via node.State.DownloadAddressByteCount, but keeping the editable
+    // knob on EcuNode mirrors how every other per-ECU config field looks.
+    public int DownloadAddressByteCount
+    {
+        get => State.DownloadAddressByteCount;
+        set => State.DownloadAddressByteCount = value;
+    }
+
     // GMW3110-2010 §8.16 ReportProgrammedState ($A2) value returned in the
     // positive response. Defaults to 0x00 FullyProgrammed - what a normal
     // running ECU reports. Other defined values:

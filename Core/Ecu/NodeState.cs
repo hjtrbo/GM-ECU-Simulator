@@ -174,12 +174,15 @@ public sealed class NodeState
     public uint DownloadBytesReceived { get; set; }
 
     /// <summary>
-    /// Number of bytes in the startingAddress field for this ECU. GMW3110
+    /// Number of bytes in the startingAddress field for this $36 ECU. GMW3110
     /// §8.13 requires it to be consistent across all $36 calls to the same
-    /// node. 3 is the typical default; the value is fixed at $34 time and
-    /// applies to all subsequent $36s in the session.
+    /// node. The spec permits 2..4; 4 is the GMW3110-2010-era default used by
+    /// real T43-class TCMs (kernel destinations like 0x003FAFE0 don't fit in
+    /// 3 bytes, and tools like 6Speed.T43 always send the full 4). Configure
+    /// per-ECU via EcuNode.DownloadAddressByteCount / EcuDto when an older
+    /// node uses 2 or 3.
     /// </summary>
-    public int DownloadAddressByteCount { get; set; } = 3;
+    public int DownloadAddressByteCount { get; set; } = 4;
 
     /// <summary>
     /// startingAddress of the first $36 in the current session, used as the

@@ -49,6 +49,8 @@ public class ChaosMidTransferTests
             ExpectedKey = new byte[seedLength],
         };
         var node = NodeFactory.CreateNodeWithGenericModule(algo);
+        // 3-byte $36 starting addresses are baked into the test payloads.
+        node.DownloadAddressByteCount = 3;
         bus.AddNode(node);
         var state = new IpcSessionState(bus);
         return (bus, node, state, algo);
