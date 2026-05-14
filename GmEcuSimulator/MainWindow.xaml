@@ -294,18 +294,18 @@
                                             <RowDefinition Height="Auto"/>
                                             <RowDefinition Height="Auto"/>
                                         </Grid.RowDefinitions>
-                                        <Label   Grid.Row="0" Grid.Column="0" Content="Name"/>
+                                        <Label Style="{StaticResource Label.FormPair}"   Grid.Row="0" Grid.Column="0" Content="Name"/>
                                         <TextBox Grid.Row="0" Grid.Column="1" Margin="0,2"
                                                  Text="{Binding Name, UpdateSourceTrigger=PropertyChanged}"/>
-                                        <Label   Grid.Row="1" Grid.Column="0" Content="Req CAN"/>
+                                        <Label Style="{StaticResource Label.FormPair}"   Grid.Row="1" Grid.Column="0" Content="Req CAN"/>
                                         <TextBox Grid.Row="1" Grid.Column="1" Margin="0,2"
                                                  Text="{Binding PhysicalRequestCanIdHex, UpdateSourceTrigger=LostFocus}"
                                                  FontFamily="{StaticResource Font.Mono}"/>
-                                        <Label   Grid.Row="2" Grid.Column="0" Content="USDT resp"/>
+                                        <Label Style="{StaticResource Label.FormPair}"   Grid.Row="2" Grid.Column="0" Content="USDT resp"/>
                                         <TextBox Grid.Row="2" Grid.Column="1" Margin="0,2"
                                                  Text="{Binding UsdtResponseCanIdHex, UpdateSourceTrigger=LostFocus}"
                                                  FontFamily="{StaticResource Font.Mono}"/>
-                                        <Label   Grid.Row="3" Grid.Column="0" Content="UUDT resp"/>
+                                        <Label Style="{StaticResource Label.FormPair}"   Grid.Row="3" Grid.Column="0" Content="UUDT resp"/>
                                         <TextBox Grid.Row="3" Grid.Column="1" Margin="0,2"
                                                  Text="{Binding UudtResponseCanIdHex, UpdateSourceTrigger=LostFocus}"
                                                  FontFamily="{StaticResource Font.Mono}"/>
@@ -439,38 +439,38 @@
                                     <RowDefinition Height="Auto"/>
                                 </Grid.RowDefinitions>
                                 
-                                <Label Grid.Row="0" Grid.Column="0" Content="Shape"/>
+                                <Label Style="{StaticResource Label.FormPair}" Grid.Row="0" Grid.Column="0" Content="Shape"/>
                                 <ComboBox Grid.Row="0" Grid.Column="1" Margin="0,2"
                                           ItemsSource="{Binding Source={StaticResource WaveformShapes}}"
                                           SelectedItem="{Binding Shape, UpdateSourceTrigger=PropertyChanged}"/>
 
-                                <Label Grid.Row="1" Grid.Column="0" Content="Amplitude"
+                                <Label Style="{StaticResource Label.FormPair}" Grid.Row="1" Grid.Column="0" Content="Amplitude"
                                        Visibility="{Binding SupportsAmplitude, Converter={StaticResource BoolToVis}}"/>
                                 <TextBox Grid.Row="1" Grid.Column="1" Margin="0,2"
                                          Text="{Binding Amplitude, StringFormat=G, UpdateSourceTrigger=LostFocus}"
                                          Visibility="{Binding SupportsAmplitude, Converter={StaticResource BoolToVis}}"
                                          FontFamily="{StaticResource Font.Mono}"/>
 
-                                <Label Grid.Row="2" Grid.Column="0" Content="Offset"/>
+                                <Label Style="{StaticResource Label.FormPair}" Grid.Row="2" Grid.Column="0" Content="Offset"/>
                                 <TextBox Grid.Row="2" Grid.Column="1" Margin="0,2"
                                          Text="{Binding Offset, StringFormat=G, UpdateSourceTrigger=LostFocus}"
                                          FontFamily="{StaticResource Font.Mono}"/>
 
-                                <Label Grid.Row="3" Grid.Column="0" Content="Freq (Hz)"
+                                <Label Style="{StaticResource Label.FormPair}" Grid.Row="3" Grid.Column="0" Content="Freq (Hz)"
                                        Visibility="{Binding SupportsFrequency, Converter={StaticResource BoolToVis}}"/>
                                 <TextBox Grid.Row="3" Grid.Column="1" Margin="0,2"
                                          Text="{Binding FrequencyHz, StringFormat=G, UpdateSourceTrigger=LostFocus}"
                                          Visibility="{Binding SupportsFrequency, Converter={StaticResource BoolToVis}}"
                                          FontFamily="{StaticResource Font.Mono}"/>
 
-                                <Label Grid.Row="4" Grid.Column="0" Content="Phase (°)"
+                                <Label Style="{StaticResource Label.FormPair}" Grid.Row="4" Grid.Column="0" Content="Phase (°)"
                                        Visibility="{Binding SupportsFrequency, Converter={StaticResource BoolToVis}}"/>
                                 <TextBox Grid.Row="4" Grid.Column="1" Margin="0,2"
                                          Text="{Binding PhaseDeg, StringFormat=G, UpdateSourceTrigger=LostFocus}"
                                          Visibility="{Binding SupportsFrequency, Converter={StaticResource BoolToVis}}"
                                          FontFamily="{StaticResource Font.Mono}"/>
 
-                                <Label Grid.Row="5" Grid.Column="0" Content="Duty (0..1)"
+                                <Label Style="{StaticResource Label.FormPair}" Grid.Row="5" Grid.Column="0" Content="Duty (0..1)"
                                        Visibility="{Binding SupportsDuty, Converter={StaticResource BoolToVis}}"/>
                                 <TextBox Grid.Row="5" Grid.Column="1" Margin="0,2"
                                          Text="{Binding DutyCycle, StringFormat=G, UpdateSourceTrigger=LostFocus}"
