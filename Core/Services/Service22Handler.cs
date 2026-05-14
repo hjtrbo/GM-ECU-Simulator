@@ -66,6 +66,6 @@ public static class Service22Handler
             pos += (int)pid.Size;
         }
 
-        IsoTpFragmenter.EnqueueResponse(ch, node.UsdtResponseCanId, resp);
+        node.State.Fragmenter.EnqueueResponse(ch, node.UsdtResponseCanId, resp);
     }
 }

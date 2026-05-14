@@ -53,7 +53,7 @@ public static class Service3EHandler
             // Invalid length — NRC $12 on physical, silent on functional.
             if (!isFunctional)
             {
-                IsoTpFragmenter.EnqueueResponse(ch, node.UsdtResponseCanId,
+                node.State.Fragmenter.EnqueueResponse(ch, node.UsdtResponseCanId,
                     [Service.NegativeResponse, Service.TesterPresent, Nrc.SubFunctionNotSupportedInvalidFormat]);
             }
             return;
@@ -64,7 +64,7 @@ public static class Service3EHandler
 
         if (!isFunctional && !suppressPositive)
         {
-            IsoTpFragmenter.EnqueueResponse(ch, node.UsdtResponseCanId,
+            node.State.Fragmenter.EnqueueResponse(ch, node.UsdtResponseCanId,
                 [Service.Positive(Service.TesterPresent)]);
         }
     }

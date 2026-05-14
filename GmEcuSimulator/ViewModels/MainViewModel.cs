@@ -7,10 +7,11 @@ using System.Windows;
 using Common.Persistence;
 using Core.Bus;
 using Core.Ecu;
-using Core.Ipc;
 using Core.Persistence;
 using Core.Replay;
 using Microsoft.Win32;
+using Shim;
+using Shim.Ipc;
 
 namespace GmEcuSimulator.ViewModels;
 

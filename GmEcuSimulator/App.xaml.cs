@@ -1,11 +1,12 @@
 using System.IO;
 using System.Windows;
 using Core.Bus;
-using Core.Ipc;
 using Core.Persistence;
 using Core.Replay;
 using GMThemeManager;
 using Microsoft.Extensions.DependencyInjection;
+using Shim;
+using Shim.Ipc;
 
 namespace GmEcuSimulator;
 

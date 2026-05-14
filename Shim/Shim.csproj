@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!-- net9.0-windows so System.IO.Pipes.AccessControl and Microsoft.Win32
+         registry APIs (used by J2534Registration) don't trip CA1416. The
+         shim is Windows-only by definition: J2534 hosts are Windows
+         applications. -->
+    <TargetFramework>net9.0-windows</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <!-- Matches the EcuSim.Common assembly-name convention so this dll is
+         easy to spot alongside the rest of the suite in GmEcuSimulator's
+         bin folder. -->
+    <AssemblyName>EcuSim.Shim</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Common\Common.csproj" />
+    <ProjectReference Include="..\Core\Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="EcuSimulator.Tests" />
+  </ItemGroup>
+
+</Project>

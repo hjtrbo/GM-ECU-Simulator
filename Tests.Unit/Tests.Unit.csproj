@@ -1,7 +1,10 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFramework>net9.0</TargetFramework>
+    <!-- net9.0-windows so we can reference Shim (which is windows-targeted to
+         keep Microsoft.Win32 / System.IO.Pipes.AccessControl off CA1416). The
+         simulator is Windows-only by design (J2534), so the test suite is too. -->
+    <TargetFramework>net9.0-windows</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <IsPackable>false</IsPackable>
@@ -20,6 +23,7 @@
   <ItemGroup>
     <ProjectReference Include="..\Common\Common.csproj" />
     <ProjectReference Include="..\Core\Core.csproj" />
+    <ProjectReference Include="..\Shim\Shim.csproj" />
   </ItemGroup>
 
 </Project>

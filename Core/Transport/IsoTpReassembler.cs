@@ -7,8 +7,12 @@ namespace Core.Transport;
 // when one is ready, or null if it's still buffering.
 //
 // Sends a Flow Control frame back to the tester on First Frame reception
-// — that's why it takes a `sendFlowControl` callback. BS=0/STmin=0 only;
+// - that's why it takes a `sendFlowControl` callback. BS=0/STmin=0 only;
 // matches the DataLogger's expectation in CanFrameCodec.BuildFlowControl().
+//
+// Supports both 12-bit FF_DL (FF_DL <= 4095) and the 32-bit escape FF_DL
+// (FF_DL > 4095) per ISO 15765-2:2016 §9.6.3.1, so programming-event
+// $36 TransferData requests larger than 4095 bytes round-trip cleanly.
 public sealed class IsoTpReassembler
 {
     private byte[] buffer = [];
@@ -40,12 +44,34 @@ public sealed class IsoTpReassembler
                 if (data.Length < 2) return null;
                 int totalHigh = data[0] & 0x0F;
                 int totalLow = data[1];
-                totalLen = (totalHigh << 8) | totalLow;
-                if (totalLen <= 6) return null;     // FF only valid for >6 bytes
+                int totalLenLocal = (totalHigh << 8) | totalLow;
+                int firstChunkOffset;
 
+                if (totalLenLocal == 0)
+                {
+                    // §9.6.3.1 escape FF: low nibble of byte 1 + byte 2 == 0,
+                    // 32-bit FF_DL follows in bytes 3..6 (BE). Required for
+                    // FF_DL > 4095 (e.g. programming-event $36 payloads).
+                    if (data.Length < 6) return null;
+                    long longLen = ((long)data[2] << 24) | ((long)data[3] << 16)
+                                 | ((long)data[4] << 8)  | data[5];
+                    // §9.6.3.2: escape FF with FF_DL <= 4095 is malformed; ignore.
+                    if (longLen <= 4095) return null;
+                    if (longLen > int.MaxValue) return null;     // we don't allocate >2 GiB
+                    totalLenLocal = (int)longLen;
+                    firstChunkOffset = 6;
+                }
+                else
+                {
+                    if (totalLenLocal <= 6) return null;          // short FF only valid for >6 bytes
+                    firstChunkOffset = 2;
+                }
+
+                totalLen = totalLenLocal;
                 buffer = new byte[totalLen];
-                int firstChunk = Math.Min(totalLen, data.Length - 2);
-                data.Slice(2, firstChunk).CopyTo(buffer);
+                int firstChunk = Math.Min(totalLen, data.Length - firstChunkOffset);
+                if (firstChunk > 0)
+                    data.Slice(firstChunkOffset, firstChunk).CopyTo(buffer);
                 written = firstChunk;
                 expectedSeq = 1;
                 inProgress = true;

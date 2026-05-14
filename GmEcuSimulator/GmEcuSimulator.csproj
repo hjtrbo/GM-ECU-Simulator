@@ -3,6 +3,7 @@
   <ItemGroup>
     <ProjectReference Include="..\Common\Common.csproj" />
     <ProjectReference Include="..\Core\Core.csproj" />
+    <ProjectReference Include="..\Shim\Shim.csproj" />
   </ItemGroup>
 
   <!-- Sibling Gmlan Data Logger BinaryWorker (and its Common.dll + the

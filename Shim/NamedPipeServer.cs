@@ -3,7 +3,7 @@ using System.IO.Pipes;
 using Common.Wire;
 using Core.Bus;
 
-namespace Core.Ipc;
+namespace Shim.Ipc;
 
 // Pipe server. Each accepted connection gets its own IpcSessionState +
 // RequestDispatcher; all sessions share the global VirtualBus.

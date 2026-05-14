@@ -12,6 +12,27 @@ public sealed class ChannelSession
     public required ProtocolID Protocol { get; init; }
     public required uint Baud { get; init; }
 
+    /// <summary>
+    /// Per-channel ISO 15765-2 transport context. Set by the dispatcher when
+    /// the channel is opened with <see cref="ProtocolID.ISO15765"/>; <c>null</c>
+    /// for raw CAN channels. When set, <see cref="EnqueueRx"/> routes inbound
+    /// frames through the TP state machines instead of pushing them onto
+    /// <see cref="RxQueue"/> for the host to read raw.
+    ///
+    /// Typed as <c>object</c> here because Core does not depend on Shim;
+    /// Shim's IsoChannel-aware EnqueueRx delegates to <see cref="IsoChannelInbound"/>
+    /// when set. Shim wires that delegate at channel-create time.
+    /// </summary>
+    public object? IsoChannel { get; set; }
+
+    /// <summary>
+    /// Delegate the dispatcher wires when it constructs an ISO15765 channel.
+    /// Returns true if the inbound CAN frame was consumed by the TP layer
+    /// (do NOT also push onto RxQueue); false to fall through to the normal
+    /// CAN-channel path.
+    /// </summary>
+    public Func<uint, byte[], bool>? IsoChannelInbound { get; set; }
+
     // J2534 v04.04 PassThruConnect flags. Bit definitions (subset):
     //   0x0100  CAN_29BIT_ID            — channel uses 29-bit extended IDs
     //   0x0200  ISO9141_NO_CHECKSUM     — n/a for CAN
@@ -63,8 +84,28 @@ public sealed class ChannelSession
     // Enqueue an Rx frame for delivery up to the J2534 host. If filters are
     // configured, the frame must pass at least one PASS_FILTER (or have no
     // BLOCK_FILTER match) to be delivered.
+    //
+    // ISO15765 routing: if an Iso15765Channel is attached, the raw CAN frame
+    // is offered to the TP layer first. When the TP layer consumes it (i.e.
+    // it matches a FlowControl filter), we do NOT also push the raw frame
+    // onto the user-visible RxQueue - the host on an ISO15765 channel reads
+    // reassembled payloads from the IsoChannel's queue, not raw CAN frames.
     public void EnqueueRx(PassThruMsg msg)
     {
+        if (Protocol == ProtocolID.ISO15765 && IsoChannelInbound != null && msg.Data.Length >= 4)
+        {
+            uint canId = ((uint)msg.Data[0] << 24) | ((uint)msg.Data[1] << 16)
+                       | ((uint)msg.Data[2] << 8)  | msg.Data[3];
+            if (IsoChannelInbound(canId, msg.Data))
+            {
+                Bus?.LogRx(Id, msg.Data);
+                return;
+            }
+            // Unmatched: fall through to the raw CAN path (uncommon for
+            // ISO15765, but keeps stray frames visible if the host enabled
+            // diagnostic listening without a FlowControl filter).
+        }
+
         if (!ShouldDeliver(msg.Data))
         {
             Bus?.LogRxFiltered(Id, msg.Data);

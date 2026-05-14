@@ -39,10 +39,16 @@ public static class EcuExitLogic
             node.State.DynamicallyDefinedPids.Clear();
         }
 
+        // 3a. Clear $28 / $A5 / $34 / $36 programming-session state. Per
+        //     GMW3110 §8.17 "The tester can end a programming event by sending
+        //     a ReturnToNormalMode ($20) request message, or by allowing a P3C
+        //     timeout to occur." Both paths funnel through here.
+        node.State.ClearProgrammingState();
+
         // 4. Send unsolicited $60 positive response (only if we have a channel).
         if (respondOn != null)
         {
-            IsoTpFragmenter.EnqueueResponse(respondOn, node.UsdtResponseCanId,
+            node.State.Fragmenter.EnqueueResponse(respondOn, node.UsdtResponseCanId,
                 [Service.Positive(Service.ReturnToNormalMode)]);
         }
     }

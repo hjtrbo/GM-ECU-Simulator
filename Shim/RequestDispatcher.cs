@@ -1,9 +1,11 @@
+using Common.IsoTp;
 using Common.PassThru;
 using Common.Wire;
 using Core.Bus;
 using Core.Utilities;
+using Shim.IsoTp;
 
-namespace Core.Ipc;
+namespace Shim.Ipc;
 
 // Dispatches inbound IPC frames to per-message-type handlers and returns the
 // payload to send back. Pure CPU work - no blocking I/O. The pipe server
@@ -204,22 +206,34 @@ public sealed class RequestDispatcher
         var flags = r.ReadU32();                          // CAN_29BIT_ID etc - see ChannelSession.ConnectFlags
         var baud = r.ReadU32();
 
-        // CAN only - the shim is a thin frame-forwarder and doesn't implement
-        // the ISO15765 protocol layer. Hosts must use ProtocolID.CAN and do their
-        // own ISO-TP framing in the PassThruWriteMsgs payload (PCI byte + data).
-        if (proto != ProtocolID.CAN)
+        // Accept CAN (raw frame forwarding) and ISO15765 (we run the ISO 15765-2
+        // transport layer in this shim - segmentation, FC handshake, reassembly).
+        // Other protocols (J1850, ISO9141, KWP2000) are not implemented.
+        if (proto != ProtocolID.CAN && proto != ProtocolID.ISO15765)
         {
             state.Bus.LogDiagnostic?.Invoke(
-                $"[connect] rejected: protocol {proto} not supported - shim is CAN-only (use ProtocolID.CAN with manual ISO-TP framing)");
+                $"[connect] rejected: protocol {proto} not supported - this shim handles CAN and ISO15765");
             state.Bus.OnStatusMessage?.Invoke(
-                $"Rejected J2534 connect: {proto} not supported - shim is CAN-only");
+                $"Rejected J2534 connect: {proto} not supported");
             return ProtocolFail(IpcMessageTypes.ConnectResponse, ResultCode.ERR_INVALID_PROTOCOL_ID);
         }
 
         var ch = state.AllocateChannel(proto, baud, flags);
-        // Clear any stale rejection notice left over from a prior bad connect.
+
+        // For ISO15765 channels, attach a per-channel TP context that drives
+        // segmentation/reassembly. The BusEgress lambda dispatches outbound
+        // CAN frames produced mid-cascade (FCs from our RX side, CFs from our
+        // TX side) back through the bus.
+        if (proto == ProtocolID.ISO15765)
+        {
+            var iso = new Iso15765Channel(new IsoTpTimingParameters());
+            iso.BusEgress = frame => state.Bus.DispatchHostTx(frame, ch);
+            ch.IsoChannel = iso;
+            ch.IsoChannelInbound = (canId, frame) => iso.OnInboundCanFrame(canId, frame.AsSpan(4));
+        }
+
         state.Bus.OnStatusMessage?.Invoke(
-            $"J2534 host connected - channel {ch.Id}, CAN @ {baud} baud");
+            $"J2534 host connected - channel {ch.Id}, {proto} @ {baud} baud");
         var w = new IpcWriter();
         w.WriteU32((uint)ResultCode.STATUS_NOERROR);
         w.WriteU32(ch.Id);
@@ -256,12 +270,23 @@ public sealed class RequestDispatcher
         if (!state.TryGetChannel(chId, out var ch))
             return ProtocolFail(IpcMessageTypes.ReadMsgsResponse, ResultCode.ERR_INVALID_CHANNEL_ID);
 
+        // ISO15765 channels deliver reassembled USDT payloads from the per-channel
+        // IsoChannel queue, not raw CAN frames. Wait/dequeue uses the IsoChannel's
+        // semaphore + queue so multi-frame responses surface as a single PassThruMsg.
         var msgs = new List<PassThruMsg>(requested);
+        var queue = ch.RxQueue;
+        var available = ch.RxAvailable;
+        if (ch.Protocol == ProtocolID.ISO15765 && ch.IsoChannel is Iso15765Channel iso)
+        {
+            queue = iso.ReassembledPayloadQueue;
+            available = iso.ReassembledAvailable;
+        }
+
         // First, drain everything already in the queue without sleeping. Each
         // dequeued frame "consumes" the matching Release the producer did,
         // even if Wait() never observed it (Wait+TryDequeue and the producer's
         // Enqueue+Release race in either order). We rebalance after the loop.
-        while (msgs.Count < requested && ch.RxQueue.TryDequeue(out var m))
+        while (msgs.Count < requested && queue.TryDequeue(out var m))
             msgs.Add(m);
 
         var deadline = Environment.TickCount64 + Math.Max(0, timeoutMs);
@@ -274,12 +299,12 @@ public sealed class RequestDispatcher
                 // Block until a producer releases the semaphore or timeout fires.
                 // Cancellation isn't plumbed here; the dispatcher is per-call sync
                 // and the host-side timeoutMs is the only ceiling.
-                if (!ch.RxAvailable.Wait(timeoutMs == 0 ? 0 : remaining)) break;
+                if (!available.Wait(timeoutMs == 0 ? 0 : remaining)) break;
             }
             catch (ObjectDisposedException) { break; }   // channel torn down mid-wait
             // Drain again - Release count and queue length aren't synchronised one-to-one
             // (an Enqueue can land between our TryDequeue and the next Wait).
-            while (msgs.Count < requested && ch.RxQueue.TryDequeue(out var m))
+            while (msgs.Count < requested && queue.TryDequeue(out var m))
                 msgs.Add(m);
         }
 
@@ -310,16 +335,72 @@ public sealed class RequestDispatcher
             return ProtocolFail(IpcMessageTypes.WriteMsgsResponse, ResultCode.ERR_INVALID_CHANNEL_ID);
 
         int accepted = 0;
+        ResultCode rcOverride = ResultCode.STATUS_NOERROR;
+
         for (int i = 0; i < numMsgs; i++)
         {
             var m = r.ReadPassThruMsg();
-            state.Bus.DispatchHostTx(m.Data, ch);
+            if (ch.Protocol == ProtocolID.ISO15765 && ch.IsoChannel is Iso15765Channel iso)
+            {
+                var rc = WriteMsgIso15765(iso, ch, m.Data);
+                if (rc != ResultCode.STATUS_NOERROR) { rcOverride = rc; break; }
+            }
+            else
+            {
+                state.Bus.DispatchHostTx(m.Data, ch);
+            }
             accepted++;
         }
+
         var w = new IpcWriter();
-        w.WriteU32((uint)ResultCode.STATUS_NOERROR);
+        w.WriteU32((uint)rcOverride);
         w.WriteU32((uint)accepted);
         return (IpcMessageTypes.WriteMsgsResponse, w.ToArray());
+    }
+
+    // ISO15765 path: parse [4-byte CAN ID][user payload], drive the TX state
+    // machine through the cascade, and translate the terminal N_Result into a
+    // J2534 ResultCode.
+    private ResultCode WriteMsgIso15765(Iso15765Channel iso, ChannelSession ch, byte[] data)
+    {
+        if (data.Length < 4)
+            return ResultCode.ERR_INVALID_MSG;
+
+        uint canId = ((uint)data[0] << 24) | ((uint)data[1] << 16)
+                   | ((uint)data[2] << 8)  | data[3];
+        var userPayload = data.AsSpan(4);
+
+        if (userPayload.Length == 0)
+            return ResultCode.ERR_INVALID_MSG;
+
+        var begin = iso.BeginTransmit(canId, userPayload);
+        if (!begin.Started || begin.Filter == null || begin.CanFrame == null)
+            return ResultCode.ERR_NO_FLOW_CONTROL;
+
+        NResult? nResult;
+        try
+        {
+            // Dispatch the first frame (SF or FF). For SF the TX is already Done.
+            // For FF, the in-process cascade runs synchronously through ECU's
+            // reassembler -> emits FC -> our IsoChannel routes to TX -> CFs -> ...
+            // until the message completes or aborts.
+            state.Bus.DispatchHostTx(begin.CanFrame, ch);
+        }
+        finally
+        {
+            nResult = iso.GetTxResult(begin.Filter);
+            iso.EndTransmit(begin.Filter);
+        }
+
+        return nResult switch
+        {
+            NResult.N_OK            => ResultCode.STATUS_NOERROR,
+            NResult.N_TIMEOUT_Bs    => ResultCode.ERR_TIMEOUT,
+            NResult.N_TIMEOUT_A     => ResultCode.ERR_TIMEOUT,
+            NResult.N_BUFFER_OVFLW  => ResultCode.ERR_BUFFER_OVERFLOW,
+            NResult.N_INVALID_FS    => ResultCode.ERR_FAILED,
+            _                       => ResultCode.ERR_TIMEOUT,    // null / N_ERROR / unknown
+        };
     }
 
     private (byte, byte[]) StartFilter(ReadOnlySpan<byte> payload)
@@ -338,15 +419,37 @@ public sealed class RequestDispatcher
             return ProtocolFail(IpcMessageTypes.StartFilterResponse, ResultCode.ERR_INVALID_CHANNEL_ID);
 
         var filterId = state.AllocateFilterId();
-        _ = flowCtlMsg;          // FLOW_CONTROL_FILTER template is parsed but unused -
-                                 // the reassembler emits a hardcoded BS=0/STmin=0 FC.
-        ch.AddFilter(new ChannelFilter
+
+        // FLOW_CONTROL_FILTER on an ISO15765 channel registers an N_AI route in
+        // the per-channel TP context. The first 4 bytes of mask/pattern/flowctl
+        // Data are the BE CAN ID; for mixed addressing a 5th byte carries N_AE.
+        if (ch.Protocol == ProtocolID.ISO15765 &&
+            ch.IsoChannel is Iso15765Channel iso &&
+            filterType == FilterType.FLOW_CONTROL_FILTER &&
+            maskMsg.Data.Length >= 4 && patternMsg.Data.Length >= 4 && flowCtlMsg.Data.Length >= 4)
         {
-            Id = filterId,
-            Type = filterType,
-            Mask = maskMsg.Data,
-            Pattern = patternMsg.Data,
-        });
+            iso.AddFilter(new Iso15765Channel.IsoFilter
+            {
+                Id = filterId,
+                MaskCanId = ReadBeCanId(maskMsg.Data),
+                PatternCanId = ReadBeCanId(patternMsg.Data),
+                FlowCtlCanId = ReadBeCanId(flowCtlMsg.Data),
+                FlowCtlExt = flowCtlMsg.Data.Length > 4 ? flowCtlMsg.Data[4] : (byte)0,
+                Format = AddressFormat.Normal,
+            });
+        }
+        else
+        {
+            // Legacy CAN-channel filter list (raw frame mask/pattern matching).
+            _ = flowCtlMsg;
+            ch.AddFilter(new ChannelFilter
+            {
+                Id = filterId,
+                Type = filterType,
+                Mask = maskMsg.Data,
+                Pattern = patternMsg.Data,
+            });
+        }
 
         var w = new IpcWriter();
         w.WriteU32((uint)ResultCode.STATUS_NOERROR);
@@ -354,13 +457,22 @@ public sealed class RequestDispatcher
         return (IpcMessageTypes.StartFilterResponse, w.ToArray());
     }
 
+    private static uint ReadBeCanId(ReadOnlySpan<byte> data)
+        => ((uint)data[0] << 24) | ((uint)data[1] << 16) | ((uint)data[2] << 8) | data[3];
+
     private (byte, byte[]) StopFilter(ReadOnlySpan<byte> payload)
     {
         var r = new IpcReader(payload);
         if (r.Remaining < 8) return ProtocolFail(IpcMessageTypes.StopFilterResponse, ResultCode.ERR_INVALID_MSG);
         var chId = r.ReadU32();
         var filterId = r.ReadU32();
-        if (state.TryGetChannel(chId, out var ch)) ch.RemoveFilter(filterId);
+        if (state.TryGetChannel(chId, out var ch))
+        {
+            // Either filter table may own the id; remove from both - missing-id
+            // removal is a no-op so we don't bother dispatching by protocol.
+            ch.RemoveFilter(filterId);
+            if (ch.IsoChannel is Iso15765Channel iso) iso.RemoveFilter(filterId);
+        }
         return (IpcMessageTypes.StopFilterResponse, OkResultPayload());
     }
 
@@ -494,7 +606,7 @@ public sealed class RequestDispatcher
                     if (ir.Remaining < numParams * 4) { rc = ResultCode.ERR_INVALID_MSG; break; }
                     ow.WriteU32(numParams);
                     for (int i = 0; i < numParams; i++)
-                        ow.WriteU32(ch!.GetConfig(ir.ReadU32()));
+                        ow.WriteU32(ReadConfigParam(ch!, ir.ReadU32()));
                     break;
                 }
                 case 0x02: // SET_CONFIG
@@ -507,7 +619,7 @@ public sealed class RequestDispatcher
                     {
                         uint paramId = ir.ReadU32();
                         uint value   = ir.ReadU32();
-                        ch!.SetConfig(paramId, value);
+                        ApplyConfigParam(ch!, paramId, value);
                     }
                     break;
                 }
@@ -524,6 +636,7 @@ public sealed class RequestDispatcher
                     break;
                 case 0x0A: // CLEAR_MSG_FILTERS
                     ch!.ClearFilters();
+                    if (ch.IsoChannel is Iso15765Channel isoForClear) isoForClear.ClearFilters();
                     break;
                 case 0x0B: // CLEAR_FUNCT_MSG_LOOKUP_TABLE
                 case 0x0C: // ADD_TO_FUNCT_MSG_LOOKUP_TABLE
@@ -580,6 +693,42 @@ public sealed class RequestDispatcher
     }
 
     // ---------------- Helpers ----------------
+
+    // J2534-1 v04.04 §7.2.7 ConfigParameter IDs we map to the per-channel
+    // ISO 15765-2 timing object. Other IDs fall through to the legacy
+    // generic dictionary on ChannelSession (kept for back-compat with
+    // non-ISO15765 paths and any unknown vendor params).
+    private const uint CFG_ISO15765_BS      = 0x1E;
+    private const uint CFG_ISO15765_STMIN   = 0x1F;
+    private const uint CFG_ISO15765_WFT_MAX = 0x25;
+
+    private static void ApplyConfigParam(ChannelSession ch, uint paramId, uint value)
+    {
+        if (ch.IsoChannel is Iso15765Channel iso)
+        {
+            switch (paramId)
+            {
+                case CFG_ISO15765_BS:      iso.Timing.BlockSizeSend = (byte)(value & 0xFF); return;
+                case CFG_ISO15765_STMIN:   iso.Timing.StMinSendRaw  = (byte)(value & 0xFF); return;
+                case CFG_ISO15765_WFT_MAX: iso.Timing.NWftMax       = (int)value;            return;
+            }
+        }
+        ch.SetConfig(paramId, value);
+    }
+
+    private static uint ReadConfigParam(ChannelSession ch, uint paramId)
+    {
+        if (ch.IsoChannel is Iso15765Channel iso)
+        {
+            switch (paramId)
+            {
+                case CFG_ISO15765_BS:      return iso.Timing.BlockSizeSend;
+                case CFG_ISO15765_STMIN:   return iso.Timing.StMinSendRaw;
+                case CFG_ISO15765_WFT_MAX: return (uint)iso.Timing.NWftMax;
+            }
+        }
+        return ch.GetConfig(paramId);
+    }
 
     private static byte[] OkResultPayload()
     {

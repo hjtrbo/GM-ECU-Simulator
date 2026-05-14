@@ -53,13 +53,13 @@ public static class Service27Handler
             payload[0] = Service.Positive(Service.SecurityAccess);
             payload[1] = subfunction;
             data.CopyTo(payload.AsSpan(2));
-            IsoTpFragmenter.EnqueueResponse(channel, node.UsdtResponseCanId, payload);
+            node.State.Fragmenter.EnqueueResponse(channel, node.UsdtResponseCanId, payload);
         }
 
         public void SendNegativeResponse(byte nrc)
             => ServiceUtil.EnqueueNrc(node, channel, Service.SecurityAccess, nrc);
 
         public void SendRaw(ReadOnlySpan<byte> usdtPayload)
-            => IsoTpFragmenter.EnqueueResponse(channel, node.UsdtResponseCanId, usdtPayload);
+            => node.State.Fragmenter.EnqueueResponse(channel, node.UsdtResponseCanId, usdtPayload);
     }
 }

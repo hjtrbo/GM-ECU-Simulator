@@ -1,7 +1,7 @@
 using System.IO;
 using Microsoft.Win32;
 
-namespace GmEcuSimulator;
+namespace Shim;
 
 /// <summary>
 /// Reads the J2534 v04.04 HKLM entries that PassThru hosts consult when
@@ -13,7 +13,7 @@ namespace GmEcuSimulator;
 /// start the IPC pipe; MainViewModel.RefreshJ2534Status uses it to drive
 /// the status banner.
 /// </summary>
-internal static class J2534Registration
+public static class J2534Registration
 {
     private const string Key32 = @"SOFTWARE\WOW6432Node\PassThruSupport.04.04\GmEcuSim";
     private const string Key64 = @"SOFTWARE\PassThruSupport.04.04\GmEcuSim";

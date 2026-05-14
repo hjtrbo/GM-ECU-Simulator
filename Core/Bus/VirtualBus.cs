@@ -33,7 +33,7 @@ public sealed class VirtualBus
     public BinReplayCoordinator? Replay { get; set; }
 
     // Last time any host activity was observed (any incoming IPC request).
-    // Updated by RequestDispatcher.Dispatch via NoteHostActivity. The
+    // Updated by Shim.Ipc.RequestDispatcher.Dispatch via NoteHostActivity. The
     // IdleBusSupervisor checks the gap to detect a stalled / disconnected host.
     private long lastHostActivityMs;
     public long LastHostActivityMs => Volatile.Read(ref lastHostActivityMs);
@@ -42,8 +42,8 @@ public sealed class VirtualBus
     /// <summary>
     /// Raised by the IdleBusSupervisor when the bus has been idle past the
     /// threshold and a full reset is being applied. Subscribers (typically
-    /// IpcSessionState) use this to cancel periodic timers and any other
-    /// per-session resources tied to the now-vanished host.
+    /// Shim.Ipc.IpcSessionState) use this to cancel periodic timers and any
+    /// other per-session resources tied to the now-vanished host.
     /// </summary>
     public event Action? IdleReset;
     internal void RaiseIdleReset() => IdleReset?.Invoke();
@@ -63,14 +63,14 @@ public sealed class VirtualBus
     /// <summary>
     /// Always-on diagnostic sink for control-plane events (periodic message
     /// register/unregister, channel lifecycle, anomalies). Unlike LogFrame
-    /// this is NOT gated by the "Log frame traffic" checkbox — diagnostic
+    /// this is NOT gated by the "Log frame traffic" checkbox - diagnostic
     /// events are low-volume and the user wants to see them whenever they're
     /// debugging. Null means no logging.
     /// </summary>
     public Action<string>? LogDiagnostic { get; set; }
 
     /// <summary>
-    /// Higher-prominence sink for events the user should see at a glance —
+    /// Higher-prominence sink for events the user should see at a glance -
     /// surfaced in the status bar at the bottom of the main window. Reserved
     /// for things that meaningfully change what the simulator is doing for
     /// a host (rejected connect attempts, etc.). Null means no surfacing.
@@ -111,7 +111,7 @@ public sealed class VirtualBus
         IdleSupervisor = new IdleBusSupervisor(this, Scheduler);
     }
 
-    /// <summary>Snapshot copy — safe to enumerate cross-thread.</summary>
+    /// <summary>Snapshot copy - safe to enumerate cross-thread.</summary>
     public IReadOnlyList<EcuNode> Nodes
     {
         get { lock (nodesLock) return nodes.ToArray(); }
@@ -173,6 +173,19 @@ public sealed class VirtualBus
             return;
         }
 
+        // FlowControl frames inbound from the host are for OUR fragmenter (the
+        // host is the receiver of an in-flight ECU response). Route to the
+        // node's fragmenter instead of letting the reassembler discard them.
+        // §9.6.5 - FC carries FS / BS / STmin in bytes 1..3 of the data field.
+        if (data.Length >= 3 && (data[0] >> 4) == 0x3)
+        {
+            var fs = (Common.IsoTp.FlowStatus)(byte)(data[0] & 0x0F);
+            byte bsByte = data[1];
+            byte stMinByte = data[2];
+            node.State.Fragmenter.OnFlowControl(fs, bsByte, stMinByte);
+            return;
+        }
+
         var assembled = node.State.Reassembler.Feed(data, (bs, st) =>
         {
             var fc = new byte[CanFrame.IdBytes + 3];
@@ -220,6 +233,41 @@ public sealed class VirtualBus
         if (sid == Service.ReadDataByParameterIdentifier
             || sid == Service.ReadDataByPacketIdentifier)
             Replay?.MaybeStart(NowMs);
+
+        // Exception isolation: a buggy waveform / security algorithm /
+        // value-codec must not crash the bus thread or leave the channel
+        // unusable. Any throw inside a handler is logged and translated to a
+        // generic NRC $22 (CNCRSE - "ECU not in a state to perform this
+        // service"). Physical requests get the NRC; functional broadcasts stay
+        // silent on error per §6.x convention. The inner try guards against
+        // the fragmenter ALSO throwing (e.g. if state is corrupted), so the
+        // catch can never raise a second-order exception.
+        try
+        {
+            DispatchUsdtBody(node, usdt, ch, isFunctional, sid);
+        }
+        catch (Exception ex)
+        {
+            LogDiagnostic?.Invoke(
+                $"[bus] dispatch error on ECU '{node.Name}' SID 0x{sid:X2}: {ex.GetType().Name}: {ex.Message}");
+            if (!isFunctional)
+            {
+                try
+                {
+                    node.State.Fragmenter.EnqueueResponse(ch, node.UsdtResponseCanId,
+                        new byte[] { Service.NegativeResponse, sid, Nrc.ConditionsNotCorrectOrSequenceError });
+                }
+                catch (Exception ex2)
+                {
+                    LogDiagnostic?.Invoke(
+                        $"[bus] failed to send fallback NRC for SID 0x{sid:X2}: {ex2.GetType().Name}: {ex2.Message}");
+                }
+            }
+        }
+    }
+
+    private void DispatchUsdtBody(EcuNode node, ReadOnlySpan<byte> usdt, ChannelSession ch, bool isFunctional, byte sid)
+    {
         switch (sid)
         {
             case Service.ReadDataByParameterIdentifier:
@@ -256,6 +304,27 @@ public sealed class VirtualBus
             case Service.SecurityAccess:
                 if (isFunctional) return;
                 if (Service27Handler.Handle(node, usdt, ch, (long)NowMs))
+                    ActivateP3C(node, ch);
+                break;
+            case Service.DisableNormalCommunication:
+                // §8.9: typically functional broadcast at $101 / $FE; both
+                // physical and functional are accepted per §8.9.5.1.
+                if (Service28Handler.Handle(node, usdt, ch, isFunctional))
+                    ActivateP3C(node, ch);
+                break;
+            case Service.ProgrammingMode:
+                if (isFunctional) return;
+                if (ServiceA5Handler.Handle(node, usdt, ch))
+                    ActivateP3C(node, ch);
+                break;
+            case Service.RequestDownload:
+                if (isFunctional) return;
+                if (Service34Handler.Handle(node, usdt, ch))
+                    ActivateP3C(node, ch);
+                break;
+            case Service.TransferData:
+                if (isFunctional) return;
+                if (Service36Handler.Handle(node, usdt, ch))
                     ActivateP3C(node, ch);
                 break;
             default:

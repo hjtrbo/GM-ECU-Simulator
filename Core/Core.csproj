@@ -10,6 +10,9 @@
 
   <ItemGroup>
     <InternalsVisibleTo Include="EcuSimulator.Tests" />
+    <!-- Shim project consumes Core utilities (HexFormat, etc.) and per-bus
+         hooks. Kept internal in Core so the public surface stays small. -->
+    <InternalsVisibleTo Include="EcuSim.Shim" />
   </ItemGroup>
 
   <PropertyGroup>

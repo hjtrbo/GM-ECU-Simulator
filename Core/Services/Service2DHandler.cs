@@ -105,7 +105,7 @@ public static class Service2DHandler
         lock (node.State.DynamicallyDefinedPids) node.State.DynamicallyDefinedPids.Add(pidId);
 
         // Positive response: 0x6D + PID id echo.
-        IsoTpFragmenter.EnqueueResponse(ch, node.UsdtResponseCanId,
+        node.State.Fragmenter.EnqueueResponse(ch, node.UsdtResponseCanId,
             [Service.Positive(sid), (byte)(pidId >> 8), (byte)(pidId & 0xFF)]);
         return true;
     }

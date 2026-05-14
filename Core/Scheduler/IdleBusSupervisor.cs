@@ -12,9 +12,9 @@ namespace Core.Scheduler;
 // any leftover state that would otherwise carry across into the next session.
 //
 // "Idle" is measured by the timestamp VirtualBus.LastHostActivityMs, which
-// RequestDispatcher updates on every incoming IPC request. The simulator's
-// own internal timers (e.g. PassThruStartPeriodicMsg-driven $3E) do NOT
-// update it — those would mask a vanished host.
+// Shim.Ipc.RequestDispatcher updates on every incoming IPC request. The
+// simulator's own internal timers (e.g. PassThruStartPeriodicMsg-driven $3E)
+// do NOT update it - those would mask a vanished host.
 //
 // On reset:
 //   1. For every ECU whose TesterPresent state is Active, run the spec-
@@ -22,11 +22,11 @@ namespace Core.Scheduler;
 //      $2D dynamic PIDs, sends unsolicited $60 if a channel is still alive).
 //   2. Clear LastEnhancedChannel on every ECU so a phantom $60 from the P3C
 //      ticker doesn't fire onto an orphaned channel later.
-//   3. Raise VirtualBus.IdleReset so each IpcSessionState can cancel its
-//      PassThruStartPeriodicMsg timers — there's no host left to receive
+//   3. Raise VirtualBus.IdleReset so each Shim.Ipc.IpcSessionState can cancel
+//      its PassThruStartPeriodicMsg timers - there's no host left to receive
 //      whatever they were generating.
 //
-// Uses a System.Threading.Timer (1s tick); TimerOnDelay would be overkill —
+// Uses a System.Threading.Timer (1s tick); TimerOnDelay would be overkill -
 // the threshold is in seconds, not sub-millisecond.
 public sealed class IdleBusSupervisor : IDisposable
 {
@@ -65,7 +65,7 @@ public sealed class IdleBusSupervisor : IDisposable
         long last = bus.LastHostActivityMs;
         if (last == 0)
         {
-            // Never seen host activity — fresh launch with no clients ever connected.
+            // Never seen host activity - fresh launch with no clients ever connected.
             // Don't trigger a reset; nothing to clean up.
             return;
         }
@@ -82,7 +82,7 @@ public sealed class IdleBusSupervisor : IDisposable
         }
         else if (!isIdle && didReset)
         {
-            // Host came back — re-arm so the next idle window will reset again.
+            // Host came back - re-arm so the next idle window will reset again.
             didReset = false;
             bus.LogDiagnostic?.Invoke("[idle] host activity resumed");
         }
@@ -91,7 +91,7 @@ public sealed class IdleBusSupervisor : IDisposable
     private void DoReset(long idleMs)
     {
         bus.LogDiagnostic?.Invoke(
-            $"[idle] no host activity for {idleMs}ms — resetting all ECUs to default-session state");
+            $"[idle] no host activity for {idleMs}ms - resetting all ECUs to default-session state");
 
         // 1. Run the spec-compliant exit on every active ECU. Any channel
         //    references on EcuNode get cleared so a stray P3C tick after the
@@ -107,7 +107,7 @@ public sealed class IdleBusSupervisor : IDisposable
         }
 
         // 2. Notify session-level subscribers so they can cancel host-driven
-        //    PassThruStartPeriodicMsg timers (the host is gone — those frames
+        //    PassThruStartPeriodicMsg timers (the host is gone - those frames
         //    have nowhere to go and would keep the bus artificially "alive").
         bus.RaiseIdleReset();
     }

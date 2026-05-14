@@ -23,7 +23,7 @@ public static class Service10Handler
         }
         byte sub = usdtPayload[1];
 
-        IsoTpFragmenter.EnqueueResponse(ch, node.UsdtResponseCanId,
+        node.State.Fragmenter.EnqueueResponse(ch, node.UsdtResponseCanId,
             [Service.Positive(Service.InitiateDiagnosticOperation), sub]);
         return true;
     }
