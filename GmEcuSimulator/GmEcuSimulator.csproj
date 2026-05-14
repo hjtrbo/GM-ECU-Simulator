@@ -33,6 +33,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <PackageReference Include="Dirkster.AvalonDock" Version="4.74.1" />
     <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.0.7" />
     <!-- Transitive dependency of the vendored Common.dll. -->
     <PackageReference Include="Newtonsoft.Json" Version="13.0.4" />
