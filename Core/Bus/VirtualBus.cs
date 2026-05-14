@@ -55,6 +55,26 @@ public sealed class VirtualBus
     public event Action? IdleReset;
     internal void RaiseIdleReset() => IdleReset?.Invoke();
 
+    /// <summary>
+    /// Raised when the host calls PassThruOpen (graceful session start).
+    /// Counterpart to <see cref="HostDisconnected"/>; subscribers open
+    /// per-session resources here (e.g. a fresh log file).
+    /// Public Raise so Shim.Ipc.RequestDispatcher can fire it from the
+    /// IPC layer.
+    /// </summary>
+    public event Action? HostConnected;
+    public void RaiseHostConnected() => HostConnected?.Invoke();
+
+    /// <summary>
+    /// Raised when the host calls PassThruClose (graceful session end).
+    /// Distinct from <see cref="IdleReset"/>, which fires when the host
+    /// vanishes without a clean disconnect (USB unplug, host crash).
+    /// Subscribers finalise per-session resources here so each capture
+    /// lands as one tidy file with its closing trailer.
+    /// </summary>
+    public event Action? HostDisconnected;
+    public void RaiseHostDisconnected() => HostDisconnected?.Invoke();
+
     /// <summary>Raised after Add/Remove/Replace mutates the ECU set.</summary>
     public event EventHandler? NodesChanged;
 
@@ -123,16 +143,21 @@ public sealed class VirtualBus
     // Two formats are emitted to the LogFrame sink per frame:
     //
     //   pretty  "[chan N] <Rx|Tx> <canId payload> [; annotation]"
-    //           human-readable, rendered in the on-screen textbox as-is.
+    //           human-readable, rendered in the on-screen textbox as-is. The
+    //           channel tag stays on the pretty line because a glance at the
+    //           textbox during multi-channel debugging needs the disambiguator.
     //
-    //   csv     "[chan N],<Rx|Tx>,<canId payload> [- HOST FILTERED],<annotation>"
+    //   csv     "<Rx|Tx>,<canId payload> [- HOST FILTERED],<annotation>"
     //           MainWindow prepends "[timestamp],[CAN]," before the disk write.
-    //           The annotation column is always present (empty string when off
-    //           or the annotator returns null) for stable column count.
+    //           The channel column was dropped per user request: in practice all
+    //           real-world traces are single-channel and the constant "[chan 1],"
+    //           prefix was wasted spreadsheet width. The annotation column is
+    //           always present (empty string when off or annotator returns null)
+    //           for stable column count.
     //
     // Collapse markers from BulkTransferCollapser follow the same two shapes:
     //   pretty  "[chan N] -- bulk transfer collapsed: N frames hidden --"
-    //   csv     "[chan N],,,-- bulk transfer collapsed: N frames hidden --"
+    //   csv     ",,-- bulk transfer collapsed: N frames hidden --"
 
     internal void LogTx(uint chId, ReadOnlySpan<byte> frame)
     {
@@ -179,7 +204,7 @@ public sealed class VirtualBus
         string pretty = annotation != null
             ? $"[chan {chId}] {direction} {bytes}  ; {annotation}"
             : $"[chan {chId}] {direction} {bytes}";
-        string csv = $"[chan {chId}],{direction},{bytes},{annotation ?? ""}";
+        string csv = $"{direction},{bytes},{annotation ?? ""}";
         return (pretty, csv);
     }
 

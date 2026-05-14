@@ -416,6 +416,17 @@ public partial class MainWindow : Window
         DataContext = vm;
         bus.NodesChanged += (_, _) => Dispatcher.BeginInvoke(() => vm?.Rebuild());
 
+        // Per-session file-log lifecycle. The "Log to file" menu toggle is the
+        // user's persisted PREFERENCE; the actual sink lifecycle is tied to
+        // host sessions so each capture lands as one tidy bus_*.csv with a
+        // trailer. End-of-session covers both clean PassThruClose and the
+        // IdleBusSupervisor's host-vanish path (USB unplug / host crash).
+        // Begin-of-session (PassThruOpen) re-Starts the sink with a fresh
+        // timestamped path if the preference is still on.
+        bus.HostDisconnected += OnHostSessionEnded;
+        bus.IdleReset        += OnHostSessionEnded;
+        bus.HostConnected    += OnHostSessionStarted;
+
         refreshTimer = new DispatcherTimer(DispatcherPriority.Background)
         {
             Interval = TimeSpan.FromMilliseconds(100),    // 10 Hz live values
@@ -449,6 +460,39 @@ public partial class MainWindow : Window
     }
 
     public void AutoSave() => vm?.AutoSave();
+
+    // Fires off the IPC worker thread (PassThruClose) or the IdleBusSupervisor
+    // threadpool tick (host vanish). FileLogSink.Stop is thread-safe; the only
+    // UI-touching call is the status-bar refresh which we marshal explicitly.
+    private void OnHostSessionEnded()
+    {
+        if (!fileLog.IsRunning) return;
+        fileLog.Stop();
+        Dispatcher.BeginInvoke(() => vm?.RefreshFileLogStatus());
+    }
+
+    // Fires off the IPC worker thread on PassThruOpen. Only auto-Starts when
+    // the user has the menu toggle on; an unchecked toggle means "don't
+    // capture", regardless of host activity. The IsRunning check guards
+    // against the case where the menu was just toggled on while a host was
+    // already connected - the setter already started the file.
+    private void OnHostSessionStarted()
+    {
+        if (vm?.IsFileLoggingEnabled != true) return;
+        if (fileLog.IsRunning) return;
+        try
+        {
+            fileLog.Start(Core.Bus.FileLogSink.DefaultPath());
+        }
+        catch (Exception ex)
+        {
+            // Disk full / path locked / etc. Swallow so we don't crash the
+            // IPC thread; surface to the diagnostic log so the user sees why
+            // the capture didn't start.
+            AppendLog($"[file-log] auto-start on host connect failed: {ex.Message}");
+        }
+        Dispatcher.BeginInvoke(() => vm?.RefreshFileLogStatus());
+    }
 
     private void OnExitClicked(object sender, RoutedEventArgs e) => Close();
 }

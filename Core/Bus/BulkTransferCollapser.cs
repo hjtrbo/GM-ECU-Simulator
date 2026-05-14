@@ -166,12 +166,15 @@ public sealed class BulkTransferCollapser
                 {
                     // Crossing the suppression-to-tail boundary. Emit a marker in
                     // both formats before the first tail frame.
-                    //   pretty: readable summary line for the on-screen textbox
+                    //   pretty: readable summary for the on-screen textbox;
+                    //           keeps "[chan N]" so the marker stays pinned to
+                    //           a channel when several streams interleave.
                     //   csv:    same column layout as normal frame rows so the
-                    //           spreadsheet stays aligned (empty dir/bytes columns)
+                    //           spreadsheet stays aligned (empty dir/bytes
+                    //           columns, marker text in the annotation column).
                     var hidden = state.SuppressedCount;
                     markerPretty = $"[chan {chId}] -- bulk transfer collapsed: {hidden} frames hidden --";
-                    markerCsv    = $"[chan {chId}],,,-- bulk transfer collapsed: {hidden} frames hidden --";
+                    markerCsv    = $",,-- bulk transfer collapsed: {hidden} frames hidden --";
                 }
 
                 // Transition out when the predicted CF count is reached.

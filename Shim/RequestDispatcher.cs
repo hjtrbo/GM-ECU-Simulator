@@ -187,6 +187,16 @@ public sealed class RequestDispatcher
 
     private (byte, byte[]) Open(ReadOnlySpan<byte> payload)
     {
+        // Notify session-scoped subscribers BEFORE the device id is allocated
+        // so any per-session resources (file log, etc.) are primed by the
+        // time the host issues its first follow-up call. Raising the event
+        // is best-effort - a subscriber throw must not turn a successful
+        // PassThruOpen into ERR_FAILED.
+        try { state.Bus.RaiseHostConnected(); }
+        catch (Exception ex)
+        {
+            state.Bus.LogDiagnostic?.Invoke($"[host-connected] subscriber threw: {ex.Message}");
+        }
         var w = new IpcWriter();
         w.WriteU32((uint)ResultCode.STATUS_NOERROR);
         w.WriteU32(state.AllocateDeviceId());
@@ -194,7 +204,18 @@ public sealed class RequestDispatcher
     }
 
     private (byte, byte[]) Close(ReadOnlySpan<byte> payload)
-        => (IpcMessageTypes.CloseResponse, OkResultPayload());
+    {
+        // End-of-session hook. Subscribers (e.g. FileLogSink) finalise their
+        // per-session resources here so each capture lands with a trailer.
+        // Same throw-isolation rationale as Open - we return STATUS_NOERROR
+        // regardless of what a misbehaving subscriber does.
+        try { state.Bus.RaiseHostDisconnected(); }
+        catch (Exception ex)
+        {
+            state.Bus.LogDiagnostic?.Invoke($"[host-disconnected] subscriber threw: {ex.Message}");
+        }
+        return (IpcMessageTypes.CloseResponse, OkResultPayload());
+    }
 
     // Request payload: u32 deviceId, u32 protocolId, u32 flags, u32 baud
     private (byte, byte[]) Connect(ReadOnlySpan<byte> payload)
