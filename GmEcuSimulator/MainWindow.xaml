@@ -10,6 +10,7 @@
         xmlns:shell="clr-namespace:System.Windows.Shell;assembly=PresentationFramework"
         xmlns:av="http://schemas.microsoft.com/expression/blend/2008" xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" mc:Ignorable="av" x:Class="GmEcuSimulator.MainWindow"
         Title="{Binding WindowTitle, FallbackValue=GM ECU Simulator}"
+        Icon="/Resources/app.ico"
         Height="900" Width="1280"
         MinHeight="720" MinWidth="760"
         WindowStartupLocation="CenterScreen"

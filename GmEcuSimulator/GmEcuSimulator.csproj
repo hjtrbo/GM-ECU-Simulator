@@ -22,6 +22,13 @@
       <HintPath>..\lib\J2534-Sharp.dll</HintPath>
       <Private>true</Private>
     </Reference>
+    <!-- Shared GM-toolset theme pack. Built from
+         ..\..\GM Theme Manager\GMThemeManager.csproj and vendored here so
+         this repo builds without the sibling source on disk. -->
+    <Reference Include="GMThemeManager">
+      <HintPath>..\lib\GMThemeManager.dll</HintPath>
+      <Private>true</Private>
+    </Reference>
   </ItemGroup>
 
   <ItemGroup>
@@ -36,6 +43,13 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <UseWPF>true</UseWPF>
+    <ApplicationIcon>Resources\app.ico</ApplicationIcon>
   </PropertyGroup>
+
+  <!-- Embed the icon as a WPF resource so XAML Icon="/Resources/app.ico"
+       resolves at runtime in addition to the EXE shell icon set above. -->
+  <ItemGroup>
+    <Resource Include="Resources\app.ico" />
+  </ItemGroup>
 
 </Project>

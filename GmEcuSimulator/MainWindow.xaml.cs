@@ -6,7 +6,7 @@ using System.Windows.Media;
 using System.Windows.Shapes;
 using System.Windows.Threading;
 using Core.Bus;
-using GmEcuSimulator.Theming;
+using GMThemeManager;
 using GmEcuSimulator.ViewModels;
 
 namespace GmEcuSimulator;

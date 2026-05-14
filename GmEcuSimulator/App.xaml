@@ -3,6 +3,9 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:local="clr-namespace:GmEcuSimulator">
     <Application.Resources>
-        <ResourceDictionary Source="/Resources/Theme.xaml"/>
+        <!-- Theme pack lives in the GMThemeManager shared library. Pack URI
+             pulls the master Theme.xaml + all merged dictionaries directly
+             out of GMThemeManager.dll's embedded BAML. -->
+        <ResourceDictionary Source="pack://application:,,,/GMThemeManager;component/Theme.xaml"/>
     </Application.Resources>
 </Application>

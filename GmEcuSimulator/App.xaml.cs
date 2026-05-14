@@ -4,7 +4,7 @@ using Core.Bus;
 using Core.Ipc;
 using Core.Persistence;
 using Core.Replay;
-using GmEcuSimulator.Theming;
+using GMThemeManager;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace GmEcuSimulator;

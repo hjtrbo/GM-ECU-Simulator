@@ -54,3 +54,6 @@ packages/
 *.obj
 *.iobj
 *.ipdb
+
+# Icon-generation preview PNGs (the .ico is the source of truth)
+GmEcuSimulator/Resources/app-*-preview.png
