@@ -159,18 +159,45 @@ public partial class MainWindow : Window
     // by the shim, [periodic] register/unregister diagnostics, auto-load
     // failures, etc. Gated by the master "Log traffic" checkbox so neither
     // pane fills up while the user isn't watching.
+    //
+    // Mirrored into DownloadLogBox on the Download tab so a user watching
+    // the programming flow doesn't have to switch tabs to see protocol traffic.
     public static void AppendLog(string line)
     {
         if (!logTraffic) return;
         Append(instance?.IpcLogBox, line);
+        Append(instance?.DownloadLogBox, "[J2534] " + line);
     }
 
     // Frame-level traffic sink → LEFT pane (LogBox). Same master gate as
-    // AppendLog - the checkbox controls both panes together.
+    // AppendLog - the checkbox controls both panes together. Also mirrored to
+    // the Download tab's log box.
     public static void AppendBusFrame(string line)
     {
         if (!logTraffic) return;
         Append(instance?.LogBox, line);
+        Append(instance?.DownloadLogBox, "[CAN]   " + line);
+    }
+
+    // Single source of truth for the "Log traffic" toggle, shared between the
+    // Bus log tab's checkbox and the Download tab's checkbox via two-way
+    // binding through MainViewModel.IsLoggingEnabled.
+    public static void SetLogTrafficEnabled(bool enabled) => logTraffic = enabled;
+
+    // Same shape for the "Maximize" toggle - shared between Bus log and
+    // Download tab toolbars via MainViewModel.IsMaximized. Forwards to the
+    // instance handlers that own the EditorRow / LogRow / splitter mutations.
+    public static void SetBusLogMaximized(bool maximized)
+    {
+        var w = instance;
+        if (w == null) return;
+        if (!w.Dispatcher.CheckAccess())
+        {
+            w.Dispatcher.BeginInvoke(() => SetBusLogMaximized(maximized));
+            return;
+        }
+        if (maximized) w.OnMaximizeBusLogChecked(null!, null!);
+        else           w.OnMaximizeBusLogUnchecked(null!, null!);
     }
 
     // High-prominence status update routed to the bottom status bar. Used for
@@ -223,7 +250,6 @@ public partial class MainWindow : Window
         LogRow.Height          = new System.Windows.GridLength(1, System.Windows.GridUnitType.Star);
         EditorSplitter.Visibility = Visibility.Collapsed;
         MainContentGrid.Margin = new Thickness(0);
-        SetTabHeaderVisible(Visibility.Collapsed);
     }
 
     private void OnMaximizeBusLogUnchecked(object sender, RoutedEventArgs e)
@@ -233,21 +259,19 @@ public partial class MainWindow : Window
         LogRow.Height          = new System.Windows.GridLength(320);
         EditorSplitter.Visibility = Visibility.Visible;
         MainContentGrid.Margin = new Thickness(14);
-        SetTabHeaderVisible(Visibility.Visible);
-    }
-
-    // The TabControl's tab strip is the named Border (PART_HeaderHost) at
-    // Grid.Row=0 inside the templated TabControl. Walking the template by
-    // name keeps the maximize behaviour independent of any reshuffling
-    // of the Border's children.
-    private void SetTabHeaderVisible(Visibility v)
-    {
-        if (BusLogTabControl.Template?.FindName("PART_HeaderHost", BusLogTabControl) is FrameworkElement hdr)
-            hdr.Visibility = v;
     }
 
     private void OnClearLogClicked(object sender, RoutedEventArgs e)
     {
+        LogBox.Clear();
+        IpcLogBox.Clear();
+        DownloadLogBox?.Clear();
+    }
+
+    private void OnDownloadClearLogClicked(object sender, RoutedEventArgs e)
+    {
+        DownloadLogBox?.Clear();
+        // Clear the bus log boxes too since we mirror into them.
         LogBox.Clear();
         IpcLogBox.Clear();
     }
@@ -286,6 +310,7 @@ public partial class MainWindow : Window
                 ecu.RefreshSecurity(nowLong);
             }
             vm.RefreshBinReplayLive();
+            vm.DownloadWorkspace.Refresh();
         };
         refreshTimer.Start();
     }

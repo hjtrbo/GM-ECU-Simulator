@@ -20,9 +20,13 @@ namespace Common.Persistence;
 //
 // v3 added per-ECU SecurityModuleId + SecurityModuleConfig for $27 SecurityAccess
 // support. v1/v2 files load with both null → $27 returns NRC $11 as before.
+//
+// v4 added per-ECU Identifiers (list of IdentifierDto) for $1A
+// ReadDataByIdentifier responses. v1/v2/v3 files load with Identifiers == null
+// → $1A returns NRC $31 RequestOutOfRange for every DID, as before.
 public sealed class SimulatorConfig
 {
-    public const int CurrentVersion = 3;
+    public const int CurrentVersion = 4;
     public const int MinSupportedVersion = 1;
 
     public int Version { get; set; } = CurrentVersion;
@@ -67,6 +71,32 @@ public sealed class EcuDto
     public JsonElement? SecurityModuleConfig { get; set; }
 
     public List<PidDto> Pids { get; set; } = new();
+
+    // GMW3110 §8.3 ReadDataByIdentifier ($1A) values. Null when the user has
+    // not configured any identifiers (or when loading a v1-v3 config). Each
+    // entry pairs a DID byte with its raw value bytes; the handler echoes
+    // those bytes verbatim in the positive response.
+    public List<IdentifierDto>? Identifiers { get; set; }
+}
+
+// One $1A data identifier and the bytes to return for it. Bytes are
+// expressed as either an ASCII string (for printable values like VIN) or
+// a hex string ("01 02 03" / "0102 03" / "0x01 0x02"). The loader prefers
+// Ascii when present; otherwise it parses Hex. Both null = empty value.
+public sealed class IdentifierDto
+{
+    [JsonConverter(typeof(HexByteConverter))]
+    public required byte Did { get; set; }
+
+    // Optional human-readable label ("VIN", "Calibration ID"). Not used by
+    // the protocol — it just makes the JSON self-documenting.
+    public string? Name { get; set; }
+
+    /// <summary>Printable-ASCII shorthand. Mutually exclusive with Hex.</summary>
+    public string? Ascii { get; set; }
+
+    /// <summary>Whitespace-separated hex byte list. Mutually exclusive with Ascii.</summary>
+    public string? Hex { get; set; }
 }
 
 public sealed class PidDto

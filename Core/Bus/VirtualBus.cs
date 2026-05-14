@@ -270,6 +270,10 @@ public sealed class VirtualBus
     {
         switch (sid)
         {
+            case Service.ReadDataByIdentifier:
+                if (isFunctional) return;
+                Service1AHandler.Handle(node, usdt, ch);
+                break;
             case Service.ReadDataByParameterIdentifier:
                 if (isFunctional) return;
                 Service22Handler.Handle(node, usdt, ch, NowMs);

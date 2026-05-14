@@ -32,6 +32,7 @@ public sealed class MainViewModel : NotifyPropertyChangedBase
     private SimulatorConfig? priorSnapshot;
 
     public BinReplayViewModel BinReplay { get; }
+    public DownloadWorkspaceViewModel DownloadWorkspace { get; }
 
     public RelayCommand NewCommand { get; }
     public RelayCommand OpenCommand { get; }
@@ -54,6 +55,7 @@ public sealed class MainViewModel : NotifyPropertyChangedBase
         this.replay = replay;
         this.pipeServer = pipeServer;
         BinReplay = new BinReplayViewModel(replay, bus, OnBinReplayLoad, OnBinReplayUnload);
+        DownloadWorkspace = new DownloadWorkspaceViewModel(bus.Scheduler);
         Rebuild();
 
         NewCommand                   = new RelayCommand(New);
@@ -77,7 +79,40 @@ public sealed class MainViewModel : NotifyPropertyChangedBase
     public EcuViewModel? SelectedEcu
     {
         get => selectedEcu;
-        set => SetField(ref selectedEcu, value);
+        set
+        {
+            if (SetField(ref selectedEcu, value))
+                DownloadWorkspace.Ecu = value;
+        }
+    }
+
+    // Two-way bound by both Log-traffic checkboxes (Bus log tab + Download tab)
+    // so toggling either pane stays in sync. Setter forwards to the static
+    // gate inside MainWindow that AppendLog / AppendBusFrame consult on every
+    // append.
+    private bool isLoggingEnabled;
+    public bool IsLoggingEnabled
+    {
+        get => isLoggingEnabled;
+        set
+        {
+            if (SetField(ref isLoggingEnabled, value))
+                MainWindow.SetLogTrafficEnabled(value);
+        }
+    }
+
+    // Two-way bound by both Maximize checkboxes (Bus log tab + Download tab)
+    // so the editor pane / tab-header collapse stays consistent regardless of
+    // which tab the user toggled it from.
+    private bool isMaximized;
+    public bool IsMaximized
+    {
+        get => isMaximized;
+        set
+        {
+            if (SetField(ref isMaximized, value))
+                MainWindow.SetBusLogMaximized(value);
+        }
     }
 
     public string? CurrentFilePath

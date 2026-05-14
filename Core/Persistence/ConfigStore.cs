@@ -1,3 +1,5 @@
+using System.Globalization;
+using System.Text;
 using Common.Persistence;
 using Common.Protocol;
 using Common.Replay;
@@ -57,6 +59,7 @@ public static class ConfigStore
         };
         foreach (var node in bus.Nodes)
         {
+            var idMap = node.Identifiers;
             cfg.Ecus.Add(new EcuDto
             {
                 Name = node.Name,
@@ -68,6 +71,9 @@ public static class ConfigStore
                 SecurityModuleId = node.SecurityModule?.Id,
                 SecurityModuleConfig = node.SecurityModuleConfig,
                 Pids = node.Pids.Select(PidDtoFrom).ToList(),
+                Identifiers = idMap.Count == 0
+                    ? null
+                    : idMap.OrderBy(kv => kv.Key).Select(kv => IdentifierDtoFrom(kv.Key, kv.Value)).ToList(),
             });
         }
         if (replay?.FilePath != null)
@@ -111,7 +117,61 @@ public static class ConfigStore
         node.SecurityModule = SecurityModuleRegistry.Create(dto.SecurityModuleId);
         node.SecurityModule?.LoadConfig(dto.SecurityModuleConfig);
         foreach (var pidDto in dto.Pids) node.AddPid(PidFrom(pidDto));
+        if (dto.Identifiers != null)
+        {
+            foreach (var idDto in dto.Identifiers)
+                node.SetIdentifier(idDto.Did, IdentifierBytesFrom(idDto));
+        }
         return node;
+    }
+
+    internal static byte[] IdentifierBytesFrom(IdentifierDto dto)
+    {
+        if (dto.Ascii != null && dto.Hex != null)
+            throw new FormatException($"Identifier 0x{dto.Did:X2} has both Ascii and Hex set; pick one.");
+        if (dto.Ascii != null) return Encoding.ASCII.GetBytes(dto.Ascii);
+        if (dto.Hex != null) return ParseHexBytes(dto.Hex);
+        return Array.Empty<byte>();
+    }
+
+    internal static IdentifierDto IdentifierDtoFrom(byte did, byte[] data)
+    {
+        var dto = new IdentifierDto { Did = did };
+        if (data.Length > 0 && data.All(IsPrintableAscii))
+            dto.Ascii = Encoding.ASCII.GetString(data);
+        else
+            dto.Hex = FormatHexBytes(data);
+        return dto;
+    }
+
+    private static bool IsPrintableAscii(byte b) => b >= 0x20 && b < 0x7F;
+
+    private static byte[] ParseHexBytes(string s)
+    {
+        var tokens = s.Split(new[] { ' ', '\t', ',', ';' }, StringSplitOptions.RemoveEmptyEntries);
+        var bytes = new byte[tokens.Length];
+        for (int i = 0; i < tokens.Length; i++)
+        {
+            var t = tokens[i];
+            if (t.StartsWith("0x", StringComparison.OrdinalIgnoreCase)) t = t[2..];
+            else if (t.EndsWith('h') || t.EndsWith('H')) t = t[..^1];
+            if (!byte.TryParse(t, NumberStyles.HexNumber, CultureInfo.InvariantCulture, out var v))
+                throw new FormatException($"Invalid hex byte '{tokens[i]}' in identifier value");
+            bytes[i] = v;
+        }
+        return bytes;
+    }
+
+    private static string FormatHexBytes(byte[] data)
+    {
+        if (data.Length == 0) return "";
+        var sb = new StringBuilder(data.Length * 3 - 1);
+        for (int i = 0; i < data.Length; i++)
+        {
+            if (i > 0) sb.Append(' ');
+            sb.AppendFormat(CultureInfo.InvariantCulture, "{0:X2}", data[i]);
+        }
+        return sb.ToString();
     }
 
     public static Pid PidFrom(PidDto dto) => new()

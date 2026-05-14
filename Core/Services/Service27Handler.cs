@@ -24,6 +24,13 @@ public static class Service27Handler
         var module = node.SecurityModule;
         if (module is null)
         {
+            // Surface the cause on the bus log - the host just sees NRC $11
+            // and a UI user has no way to tell whether the algorithm picker
+            // simply wasn't configured for THIS ECU (a common gotcha when the
+            // sidebar has a different ECU selected than the one the host is
+            // actually addressing).
+            ch.Bus?.LogDiagnostic?.Invoke(
+                $"[$27 NRC $11] ECU '{node.Name}' (req=${node.PhysicalRequestCanId:X3}) has no security module configured - select one in the Security ($27) tab for this ECU.");
             ServiceUtil.EnqueueNrc(node, ch, Service.SecurityAccess, Nrc.ServiceNotSupported);
             return false;
         }

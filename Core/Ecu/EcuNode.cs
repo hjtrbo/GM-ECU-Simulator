@@ -34,8 +34,19 @@ public sealed class EcuNode
     private readonly List<Pid> pids = new();
     private readonly Lock pidsLock = new();
 
+    // GMW3110 §8.3 ReadDataByIdentifier ($1A) data. Each DID maps to a raw
+    // byte array; the service handler returns [$5A, did, ...bytes] verbatim
+    // so the user can configure any spec-defined identifier (VIN $90,
+    // calibration ID $92, etc.) without the simulator interpreting the value.
+    // Mutable through Set/RemoveIdentifier so the editor UI can hot-edit.
+    private readonly Dictionary<byte, byte[]> identifiers = new();
+    private readonly Lock identifiersLock = new();
+
     /// <summary>Raised after a PID is added, removed, or the list is cleared.</summary>
     public event EventHandler? PidsChanged;
+
+    /// <summary>Raised after an identifier is added, replaced, removed, or cleared.</summary>
+    public event EventHandler? IdentifiersChanged;
 
     // Per-ECU runtime state (Dpids, TesterPresent, Reassembler, security
     // session, $2D dynamic-PID set, LastEnhancedChannel, etc.) lives in
@@ -101,4 +112,31 @@ public sealed class EcuNode
     /// refreshes its column data.
     /// </summary>
     public void RaisePidsChanged() => PidsChanged?.Invoke(this, EventArgs.Empty);
+
+    /// <summary>Snapshot copy of the identifier map — safe to enumerate cross-thread.</summary>
+    public IReadOnlyDictionary<byte, byte[]> Identifiers
+    {
+        get { lock (identifiersLock) return identifiers.ToDictionary(kv => kv.Key, kv => (byte[])kv.Value.Clone()); }
+    }
+
+    /// <summary>Looks up a $1A identifier. Returns null if the DID is not configured.</summary>
+    public byte[]? GetIdentifier(byte did)
+    {
+        lock (identifiersLock) return identifiers.TryGetValue(did, out var data) ? (byte[])data.Clone() : null;
+    }
+
+    /// <summary>Sets (or replaces) the data for a $1A identifier. The bytes are copied.</summary>
+    public void SetIdentifier(byte did, ReadOnlySpan<byte> data)
+    {
+        lock (identifiersLock) identifiers[did] = data.ToArray();
+        IdentifiersChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    public bool RemoveIdentifier(byte did)
+    {
+        bool removed;
+        lock (identifiersLock) removed = identifiers.Remove(did);
+        if (removed) IdentifiersChanged?.Invoke(this, EventArgs.Empty);
+        return removed;
+    }
 }

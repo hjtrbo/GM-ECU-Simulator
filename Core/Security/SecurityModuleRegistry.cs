@@ -19,6 +19,9 @@ public static class SecurityModuleRegistry
         Register("gm-e38-test",
             () => new Gmw3110_2010_Generic(new E38Algorithm(),
                                            id: "gm-e38-test"));
+        Register("gm-t43-test",
+            () => new Gmw3110_2010_Generic(new T43Algorithm(),
+                                           id: "gm-t43-test"));
     }
 
     public static void Register(string id, Func<ISecurityAccessModule> factory)

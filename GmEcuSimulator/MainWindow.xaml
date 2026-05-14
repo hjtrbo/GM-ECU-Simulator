@@ -515,18 +515,16 @@
                                     <CheckBox x:Name="LogTrafficCheck"
                                               Content="Log traffic"
                                               VerticalAlignment="Center"
-                                              Checked="OnLogTrafficChecked"
-                                              Unchecked="OnLogTrafficUnchecked"
-                                              ToolTip="Master gate for both panes: CAN frames (left) and J2534 calls (right). Off by default - at $AA Fast 25Hz the bus frames alone can flood the textbox quickly."/>
+                                              IsChecked="{Binding IsLoggingEnabled, Mode=TwoWay}"
+                                              ToolTip="Master gate for the bus log AND the Download tab's mirror. Off by default - at $AA Fast 25Hz the bus frames alone can flood the textbox quickly."/>
                                     <Button Content="Clear" Click="OnClearLogClicked"
                                             Margin="16,0,0,0"/>
                                     <Rectangle Width="1" Margin="12,4" Fill="{DynamicResource Border.SubtleBrush}"/>
                                     <CheckBox x:Name="MaximizeBusLogCheck"
                                               Content="Maximize"
                                               VerticalAlignment="Center"
-                                              Checked="OnMaximizeBusLogChecked"
-                                              Unchecked="OnMaximizeBusLogUnchecked"
-                                              ToolTip="Collapse the ECU/PID editor and fill the window with the bus log."/>
+                                              IsChecked="{Binding IsMaximized, Mode=TwoWay}"
+                                              ToolTip="Collapse the ECU/PID editor and fill the window with the workspace tabs. Shared with the Download tab's Maximize toggle."/>
                                 </StackPanel>
                             </Border>
                             <Grid>
@@ -602,6 +600,252 @@
                                         </StackPanel>
                                     </Border>
                                     <TextBox x:Name="IpcLogBox"
+                                             Style="{StaticResource TextBox.Log}"
+                                             IsReadOnly="True"
+                                             TextWrapping="NoWrap"/>
+                                </DockPanel>
+                            </Grid>
+                        </DockPanel>
+                    </TabItem>
+
+                    <!-- Download workspace tab.
+                         Live monitor of the GMW3110 programming-flow state for
+                         the ECU currently selected in the sidebar. Each step
+                         is a traffic light (red = precondition not met, amber
+                         = next required step, green = satisfied). The TX / RX
+                         log mirrors the bus-log content; the master toggle is
+                         shared with the Bus log tab via IsLoggingEnabled. -->
+                    <TabItem Header="Download">
+                        <DockPanel DataContext="{Binding DownloadWorkspace}" LastChildFill="True">
+                            <Border DockPanel.Dock="Top" Style="{StaticResource Toolbar}">
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock Text="ECU"
+                                               Style="{StaticResource Text.Caption}"
+                                               VerticalAlignment="Center"
+                                               Margin="0,0,8,0"/>
+                                    <TextBlock Text="{Binding EcuName}"
+                                               Style="{StaticResource Text.Body}"
+                                               FontWeight="SemiBold"
+                                               VerticalAlignment="Center"/>
+                                    <Button Content="Reset ECU state"
+                                            Margin="14,0,0,0"
+                                            Style="{StaticResource Button.Ghost}"
+                                            Command="{Binding ResetEcuStateCommand}"
+                                            ToolTip="Equivalent to $20 ReturnToNormalMode: clears the programming session, security unlock, and download buffer. Fires the unsolicited $60 if a host channel is still active."/>
+                                    <Rectangle Width="1" Margin="16,3" Fill="{DynamicResource Border.SubtleBrush}"/>
+                                    <CheckBox Content="Log traffic"
+                                              IsChecked="{Binding DataContext.IsLoggingEnabled, RelativeSource={RelativeSource AncestorType={x:Type Window}}, Mode=TwoWay}"
+                                              VerticalAlignment="Center"
+                                              ToolTip="Shared toggle with the Bus log tab. Mirrors all CAN frames + J2534 calls into the panel below."/>
+                                    <Button Content="Clear" Click="OnDownloadClearLogClicked"
+                                            Margin="16,0,0,0"/>
+                                    <Rectangle Width="1" Margin="12,4" Fill="{DynamicResource Border.SubtleBrush}"/>
+                                    <CheckBox Content="Maximize"
+                                              IsChecked="{Binding DataContext.IsMaximized, RelativeSource={RelativeSource AncestorType={x:Type Window}}, Mode=TwoWay}"
+                                              VerticalAlignment="Center"
+                                              ToolTip="Collapse the ECU/PID editor and fill the window with the workspace tabs. Shared with the Bus log tab's Maximize toggle."/>
+                                </StackPanel>
+                            </Border>
+
+                            <!-- Bottom status line: human-readable description of the
+                                 current required step or the completion state. -->
+                            <Border DockPanel.Dock="Bottom"
+                                    Background="{DynamicResource Bg.BaseBrush}"
+                                    BorderBrush="{DynamicResource Border.SubtleBrush}"
+                                    BorderThickness="0,1,0,0"
+                                    Padding="14,6">
+                                <TextBlock Text="{Binding StatusLine}"
+                                           Style="{StaticResource Text.Caption}"
+                                           Foreground="{DynamicResource Text.PrimaryBrush}"/>
+                            </Border>
+
+                            <!-- Two-column split: traffic-light tree (left) + tx/rx log (right). -->
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="340" MinWidth="280"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+
+                                <!-- Traffic-light tree.
+                                     Each row: coloured Ellipse + label + optional sub-text.
+                                     A 1px Rectangle between rows acts as the connector. -->
+                                <Border Grid.Column="0" Padding="18,14"
+                                        BorderBrush="{DynamicResource Border.SubtleBrush}"
+                                        BorderThickness="0,0,1,0">
+                                    <ScrollViewer VerticalScrollBarVisibility="Auto"
+                                                  HorizontalScrollBarVisibility="Disabled">
+                                        <StackPanel>
+                                            <TextBlock Text="ENTRY SEQUENCE"
+                                                       Style="{StaticResource Text.SectionHeader}"
+                                                       Margin="0,0,0,10"/>
+
+                                            <!-- $28 -->
+                                            <Grid Margin="0,3">
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="Auto"/>
+                                                    <ColumnDefinition Width="*"/>
+                                                </Grid.ColumnDefinitions>
+                                                <Ellipse Grid.Column="0" Width="14" Height="14" Margin="0,0,12,0"
+                                                         VerticalAlignment="Center"
+                                                         Fill="{Binding Brush28}"/>
+                                                <TextBlock Grid.Column="1"
+                                                           Text="$28 DisableNormalCommunication"
+                                                           Style="{StaticResource Text.Body}"
+                                                           Foreground="{DynamicResource Text.PrimaryBrush}"
+                                                           VerticalAlignment="Center"/>
+                                            </Grid>
+                                            <Rectangle Width="1" Height="10" Margin="6,0"
+                                                       HorizontalAlignment="Left"
+                                                       Fill="{DynamicResource Border.SubtleBrush}"/>
+
+                                            <!-- $A5/01 -->
+                                            <Grid Margin="0,3">
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="Auto"/>
+                                                    <ColumnDefinition Width="*"/>
+                                                </Grid.ColumnDefinitions>
+                                                <Ellipse Grid.Column="0" Width="14" Height="14" Margin="0,0,12,0"
+                                                         VerticalAlignment="Center"
+                                                         Fill="{Binding BrushA5Req}"/>
+                                                <TextBlock Grid.Column="1"
+                                                           Text="$A5 / $01 RequestProgrammingMode"
+                                                           Style="{StaticResource Text.Body}"
+                                                           Foreground="{DynamicResource Text.PrimaryBrush}"
+                                                           VerticalAlignment="Center"/>
+                                            </Grid>
+                                            <Rectangle Width="1" Height="10" Margin="6,0"
+                                                       HorizontalAlignment="Left"
+                                                       Fill="{DynamicResource Border.SubtleBrush}"/>
+
+                                            <!-- $A5/03 -->
+                                            <Grid Margin="0,3">
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="Auto"/>
+                                                    <ColumnDefinition Width="*"/>
+                                                </Grid.ColumnDefinitions>
+                                                <Ellipse Grid.Column="0" Width="14" Height="14" Margin="0,0,12,0"
+                                                         VerticalAlignment="Center"
+                                                         Fill="{Binding BrushA5Enable}"/>
+                                                <TextBlock Grid.Column="1"
+                                                           Text="$A5 / $03 EnableProgrammingMode"
+                                                           Style="{StaticResource Text.Body}"
+                                                           Foreground="{DynamicResource Text.PrimaryBrush}"
+                                                           VerticalAlignment="Center"/>
+                                            </Grid>
+                                            <Rectangle Width="1" Height="10" Margin="6,0"
+                                                       HorizontalAlignment="Left"
+                                                       Fill="{DynamicResource Border.SubtleBrush}"/>
+
+                                            <!-- $27 -->
+                                            <Grid Margin="0,3">
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="Auto"/>
+                                                    <ColumnDefinition Width="*"/>
+                                                </Grid.ColumnDefinitions>
+                                                <Ellipse Grid.Column="0" Width="14" Height="14" Margin="0,0,12,0"
+                                                         VerticalAlignment="Center"
+                                                         Fill="{Binding Brush27}"/>
+                                                <TextBlock Grid.Column="1"
+                                                           Text="$27 SecurityAccess (unlock)"
+                                                           Style="{StaticResource Text.Body}"
+                                                           Foreground="{DynamicResource Text.PrimaryBrush}"
+                                                           VerticalAlignment="Center"/>
+                                            </Grid>
+                                            <Rectangle Width="1" Height="10" Margin="6,0"
+                                                       HorizontalAlignment="Left"
+                                                       Fill="{DynamicResource Border.SubtleBrush}"/>
+
+                                            <!-- $34 -->
+                                            <Grid Margin="0,3">
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="Auto"/>
+                                                    <ColumnDefinition Width="*"/>
+                                                </Grid.ColumnDefinitions>
+                                                <Ellipse Grid.Column="0" Width="14" Height="14" Margin="0,0,12,0"
+                                                         VerticalAlignment="Center"
+                                                         Fill="{Binding Brush34}"/>
+                                                <TextBlock Grid.Column="1"
+                                                           Text="$34 RequestDownload"
+                                                           Style="{StaticResource Text.Body}"
+                                                           Foreground="{DynamicResource Text.PrimaryBrush}"
+                                                           VerticalAlignment="Center"/>
+                                            </Grid>
+                                            <Rectangle Width="1" Height="10" Margin="6,0"
+                                                       HorizontalAlignment="Left"
+                                                       Fill="{DynamicResource Border.SubtleBrush}"/>
+
+                                            <!-- $36 (with progress) -->
+                                            <Grid Margin="0,3">
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="Auto"/>
+                                                    <ColumnDefinition Width="*"/>
+                                                    <ColumnDefinition Width="Auto"/>
+                                                </Grid.ColumnDefinitions>
+                                                <Ellipse Grid.Column="0" Width="14" Height="14" Margin="0,0,12,0"
+                                                         VerticalAlignment="Center"
+                                                         Fill="{Binding Brush36}"/>
+                                                <TextBlock Grid.Column="1"
+                                                           Text="$36 TransferData"
+                                                           Style="{StaticResource Text.Body}"
+                                                           Foreground="{DynamicResource Text.PrimaryBrush}"
+                                                           VerticalAlignment="Center"/>
+                                                <TextBlock Grid.Column="2"
+                                                           Text="{Binding S36Progress}"
+                                                           Style="{StaticResource Text.MonoDim}"
+                                                           VerticalAlignment="Center"
+                                                           Margin="8,0,0,0"/>
+                                            </Grid>
+
+                                            <TextBlock Text="EXIT"
+                                                       Style="{StaticResource Text.SectionHeader}"
+                                                       Margin="0,18,0,10"/>
+
+                                            <!-- $20 -->
+                                            <Grid Margin="0,3">
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="Auto"/>
+                                                    <ColumnDefinition Width="*"/>
+                                                </Grid.ColumnDefinitions>
+                                                <Ellipse Grid.Column="0" Width="14" Height="14" Margin="0,0,12,0"
+                                                         VerticalAlignment="Center"
+                                                         Fill="{Binding Brush20}"/>
+                                                <TextBlock Grid.Column="1"
+                                                           Text="$20 ReturnToNormalMode"
+                                                           Style="{StaticResource Text.Body}"
+                                                           Foreground="{DynamicResource Text.PrimaryBrush}"
+                                                           VerticalAlignment="Center"/>
+                                            </Grid>
+
+                                            <TextBlock Text="(or P3C TesterPresent timeout - 5 s)"
+                                                       Style="{StaticResource Text.Hint}"
+                                                       Margin="26,2,0,0"/>
+                                        </StackPanel>
+                                    </ScrollViewer>
+                                </Border>
+
+                                <!-- TX / RX log mirror -->
+                                <DockPanel Grid.Column="1">
+                                    <Border DockPanel.Dock="Top"
+                                            Background="{DynamicResource Bg.ElevatedBrush}"
+                                            BorderBrush="{DynamicResource Border.SubtleBrush}"
+                                            BorderThickness="0,0,0,1"
+                                            Padding="12,5">
+                                        <StackPanel Orientation="Horizontal">
+                                            <Ellipse Width="6" Height="6"
+                                                     Fill="{DynamicResource Accent.PrimaryBrush}"
+                                                     VerticalAlignment="Center" Margin="0,0,8,0"/>
+                                            <TextBlock Text="TX / RX log"
+                                                       Style="{StaticResource Text.Caption}"
+                                                       Foreground="{DynamicResource Text.PrimaryBrush}"
+                                                       FontWeight="SemiBold"
+                                                       VerticalAlignment="Center"/>
+                                            <TextBlock Text="mirrors CAN frames + J2534 calls (gated by Log traffic)"
+                                                       Style="{StaticResource Text.Caption}"
+                                                       Margin="8,0,0,0"
+                                                       VerticalAlignment="Center"/>
+                                        </StackPanel>
+                                    </Border>
+                                    <TextBox x:Name="DownloadLogBox"
                                              Style="{StaticResource TextBox.Log}"
                                              IsReadOnly="True"
                                              TextWrapping="NoWrap"/>
