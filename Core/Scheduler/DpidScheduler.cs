@@ -27,6 +27,11 @@ public sealed class DpidScheduler : IDisposable
 
     public DpidScheduler(VirtualBus bus) { this.bus = bus; }
 
+    /// <summary>The bus this scheduler belongs to. Lets handlers reachable only
+    /// via the scheduler argument (e.g. EcuExitLogic) access bus-level state
+    /// such as CaptureSettings without an extra parameter on every entry point.</summary>
+    public VirtualBus Bus => bus;
+
     // No-op now — kept so callers don't have to change. Each entry's timer
     // starts itself when added; the global TimerScheduler thread is lazy.
     public void Start() { }

@@ -5,13 +5,17 @@ using Core.Bus;
 
 namespace Shim.Ipc;
 
-// Pipe server. Each accepted connection gets its own IpcSessionState +
-// RequestDispatcher; all sessions share the global VirtualBus.
+// Pipe server. Single-instance: only one J2534 host may be connected at a
+// time. A second client trying to open the pipe while one is connected
+// gets ERROR_PIPE_BUSY from the OS until the first disconnects. This is
+// enforced two ways: the NamedPipeServerStream is constructed with
+// maxNumberOfServerInstances = 1, and the accept loop awaits the current
+// handler before constructing the next listening instance.
 //
 // Lifecycle: Start / StopAsync are paired and may be cycled. The simulator
 // uses this to bind the pipe to J2534 registration state: when the user
 // unregisters the shim DLL, the pipe stops accepting and any in-flight
-// client handlers are cancelled and disposed. That guarantees a host can
+// client handler is cancelled and disposed. That guarantees a host can
 // no longer reach the simulator once unregister succeeds, instead of the
 // pre-fix behaviour where an already-connected host stayed live forever
 // because the registry write was the only thing Unregister touched.
@@ -29,12 +33,10 @@ public sealed class NamedPipeServer : IAsyncDisposable
     private Task? acceptLoop;
     private readonly Lock lifecycleLock = new();
 
-    // Tracks every active client-handler task. StopAsync awaits the accept
-    // loop first (so no new handlers can be appended), then awaits every
-    // outstanding handler so the next Start on the same pipe name doesn't
-    // race against a still-draining handler from the previous run.
-    private readonly List<Task> clientHandlers = new();
-    private readonly Lock handlersLock = new();
+    // The accept loop awaits the current handler inline before constructing
+    // the next listening pipe instance, so at most one handler is ever in
+    // flight. StopAsync only has to wait for the accept loop to exit; the
+    // handler is guaranteed to have drained by then.
 
     public NamedPipeServer(VirtualBus bus, Action<string>? log = null)
     {
@@ -86,18 +88,10 @@ public sealed class NamedPipeServer : IAsyncDisposable
             cts = null;
         }
 
-        // Order matters: await the accept loop first. Once it has exited,
-        // no new tasks can be appended to clientHandlers, so the snapshot
-        // we take below is exhaustive.
+        // Awaiting the accept loop is sufficient: the loop awaits each
+        // client handler inline before iterating, so when it exits, no
+        // handler is still running.
         if (loopToAwait != null) try { await loopToAwait.ConfigureAwait(false); } catch { }
-
-        Task[] handlersToAwait;
-        lock (handlersLock)
-        {
-            handlersToAwait = clientHandlers.ToArray();
-            clientHandlers.Clear();
-        }
-        foreach (var h in handlersToAwait) try { await h.ConfigureAwait(false); } catch { }
 
         toDispose?.Dispose();
         log("NamedPipeServer stopped.");
@@ -120,7 +114,9 @@ public sealed class NamedPipeServer : IAsyncDisposable
                 pipe = new NamedPipeServerStream(
                     PipeName,
                     PipeDirection.InOut,
-                    NamedPipeServerStream.MaxAllowedServerInstances,
+                    // Single-instance: a second client gets ERROR_PIPE_BUSY
+                    // until the current host disconnects.
+                    1,
                     PipeTransmissionMode.Byte,
                     PipeOptions.Asynchronous);
                 await pipe.WaitForConnectionAsync(ct).ConfigureAwait(false);
@@ -145,12 +141,11 @@ public sealed class NamedPipeServer : IAsyncDisposable
             // Control only reaches here on the happy path: pipe was constructed,
             // a client connected, no exception escaped the try block.
             log("Pipe client connected.");
-            var handler = Task.Run(() => HandleClientAsync(pipe!, ct), ct);
-            lock (handlersLock)
-            {
-                clientHandlers.RemoveAll(t => t.IsCompleted);
-                clientHandlers.Add(handler);
-            }
+            // Await inline so no second listening instance is created until
+            // this host disconnects. HandleClientAsync owns the pipe and
+            // swallows its own exceptions in the finally block.
+            try { await HandleClientAsync(pipe!, ct).ConfigureAwait(false); }
+            catch { /* defence in depth; handler already catches internally */ }
         }
     }
 

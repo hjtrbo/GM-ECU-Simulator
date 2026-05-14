@@ -79,9 +79,13 @@ public static class DefaultEcuConfig
             new EcuDto
             {
                 Name = "TCM",
-                PhysicalRequestCanId = 0x7E1,
-                UsdtResponseCanId = 0x7E9,
-                UudtResponseCanId = 0x5E9,
+                PhysicalRequestCanId = 0x7E2,
+                UsdtResponseCanId = 0x7EA,
+                UudtResponseCanId = 0x5EA,
+                Identifiers = new List<IdentifierDto>
+                {
+                    new() { Did = 0x90, Name = "VIN", Ascii = "1G1ZB5ST7HF000000" },
+                },
                 Pids =
                 {
                     new PidDto

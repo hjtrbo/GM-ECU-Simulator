@@ -7,8 +7,10 @@ namespace Core.Transport;
 // when one is ready, or null if it's still buffering.
 //
 // Sends a Flow Control frame back to the tester on First Frame reception
-// - that's why it takes a `sendFlowControl` callback. BS=0/STmin=0 only;
-// matches the DataLogger's expectation in CanFrameCodec.BuildFlowControl().
+// - that's why it takes a `sendFlowControl` callback. The BS/STmin tail of
+// the FC frame is passed in by the caller (per-ECU configurable in EcuNode);
+// defaults to 0/0, which matches the DataLogger's expectation in
+// CanFrameCodec.BuildFlowControl().
 //
 // Supports both 12-bit FF_DL (FF_DL <= 4095) and the 32-bit escape FF_DL
 // (FF_DL > 4095) per ISO 15765-2:2016 §9.6.3.1, so programming-event
@@ -25,7 +27,10 @@ public sealed class IsoTpReassembler
 
     // Returns the assembled USDT payload (PCI byte stripped from FF; SID + payload only)
     // when complete, otherwise null. Single-frame requests are returned immediately.
-    public byte[]? Feed(ReadOnlySpan<byte> data, FlowControlEmitter? emitFc)
+    // fcBlockSize / fcSeparationTime are the BS / STmin bytes the FC frame will
+    // carry; the caller reads them from per-ECU config.
+    public byte[]? Feed(ReadOnlySpan<byte> data, FlowControlEmitter? emitFc,
+                        byte fcBlockSize = 0, byte fcSeparationTime = 0)
     {
         if (data.Length == 0) return null;
         var pci = (PciType)(data[0] & 0xF0);
@@ -76,7 +81,7 @@ public sealed class IsoTpReassembler
                 expectedSeq = 1;
                 inProgress = true;
 
-                emitFc?.Invoke(0, 0);             // CTS, BS=0, STmin=0
+                emitFc?.Invoke(fcBlockSize, fcSeparationTime);   // CTS + caller-supplied BS/STmin
                 return null;
             }
 

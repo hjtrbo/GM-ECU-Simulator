@@ -46,8 +46,9 @@ public partial class App : Application
 
         // Frame-level Tx/Rx sink for the Bus log tab. AppendBusFrame is gated
         // by the "Log frame traffic" checkbox so DPID Fast-band streams don't
-        // flood the textbox when nobody's watching.
-        bus.LogFrame = s => GmEcuSimulator.MainWindow.AppendBusFrame(s);
+        // flood the textbox when nobody's watching. Two formats are delivered:
+        // pretty (space-delimited) for the textbox, csv for the file.
+        bus.LogFrame = (pretty, csv) => GmEcuSimulator.MainWindow.AppendBusFrame(pretty, csv);
 
         // Always-on diagnostic sink — control-plane events (periodic
         // register/unregister, etc.). Low volume; never gated.
@@ -125,6 +126,11 @@ public partial class App : Application
         // launch picks up the user's edits. Use the stored mainWindow reference
         // rather than Current.MainWindow - WPF nulls the latter before OnExit fires.
         mainWindow?.AutoSave();
+
+        // Flush + close the file log if it's active. Stop() drains the writer's
+        // pending queue, writes a trailer, and disposes the StreamWriter so the
+        // last few hundred lines of a download don't get lost on shutdown.
+        GmEcuSimulator.MainWindow.FileLog.Stop();
 
         // Async path is mandatory here: NamedPipeServer is IAsyncDisposable
         // (no IDisposable). ServiceProvider.Dispose() walks its singletons

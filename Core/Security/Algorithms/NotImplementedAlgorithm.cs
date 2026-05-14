@@ -18,6 +18,9 @@ internal sealed class NotImplementedAlgorithm : ISeedKeyAlgorithm
     public int SeedLength => 2;
     public int KeyLength => 2;
     public IEnumerable<byte> SupportedLevels { get; } = new byte[] { 1 };
+    // Stub algorithm stays strict in programming session - tests rely on the
+    // NRC-$35 path being exercisable end-to-end.
+    public ProgrammingSessionBehavior ProgrammingSession => ProgrammingSessionBehavior.UnchangedAlgorithm;
 
     public void GenerateSeed(byte level, Span<byte> seedBuffer, out int seedLength)
     {

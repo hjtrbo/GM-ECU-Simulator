@@ -1,4 +1,5 @@
 using Common.Protocol;
+using Core.Security;
 using Core.Services;
 using EcuSimulator.Tests.TestHelpers;
 using Xunit;
@@ -174,5 +175,157 @@ public sealed class Gmw3110_2010_GenericTests
         Dispatch(0x27, 0x01, 0xFF);
 
         Assert.Equal(new byte[] { Service.NegativeResponse, Service.SecurityAccess, Nrc.SubFunctionNotSupportedInvalidFormat }, Pop());
+    }
+
+    // ----- BypassSecurity short-circuit -----
+
+    [Fact]
+    public void Bypass_RequestSeed_EmitsZeroSeed_AndStoresPending()
+    {
+        node.BypassSecurity = true;
+        algo.ComputeKeySucceeds = false; // would normally NRC the sendKey if reached
+
+        Dispatch(0x27, 0x01);
+
+        Assert.Equal(new byte[] { Service.Positive(Service.SecurityAccess), 0x01, 0x00, 0x00 }, Pop());
+        Assert.Equal(1, node.State.SecurityPendingSeedLevel);
+        Assert.Equal(new byte[] { 0x00, 0x00 }, node.State.SecurityLastIssuedSeed);
+    }
+
+    [Fact]
+    public void Bypass_SendKey_AnyKey_Unlocks()
+    {
+        node.BypassSecurity = true;
+
+        Dispatch(0x27, 0x01); Pop();
+        Dispatch(0x27, 0x02, 0x00, 0x00); // the exact key 6Speed.T43 hardcodes
+
+        Assert.Equal(new byte[] { Service.Positive(Service.SecurityAccess), 0x02 }, Pop());
+        Assert.Equal(1, node.State.SecurityUnlockedLevel);
+        Assert.Null(node.State.SecurityLastIssuedSeed);
+        Assert.Equal(0, node.State.SecurityPendingSeedLevel);
+        Assert.Equal(0, node.State.SecurityFailedAttempts);
+    }
+
+    [Fact]
+    public void Bypass_SendKey_WithoutRequestSeed_StillUnlocks()
+    {
+        // Bypass skips the pending-seed precondition - a tester that goes
+        // straight to sendKey still gets a positive response.
+        node.BypassSecurity = true;
+
+        Dispatch(0x27, 0x02, 0xDE, 0xAD);
+
+        Assert.Equal(new byte[] { Service.Positive(Service.SecurityAccess), 0x02 }, Pop());
+        Assert.Equal(1, node.State.SecurityUnlockedLevel);
+    }
+
+    [Fact]
+    public void Bypass_OverridesLockout()
+    {
+        // Pre-existing lockout (e.g. left over from before bypass was toggled
+        // on) must not block bypass-mode unlocks.
+        node.State.SecurityLockoutUntilMs = 999_999;
+        node.BypassSecurity = true;
+
+        Dispatch(0x27, 0x01);
+
+        Assert.Equal(new byte[] { Service.Positive(Service.SecurityAccess), 0x01, 0x00, 0x00 }, Pop());
+    }
+
+    [Fact]
+    public void Bypass_SkipsAlgorithmLevelFilter()
+    {
+        // FakeSeedKeyAlgorithm only advertises level 1; bypass accepts any
+        // level the tester asks for.
+        node.BypassSecurity = true;
+
+        Dispatch(0x27, 0x09); // sub 9 -> level 5, which the algo does NOT support
+
+        Assert.Equal(Service.Positive(Service.SecurityAccess), Pop()[0]);
+    }
+
+    // ----- ProgrammingSession + BypassAll policy (T43-style) -----
+    //
+    // The boot-block stub behaviour is automatic when the algorithm declares
+    // BypassAll and the ECU is in a programming session. No manual UI
+    // toggle of BypassSecurity required.
+
+    [Fact]
+    public void ProgrammingSession_WithBypassAllAlgo_EmitsZeroSeed()
+    {
+        algo.ProgrammingSession = ProgrammingSessionBehavior.BypassAll;
+        node.State.SecurityProgrammingShortcutActive = true;
+        algo.ComputeKeySucceeds = false; // would NRC if we fell through to the algorithm
+
+        Dispatch(0x27, 0x01);
+
+        Assert.Equal(new byte[] { Service.Positive(Service.SecurityAccess), 0x01, 0x00, 0x00 }, Pop());
+        Assert.Equal(new byte[] { 0x00, 0x00 }, node.State.SecurityLastIssuedSeed);
+    }
+
+    [Fact]
+    public void ProgrammingSession_WithBypassAllAlgo_AcceptsAnyKey_IncludingZeros()
+    {
+        // The exact path 6Speed.T43 takes: hardcoded $27 $02 00 00.
+        algo.ProgrammingSession = ProgrammingSessionBehavior.BypassAll;
+        algo.ExpectedKey = new byte[] { 0xAB, 0xCD }; // real key, irrelevant in bypass
+        node.State.SecurityProgrammingShortcutActive = true;
+
+        Dispatch(0x27, 0x01); Pop();
+        Dispatch(0x27, 0x02, 0x00, 0x00);
+
+        Assert.Equal(new byte[] { Service.Positive(Service.SecurityAccess), 0x02 }, Pop());
+        Assert.Equal(1, node.State.SecurityUnlockedLevel);
+    }
+
+    [Fact]
+    public void ProgrammingSession_WithUnchangedAlgo_StillEnforcesAlgorithm()
+    {
+        // E38-style: programming session does not weaken security.
+        algo.ProgrammingSession = ProgrammingSessionBehavior.UnchangedAlgorithm;
+        node.State.SecurityProgrammingShortcutActive = true;
+
+        Dispatch(0x27, 0x01);
+        // Real seed comes back, not 00 00.
+        Assert.Equal(new byte[] { Service.Positive(Service.SecurityAccess), 0x01, 0x12, 0x34 }, Pop());
+
+        Dispatch(0x27, 0x02, 0x00, 0x00); // wrong key
+        Assert.Equal(new byte[] { Service.NegativeResponse, Service.SecurityAccess, Nrc.InvalidKey }, Pop());
+        Assert.Equal(0, node.State.SecurityUnlockedLevel);
+    }
+
+    [Fact]
+    public void NotInProgrammingSession_BypassAllAlgo_StillEnforcesAlgorithm()
+    {
+        // BypassAll only kicks in WHEN a programming session is active. In
+        // operational mode the T43 OS dispatcher at file offset 0xDC624 does
+        // a strict cmpw against the static flash key, and the simulator
+        // mirrors that.
+        algo.ProgrammingSession = ProgrammingSessionBehavior.BypassAll;
+        // node.State.ProgrammingModeActive defaults to false.
+
+        Dispatch(0x27, 0x01);
+        Assert.Equal(new byte[] { Service.Positive(Service.SecurityAccess), 0x01, 0x12, 0x34 }, Pop());
+
+        Dispatch(0x27, 0x02, 0x00, 0x00); // wrong
+        Assert.Equal(new byte[] { Service.NegativeResponse, Service.SecurityAccess, Nrc.InvalidKey }, Pop());
+    }
+
+    [Fact]
+    public void ProgrammingSession_BypassAllAlgo_OverridesLockout()
+    {
+        // Lockout left over from operational-mode failed attempts should not
+        // block the programming-session bypass path - real T43 lockout state
+        // applies to the OS handler, not the boot block.
+        algo.ProgrammingSession = ProgrammingSessionBehavior.BypassAll;
+        node.State.SecurityProgrammingShortcutActive = true;
+        node.State.SecurityFailedAttempts = 3;
+        node.State.SecurityLockoutUntilMs = 999_999;
+        nowMs = 5_000;
+
+        Dispatch(0x27, 0x01);
+
+        Assert.Equal(new byte[] { Service.Positive(Service.SecurityAccess), 0x01, 0x00, 0x00 }, Pop());
     }
 }

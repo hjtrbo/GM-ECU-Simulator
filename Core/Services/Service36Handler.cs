@@ -22,13 +22,25 @@ namespace Core.Services;
 // $36 calls in the same session (§8.13.2 Note 1). We use the value frozen by
 // the most recent $34 in NodeState.DownloadAddressByteCount.
 //
-// Our simulator treats startingAddress as an OFFSET into the sink buffer
-// (rather than a literal memory address). For a tester that sends a single
-// $36 with startingAddress = 0 and the full payload, this is a perfect
-// round-trip; testers that segment by address get exactly the same effect
-// as if the buffer were memory-mapped at base 0.
+// Spec mode (default, bus.Capture.BootloaderCaptureEnabled = false):
+//   startingAddress is interpreted as an offset into the $34-declared buffer.
+//   Out-of-range writes get NRC $31. Behaviour matches §8.13.4 exactly.
+//
+// Capture mode (bus.Capture.BootloaderCaptureEnabled = true):
+//   Real GM hosts send the absolute RAM/flash address (e.g. $003FB800) where
+//   the SPS bootloader expects to land - that's wildly outside the small
+//   declared buffer and would always trip NRC $31 in spec mode. In capture
+//   mode we treat the FIRST $36's startingAddress as the base, store the
+//   payload at (addr - base), and grow the sink buffer past the declared
+//   size as needed (capped at 64 MiB to bound runaway allocations). The
+//   captured buffer is written to disk by EcuExitLogic when the session ends.
 public static class Service36Handler
 {
+    /// <summary>Safety cap on the capture-mode sink buffer. 64 MiB is well past
+    /// any real GM SPS bootloader/calibration payload (~10s of KB to a few MB)
+    /// and prevents a malformed host address from triggering an OOM allocation.</summary>
+    public const int MaxCaptureBufferBytes = 64 * 1024 * 1024;
+
     /// <summary>Returns true if a positive response was sent, false if an NRC was sent.</summary>
     public static bool Handle(EcuNode node, ReadOnlySpan<byte> usdtPayload, ChannelSession ch)
     {
@@ -70,11 +82,24 @@ public static class Service36Handler
 
         var dataRecord = usdtPayload.Slice(2 + addrBytes);
 
-        // §8.13.4 NRC $31: out-of-range. We treat startingAddress as offset into
-        // the declared buffer and reject anything past the end.
+        bool captureOn = ch.Bus?.Capture.BootloaderCaptureEnabled == true;
+        if (captureOn)
+            return HandleCapture(node, ch, startingAddress, dataRecord);
+
+        // -------- Spec mode (default) --------
+        // §8.13.4 NRC $31: out-of-range. startingAddress is treated as an offset
+        // into the declared buffer; anything past the end is rejected.
         long endExclusive = (long)startingAddress + dataRecord.Length;
         if (endExclusive > node.State.DownloadBuffer.Length)
         {
+            // Diagnostic breadcrumb: when a real host sends an absolute RAM/flash
+            // address (typical for SPS bootloader uploads), this NRC fires every
+            // single time in spec mode. The user almost certainly wants capture
+            // mode in that scenario - surface the hint in the bus log so they
+            // don't have to step into the handler to figure out why.
+            ch.Bus?.LogDiagnostic?.Invoke(
+                $"[$36 NRC $31] startingAddress=0x{startingAddress:X8} + dataLen={dataRecord.Length} exceeds declared buffer ({node.State.DownloadBuffer.Length}). " +
+                "Tick 'Enable bootloader capture' in the Capture Bootloader tab to relax this check and dump the payload to disk.");
             ServiceUtil.EnqueueNrc(node, ch, Service.TransferData, Nrc.RequestOutOfRange);
             return false;
         }
@@ -82,6 +107,67 @@ public static class Service36Handler
         if (dataRecord.Length > 0)
         {
             dataRecord.CopyTo(node.State.DownloadBuffer.AsSpan((int)startingAddress));
+            node.State.DownloadBytesReceived += (uint)dataRecord.Length;
+        }
+
+        node.State.Fragmenter.EnqueueResponse(ch, node.UsdtResponseCanId,
+            [Service.Positive(Service.TransferData)]);
+        return true;
+    }
+
+    /// <summary>
+    /// Capture-mode path: lock the base address on the first $36, store payload
+    /// relative to that base, grow the buffer (capped) when the host writes
+    /// past the declared size. Never returns NRC $31.
+    /// </summary>
+    private static bool HandleCapture(EcuNode node, ChannelSession ch, uint startingAddress,
+                                      ReadOnlySpan<byte> dataRecord)
+    {
+        node.State.DownloadCaptureBaseAddress ??= startingAddress;
+        uint baseAddr = node.State.DownloadCaptureBaseAddress.Value;
+
+        if (startingAddress < baseAddr)
+        {
+            // Host wrote BEFORE the address it first used. Rebase: shift the
+            // existing buffer forward so the new low address becomes offset 0.
+            uint shift = baseAddr - startingAddress;
+            int oldLen = node.State.DownloadBuffer!.Length;
+            long needed = (long)oldLen + shift;
+            if (needed > MaxCaptureBufferBytes)
+            {
+                ServiceUtil.EnqueueNrc(node, ch, Service.TransferData, Nrc.RequestOutOfRange);
+                return false;
+            }
+            var rebased = new byte[needed];
+            Buffer.BlockCopy(node.State.DownloadBuffer, 0, rebased, (int)shift, oldLen);
+            node.State.DownloadBuffer = rebased;
+            node.State.DownloadCaptureBaseAddress = startingAddress;
+            baseAddr = startingAddress;
+        }
+
+        long offset = startingAddress - baseAddr;
+        long endExclusive = offset + dataRecord.Length;
+        if (endExclusive > MaxCaptureBufferBytes)
+        {
+            // Hard safety cap - reject and let the host see something rather
+            // than allocating multi-GB. $31 is the closest match.
+            ServiceUtil.EnqueueNrc(node, ch, Service.TransferData, Nrc.RequestOutOfRange);
+            return false;
+        }
+
+        if (endExclusive > node.State.DownloadBuffer!.Length)
+        {
+            // Grow with some headroom so a contiguous download doesn't
+            // realloc on every $36. Cap at MaxCaptureBufferBytes.
+            long target = Math.Min(MaxCaptureBufferBytes, Math.Max(endExclusive, node.State.DownloadBuffer.Length * 2L));
+            var grown = new byte[target];
+            Buffer.BlockCopy(node.State.DownloadBuffer, 0, grown, 0, node.State.DownloadBuffer.Length);
+            node.State.DownloadBuffer = grown;
+        }
+
+        if (dataRecord.Length > 0)
+        {
+            dataRecord.CopyTo(node.State.DownloadBuffer.AsSpan((int)offset));
             node.State.DownloadBytesReceived += (uint)dataRecord.Length;
         }
 

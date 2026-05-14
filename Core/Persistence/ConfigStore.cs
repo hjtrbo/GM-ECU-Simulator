@@ -70,6 +70,10 @@ public static class ConfigStore
                 Glitch = node.Glitch,
                 SecurityModuleId = node.SecurityModule?.Id,
                 SecurityModuleConfig = node.SecurityModuleConfig,
+                BypassSecurity = node.BypassSecurity,
+                FlowControlBlockSize = node.FlowControlBlockSize,
+                FlowControlSeparationTime = node.FlowControlSeparationTime,
+                ProgrammedState = node.ProgrammedState,
                 Pids = node.Pids.Select(PidDtoFrom).ToList(),
                 Identifiers = idMap.Count == 0
                     ? null
@@ -83,6 +87,20 @@ public static class ConfigStore
                 FilePath = replay.FilePath,
                 LoopMode = replay.LoopMode,
                 AutoLoadOnStart = replay.PersistedAutoLoadOnStart,
+            };
+        }
+        // Bootloader-capture toggle is persisted whenever it's ON, or when the
+        // user has overridden the capture directory. Default-state (off, default
+        // dir) leaves BootloaderCapture null so v1-v5 configs round-trip cleanly.
+        var defaultDir = new Bus.CaptureSettings().CaptureDirectory;
+        bool dirOverridden = !string.Equals(bus.Capture.CaptureDirectory, defaultDir,
+            StringComparison.OrdinalIgnoreCase);
+        if (bus.Capture.BootloaderCaptureEnabled || dirOverridden)
+        {
+            cfg.BootloaderCapture = new BootloaderCaptureConfig
+            {
+                Enabled = bus.Capture.BootloaderCaptureEnabled,
+                Directory = dirOverridden ? bus.Capture.CaptureDirectory : null,
             };
         }
         return cfg;
@@ -100,6 +118,16 @@ public static class ConfigStore
             bus.Scheduler.Stop(oldNode, Array.Empty<byte>());
 
         bus.ReplaceNodes(cfg.Ecus.Select(EcuNodeFrom));
+
+        // Restore the bootloader-capture toggle (v6+). Null leaves the bus at
+        // its constructor defaults (off, default directory), which matches the
+        // pre-v6 implicit behaviour.
+        if (cfg.BootloaderCapture is not null)
+        {
+            bus.Capture.BootloaderCaptureEnabled = cfg.BootloaderCapture.Enabled;
+            if (!string.IsNullOrWhiteSpace(cfg.BootloaderCapture.Directory))
+                bus.Capture.CaptureDirectory = cfg.BootloaderCapture.Directory!;
+        }
     }
 
     public static EcuNode EcuNodeFrom(EcuDto dto)
@@ -113,6 +141,10 @@ public static class ConfigStore
             AllowPeriodicTesterPresent = dto.AllowPeriodicTesterPresent,
             Glitch = dto.Glitch ?? Common.Glitch.GlitchConfig.CreateDefault(),
             SecurityModuleConfig = dto.SecurityModuleConfig,
+            BypassSecurity = dto.BypassSecurity,
+            FlowControlBlockSize = dto.FlowControlBlockSize,
+            FlowControlSeparationTime = dto.FlowControlSeparationTime,
+            ProgrammedState = dto.ProgrammedState,
         };
         node.SecurityModule = SecurityModuleRegistry.Create(dto.SecurityModuleId);
         node.SecurityModule?.LoadConfig(dto.SecurityModuleConfig);

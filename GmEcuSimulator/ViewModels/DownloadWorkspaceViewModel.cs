@@ -1,6 +1,5 @@
 using System.Windows.Media;
 using Core.Scheduler;
-using Core.Services;
 
 namespace GmEcuSimulator.ViewModels;
 
@@ -132,12 +131,10 @@ public sealed class DownloadWorkspaceViewModel : NotifyPropertyChangedBase
     private void ResetEcuState()
     {
         if (ecu == null) return;
-        // Use the node's last enhanced channel so any in-progress host sees
-        // the unsolicited $60 ReturnToNormalMode response - mirrors what
-        // IdleBusSupervisor does on a P3C timeout. Null is safe (just skips
-        // the response).
-        var channel = ecu.Model.State.LastEnhancedChannel;
-        EcuExitLogic.Run(ecu.Model, scheduler, channel);
+        // Routed through EcuViewModel so every "Reset ECU state" button in the
+        // workspace tabs ends up doing exactly the same thing (power-cycle =
+        // $20 exit + full security re-lock).
+        ecu.ResetEcuState(scheduler);
         Refresh();
     }
 }

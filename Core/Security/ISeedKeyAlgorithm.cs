@@ -26,6 +26,19 @@ public interface ISeedKeyAlgorithm
     IEnumerable<byte> SupportedLevels { get; }
 
     /// <summary>
+    /// How this algorithm behaves once the ECU has entered a programming
+    /// session (either via $10 $02 or via the full $28 + $A5 chain).
+    /// Default <see cref="ProgrammingSessionBehavior.UnchangedAlgorithm"/> -
+    /// the same seed/key math runs regardless of session. Algorithms that
+    /// model a permissive boot-block stub (e.g. T43 TCM) override to
+    /// <see cref="ProgrammingSessionBehavior.BypassAll"/>; the generic module
+    /// then short-circuits $27 to seed = 00 / any-key accepted whenever
+    /// <see cref="Core.Ecu.NodeState.SecurityProgrammingShortcutActive"/> is
+    /// true.
+    /// </summary>
+    ProgrammingSessionBehavior ProgrammingSession => ProgrammingSessionBehavior.UnchangedAlgorithm;
+
+    /// <summary>
     /// Generate a seed for the requested level into the supplied buffer.
     /// Write `seedLength` bytes (≤ SeedLength); the generic module will
     /// emit those bytes verbatim in the positive response.

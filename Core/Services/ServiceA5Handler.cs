@@ -74,6 +74,10 @@ public static class ServiceA5Handler
                     return false;
                 }
                 node.State.ProgrammingModeActive = true;
+                // The full GMW3110 entry also opens the security-shortcut door
+                // so the $27 module's BypassAll policy fires the same way it
+                // would for the UDS-style $10 $02 shortcut.
+                node.State.SecurityProgrammingShortcutActive = true;
                 // §8.17.3 footnote M2: "There is no response to a request message
                 // with a sub-parameter value of $03." Returning true so the
                 // dispatcher activates P3C.

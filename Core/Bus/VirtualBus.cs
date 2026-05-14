@@ -27,6 +27,13 @@ public sealed class VirtualBus
     public IdleBusSupervisor IdleSupervisor { get; }
     public double NowMs => clock.Elapsed.TotalMilliseconds;
 
+    /// <summary>
+    /// Runtime toggle for bootloader-capture mode. Off by default so
+    /// Service36Handler keeps spec-correct GMW3110 §8.13.4 NRC $31 behaviour.
+    /// The Capture Bootloader tab flips BootloaderCaptureEnabled.
+    /// </summary>
+    public CaptureSettings Capture { get; } = new();
+
     // Bin-replay coordinator. Set by the composition root (App.OnStartup).
     // Null in tests that don't exercise the replay path; the dispatcher
     // and ticker check for null before calling MaybeStart / MaybeStop.
@@ -52,13 +59,49 @@ public sealed class VirtualBus
     public event EventHandler? NodesChanged;
 
     /// <summary>
-    /// Frame-level traffic sink. Set to non-null to receive a one-line
-    /// human-readable record from the simulator's perspective: Rx = frame
-    /// received from the J2534 host; Tx = frame the simulator generated
-    /// for the host (with "- HOST FILTERED" appended if the host's own
+    /// Frame-level traffic sink. Set to non-null to receive one record per
+    /// frame in two formats simultaneously:
+    ///   pretty - human-readable, space-delimited, for the on-screen textbox
+    ///            e.g. "[chan 1] Rx 7E2 02 10 02  ; StartDiagnosticSession"
+    ///   csv    - comma-separated for the log file; leading [timestamp],[CAN]
+    ///            prefix is prepended by MainWindow before the disk write
+    ///            e.g. "[chan 1],Rx,7E2 02 10 02,StartDiagnosticSession"
+    /// Rx = frame received from the J2534 host; Tx = frame the simulator
+    /// generated for the host ("- HOST FILTERED" appended when the host's own
     /// channel filter blocked delivery). Null means no logging.
     /// </summary>
-    public Action<string>? LogFrame { get; set; }
+    public Action<string, string>? LogFrame { get; set; }
+
+    /// <summary>
+    /// When true, every bus-frame log line is suffixed with a short
+    /// human-readable tag produced by <see cref="Common.Protocol.Gmw3110Annotator"/>
+    /// (e.g. "  ; SecurityAccess - RequestSeed"). Off by default - testers
+    /// who only want raw hex pay no annotation cost on the hot path.
+    /// </summary>
+    public bool AnnotateFrames { get; set; }
+
+    /// <summary>
+    /// When true, long ISO-TP transfers in the bus log are condensed: the
+    /// first <see cref="BulkTransferCollapser.HeadCfCount"/> consecutive
+    /// frames pass through, the middle is replaced with a single marker
+    /// line summarising how many frames were hidden, then the last
+    /// <see cref="BulkTransferCollapser.TailCfCount"/> CFs come through.
+    /// Transitions off→on do nothing for transfers already in progress;
+    /// transitions on→off call <see cref="BulkTransferCollapser.Reset"/>
+    /// so the next pass starts clean.
+    /// </summary>
+    public bool CollapseBulkTransfers
+    {
+        get => collapseBulkTransfers;
+        set
+        {
+            if (collapseBulkTransfers == value) return;
+            collapseBulkTransfers = value;
+            if (!value) bulkCollapser.Reset();
+        }
+    }
+    private bool collapseBulkTransfers;
+    private readonly BulkTransferCollapser bulkCollapser = new();
 
     /// <summary>
     /// Always-on diagnostic sink for control-plane events (periodic message
@@ -77,12 +120,29 @@ public sealed class VirtualBus
     /// </summary>
     public Action<string>? OnStatusMessage { get; set; }
 
+    // Two formats are emitted to the LogFrame sink per frame:
+    //
+    //   pretty  "[chan N] <Rx|Tx> <canId payload> [; annotation]"
+    //           human-readable, rendered in the on-screen textbox as-is.
+    //
+    //   csv     "[chan N],<Rx|Tx>,<canId payload> [- HOST FILTERED],<annotation>"
+    //           MainWindow prepends "[timestamp],[CAN]," before the disk write.
+    //           The annotation column is always present (empty string when off
+    //           or the annotator returns null) for stable column count.
+    //
+    // Collapse markers from BulkTransferCollapser follow the same two shapes:
+    //   pretty  "[chan N] -- bulk transfer collapsed: N frames hidden --"
+    //   csv     "[chan N],,,-- bulk transfer collapsed: N frames hidden --"
+
     internal void LogTx(uint chId, ReadOnlySpan<byte> frame)
     {
         var sink = LogFrame;
         if (sink == null) return;
         if (frame.Length < CanFrame.IdBytes) return;
-        sink($"[chan {chId}] Rx {FormatId(CanFrame.ReadId(frame))} {HexFormat.Bytes(CanFrame.Payload(frame))}");
+        var canId = CanFrame.ReadId(frame);
+        var payload = CanFrame.Payload(frame);
+        var (pretty, csv) = FormatFrame(chId, "Rx", canId, payload, hostFiltered: false);
+        EmitFrame(chId, canId, payload, pretty, csv, sink);
     }
 
     internal void LogRx(uint chId, ReadOnlySpan<byte> frame)
@@ -90,7 +150,10 @@ public sealed class VirtualBus
         var sink = LogFrame;
         if (sink == null) return;
         if (frame.Length < CanFrame.IdBytes) return;
-        sink($"[chan {chId}] Tx {FormatId(CanFrame.ReadId(frame))} {HexFormat.Bytes(CanFrame.Payload(frame))}");
+        var canId = CanFrame.ReadId(frame);
+        var payload = CanFrame.Payload(frame);
+        var (pretty, csv) = FormatFrame(chId, "Tx", canId, payload, hostFiltered: false);
+        EmitFrame(chId, canId, payload, pretty, csv, sink);
     }
 
     internal void LogRxFiltered(uint chId, ReadOnlySpan<byte> frame)
@@ -98,7 +161,34 @@ public sealed class VirtualBus
         var sink = LogFrame;
         if (sink == null) return;
         if (frame.Length < CanFrame.IdBytes) return;
-        sink($"[chan {chId}] Tx {FormatId(CanFrame.ReadId(frame))} {HexFormat.Bytes(CanFrame.Payload(frame))} - HOST FILTERED");
+        var canId = CanFrame.ReadId(frame);
+        var payload = CanFrame.Payload(frame);
+        var (pretty, csv) = FormatFrame(chId, "Tx", canId, payload, hostFiltered: true);
+        EmitFrame(chId, canId, payload, pretty, csv, sink);
+    }
+
+    // Builds both the pretty (textbox) and csv (file) representations from
+    // the same intermediate data so the annotator is invoked at most once.
+    private (string pretty, string csv) FormatFrame(uint chId, string direction, uint canId, ReadOnlySpan<byte> payload, bool hostFiltered)
+    {
+        string bytes = $"{FormatId(canId)} {HexFormat.Bytes(payload)}";
+        if (hostFiltered) bytes += " - HOST FILTERED";
+        string? annotation = AnnotateFrames
+            ? Common.Protocol.Gmw3110Annotator.Annotate(canId, payload)
+            : null;
+        string pretty = annotation != null
+            ? $"[chan {chId}] {direction} {bytes}  ; {annotation}"
+            : $"[chan {chId}] {direction} {bytes}";
+        string csv = $"[chan {chId}],{direction},{bytes},{annotation ?? ""}";
+        return (pretty, csv);
+    }
+
+    private void EmitFrame(uint chId, uint canId, ReadOnlySpan<byte> payload, string pretty, string csv, Action<string, string> sink)
+    {
+        if (collapseBulkTransfers)
+            bulkCollapser.Process(chId, canId, payload, pretty, csv, sink);
+        else
+            sink(pretty, csv);
     }
 
     private static string FormatId(uint id)
@@ -165,11 +255,19 @@ public sealed class VirtualBus
             DispatchFunctional(data, ch);
             return;
         }
+        if (canId == GmlanCanId.Obd2FunctionalRequest)
+        {
+            // ISO 15765-4 functional broadcast. Normal addressing - no extAddr
+            // byte to consume. Modern GM ECUs accept both this AND $101+$FE.
+            DispatchObd2Functional(data, ch);
+            return;
+        }
 
         var node = FindByRequestId(canId);
         if (node == null)
         {
-            LogFrame?.Invoke($"[bus] no ECU at {FormatId(canId)} -- frame dropped");
+            var msg = $"[bus] no ECU at {FormatId(canId)} -- frame dropped";
+            LogFrame?.Invoke(msg, msg);
             return;
         }
 
@@ -194,7 +292,7 @@ public sealed class VirtualBus
             fc[CanFrame.IdBytes + 1] = bs;
             fc[CanFrame.IdBytes + 2] = st;
             ch.EnqueueRx(new PassThruMsg { ProtocolID = ProtocolID.CAN, Data = fc });
-        });
+        }, node.FlowControlBlockSize, node.FlowControlSeparationTime);
 
         if (assembled == null) return;
         DispatchUsdt(node, assembled, ch, isFunctional: false);
@@ -210,6 +308,31 @@ public sealed class VirtualBus
         if (len < 1 || len > data.Length - 2) return;
         if (extAddr != GmlanCanId.AllNodesExtAddr) return;
         var payload = data.Slice(2, len);
+
+        EcuNode[] snapshot;
+        lock (nodesLock) snapshot = nodes.ToArray();
+        foreach (var node in snapshot)
+            DispatchUsdt(node, payload, ch, isFunctional: true);
+    }
+
+    /// <summary>
+    /// ISO 15765-4 OBD-II functional broadcast at CAN ID $7DF. Normal addressing,
+    /// so data[0] is the PCI byte (no extAddr byte to consume). Only Single
+    /// Frame is meaningful for functional broadcast - multi-frame to many
+    /// receivers would need per-receiver FlowControl, which the standard
+    /// doesn't define for $7DF. Dispatches the SF payload to every ECU with
+    /// isFunctional=true, so existing per-service gates (e.g. Service3EHandler
+    /// accepting both physical and functional, Service22Handler returning
+    /// early on functional, etc.) behave correctly.
+    /// </summary>
+    private void DispatchObd2Functional(ReadOnlySpan<byte> data, ChannelSession ch)
+    {
+        if (data.Length < 2) return;
+        byte pci = data[0];
+        if ((pci >> 4) != 0) return;                           // SF only
+        int len = pci & 0x0F;
+        if (len < 1 || len > data.Length - 1) return;
+        var payload = data.Slice(1, len);
 
         EcuNode[] snapshot;
         lock (nodesLock) snapshot = nodes.ToArray();
@@ -314,6 +437,11 @@ public sealed class VirtualBus
                 // §8.9: typically functional broadcast at $101 / $FE; both
                 // physical and functional are accepted per §8.9.5.1.
                 if (Service28Handler.Handle(node, usdt, ch, isFunctional))
+                    ActivateP3C(node, ch);
+                break;
+            case Service.ReportProgrammedState:
+                if (isFunctional) return;
+                if (ServiceA2Handler.Handle(node, usdt, ch))
                     ActivateP3C(node, ch);
                 break;
             case Service.ProgrammingMode:

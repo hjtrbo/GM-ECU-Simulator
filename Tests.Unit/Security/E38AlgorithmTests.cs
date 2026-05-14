@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Common.Protocol;
+using Core.Security;
 using Core.Security.Algorithms;
 using Core.Services;
 using EcuSimulator.Tests.TestHelpers;
@@ -85,5 +86,50 @@ public sealed class E38AlgorithmTests
             ch, nowMs: 0);
         Assert.Equal(new byte[] { Service.Positive(Service.SecurityAccess), 0x02 },
                      TestFrame.DequeueSingleFrameUsdt(ch));
+    }
+
+    // ----- Programming-session policy -----
+    //
+    // E38 bootloader enforces the same GMLAN 0x92 algorithm as the OS - this
+    // is the inverse of the T43 boot-block stub. The test asserts both the
+    // declared policy and the runtime behaviour after $10 $02.
+
+    [Fact]
+    public void Policy_DeclaresUnchangedAlgorithm()
+    {
+        Assert.Equal(ProgrammingSessionBehavior.UnchangedAlgorithm, new E38Algorithm().ProgrammingSession);
+    }
+
+    [Fact]
+    public void EndToEnd_AfterDollar10Dollar02_StillRequiresRealKey()
+    {
+        // Same wire sequence as the T43 'unlocks via 00 00' test, but with
+        // E38's UnchangedAlgorithm policy the bypass codepath stays cold.
+        var algo = new E38Algorithm();
+        algo.LoadConfig(JsonSerializer.SerializeToElement(new { fixedSeed = "1234" }));
+        var node = NodeFactory.CreateNode(
+            module: new Core.Security.Modules.Gmw3110_2010_Generic(algo, id: "gm-e38-test"));
+        var ch = NodeFactory.CreateChannel();
+
+        Service10Handler.Handle(node, new byte[] { 0x10, 0x02 }, ch);
+        TestFrame.DequeueSingleFrameUsdt(ch);
+        Assert.True(node.State.SecurityProgrammingShortcutActive);
+
+        Service27Handler.Handle(node, new byte[] { 0x27, 0x01 }, ch, nowMs: 0);
+        // Real seed comes back (not 00 00).
+        Assert.Equal(new byte[] { Service.Positive(Service.SecurityAccess), 0x01, 0x12, 0x34 },
+                     TestFrame.DequeueSingleFrameUsdt(ch));
+
+        // The hardcoded-zero key 6Speed.T43 would send fails.
+        Service27Handler.Handle(node, new byte[] { 0x27, 0x02, 0x00, 0x00 }, ch, nowMs: 0);
+        Assert.Equal(new byte[] { Service.NegativeResponse, Service.SecurityAccess, Nrc.InvalidKey },
+                     TestFrame.DequeueSingleFrameUsdt(ch));
+
+        // The computed E38 key (= 0x96CE for seed 0x1234) succeeds even in
+        // programming session.
+        Service27Handler.Handle(node, new byte[] { 0x27, 0x02, 0x96, 0xCE }, ch, nowMs: 0);
+        Assert.Equal(new byte[] { Service.Positive(Service.SecurityAccess), 0x02 },
+                     TestFrame.DequeueSingleFrameUsdt(ch));
+        Assert.Equal(1, node.State.SecurityUnlockedLevel);
     }
 }

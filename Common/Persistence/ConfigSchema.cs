@@ -23,10 +23,20 @@ namespace Common.Persistence;
 //
 // v4 added per-ECU Identifiers (list of IdentifierDto) for $1A
 // ReadDataByIdentifier responses. v1/v2/v3 files load with Identifiers == null
-// → $1A returns NRC $31 RequestOutOfRange for every DID, as before.
+// -> $1A returns NRC $31 RequestOutOfRange for every DID, as before.
+//
+// v5 added per-ECU BypassSecurity flag and per-ECU ISO-TP FlowControl bytes
+// (FlowControlBlockSize / FlowControlSeparationTime). v1-v4 files load with
+// BypassSecurity false and FC bytes 0/0, preserving spec-correct $27 +
+// most-permissive ISO-TP behaviour.
+//
+// v6 added the BootloaderCapture section (Enabled flag + optional directory
+// override). v1-v5 files load with BootloaderCapture == null - the Bootloader
+// tab toggle stays at its default (off) and the spec-correct NRC $31 path
+// runs in Service36Handler.
 public sealed class SimulatorConfig
 {
-    public const int CurrentVersion = 4;
+    public const int CurrentVersion = 6;
     public const int MinSupportedVersion = 1;
 
     public int Version { get; set; } = CurrentVersion;
@@ -36,6 +46,21 @@ public sealed class SimulatorConfig
     // Null for users who have never loaded a bin. The coordinator
     // owns the runtime state; this DTO only carries the persisted hints.
     public BinReplayConfig? BinReplay { get; set; }
+
+    // Null until the user has touched the Bootloader-capture toggle. When
+    // present, ConfigStore.ApplyTo restores the Enabled flag (and optional
+    // directory override) to bus.Capture so the toggle survives a restart.
+    public BootloaderCaptureConfig? BootloaderCapture { get; set; }
+}
+
+// Persisted bootloader-capture configuration. Slots into
+// SimulatorConfig.BootloaderCapture. Directory is null when the user is happy
+// with the default (%LOCALAPPDATA%\GmEcuSimulator\captures); a non-null value
+// overrides CaptureSettings.CaptureDirectory at load time.
+public sealed class BootloaderCaptureConfig
+{
+    public bool Enabled { get; set; }
+    public string? Directory { get; set; }
 }
 
 public sealed class EcuDto
@@ -65,10 +90,26 @@ public sealed class EcuDto
     public string? SecurityModuleId { get; set; }
 
     // Module-specific configuration handed to ISecurityAccessModule.LoadConfig.
-    // Each module deserialises its own shape from this blob — ConfigSchema
+    // Each module deserialises its own shape from this blob - ConfigSchema
     // doesn't need to know about any of them. Null is valid (module gets
     // defaults).
     public JsonElement? SecurityModuleConfig { get; set; }
+
+    // When true the security module short-circuits $27 to positive responses
+    // regardless of seed/key validation. Models real ECUs whose $27 level is
+    // a stub (T43 TCM is the canonical example). Defaults to false so older
+    // configs and a freshly-created ECU keep the spec-correct challenge.
+    public bool BypassSecurity { get; set; }
+
+    // ISO 15765-2 Flow Control BS/STmin emitted on First Frame reception.
+    // Defaults 0/0 (most permissive). Override to mimic real silicon - e.g.
+    // 6Speed.T43 tester needs BS=1 in the FC tail to recognise the response.
+    public byte FlowControlBlockSize { get; set; }
+    public byte FlowControlSeparationTime { get; set; }
+
+    // GMW3110-2010 §8.16 ReportProgrammedState ($A2) byte. Default 0x00
+    // (FullyProgrammed) matches a normal running ECU.
+    public byte ProgrammedState { get; set; }
 
     public List<PidDto> Pids { get; set; } = new();
 

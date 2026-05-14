@@ -13,6 +13,7 @@ internal sealed class FakeSeedKeyAlgorithm : ISeedKeyAlgorithm
     public int SeedLength { get; init; } = 2;
     public int KeyLength { get; init; } = 2;
     public IEnumerable<byte> SupportedLevels { get; init; } = new byte[] { 1 };
+    public ProgrammingSessionBehavior ProgrammingSession { get; set; } = ProgrammingSessionBehavior.UnchangedAlgorithm;
 
     public byte[] SeedToReturn { get; set; } = new byte[] { 0x12, 0x34 };
     public byte[] ExpectedKey { get; set; } = new byte[] { 0xAB, 0xCD };

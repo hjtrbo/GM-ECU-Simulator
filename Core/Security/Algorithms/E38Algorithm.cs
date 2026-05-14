@@ -39,6 +39,9 @@ public sealed class E38Algorithm : ISeedKeyAlgorithm
     public int SeedLength => 2;
     public int KeyLength => 2;
     public IEnumerable<byte> SupportedLevels { get; } = new byte[] { 1 };
+    // Real E38 / E67 bootloader enforces the same GMLAN 0x92 algorithm as
+    // operational mode - programming session does not weaken security.
+    public ProgrammingSessionBehavior ProgrammingSession => ProgrammingSessionBehavior.UnchangedAlgorithm;
 
     public void GenerateSeed(byte level, Span<byte> seedBuffer, out int seedLength)
     {

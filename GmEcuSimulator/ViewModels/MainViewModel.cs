@@ -26,6 +26,11 @@ public sealed class MainViewModel : NotifyPropertyChangedBase
     private string statusText = "Ready";
     private bool j2534Busy;
 
+    // Per-user UI preferences loaded from %LOCALAPPDATA%\GmEcuSimulator\settings.json.
+    // Each Log-menu checkbox setter writes back through SaveAppSettings() so the
+    // user's choices survive across restarts.
+    private readonly AppSettings appSettings;
+
     // In-memory snapshot of the ECU set captured the moment a bin is loaded.
     // Restored on Unload so the user's pre-bin configuration comes back
     // intact. ecu_config.json on disk is never overwritten by load/unload.
@@ -33,6 +38,7 @@ public sealed class MainViewModel : NotifyPropertyChangedBase
 
     public BinReplayViewModel BinReplay { get; }
     public DownloadWorkspaceViewModel DownloadWorkspace { get; }
+    public CaptureBootloaderViewModel CaptureBootloader { get; }
 
     public RelayCommand NewCommand { get; }
     public RelayCommand OpenCommand { get; }
@@ -56,7 +62,24 @@ public sealed class MainViewModel : NotifyPropertyChangedBase
         this.pipeServer = pipeServer;
         BinReplay = new BinReplayViewModel(replay, bus, OnBinReplayLoad, OnBinReplayUnload);
         DownloadWorkspace = new DownloadWorkspaceViewModel(bus.Scheduler);
+        CaptureBootloader = new CaptureBootloaderViewModel(bus.Capture);
         Rebuild();
+
+        // Hydrate UI preferences. The setters fan out to the static gates in
+        // MainWindow + bus.AnnotateFrames so behaviour matches the persisted
+        // choices before any frame flows.
+        appSettings = AppSettings.Load();
+        logIncludeJ2534Calls     = appSettings.LogIncludeJ2534Calls;
+        logIncludeBusTraffic     = appSettings.LogIncludeBusTraffic;
+        logAppendDescriptionTag  = appSettings.LogAppendDescriptionTag;
+        logCollapseBulkTransfers = appSettings.LogCollapseBulkTransfers;
+        MainWindow.SetIncludeJ2534FileLog(logIncludeJ2534Calls);
+        MainWindow.SetIncludeBusFileLog(logIncludeBusTraffic);
+        bus.AnnotateFrames        = logAppendDescriptionTag;
+        bus.CollapseBulkTransfers = logCollapseBulkTransfers;
+        // IsFileLoggingEnabled goes through the public setter so the sink
+        // actually starts if the user had the toggle on at last shutdown.
+        IsFileLoggingEnabled = appSettings.LogToFile;
 
         NewCommand                   = new RelayCommand(New);
         OpenCommand                  = new RelayCommand(Open);
@@ -100,6 +123,140 @@ public sealed class MainViewModel : NotifyPropertyChangedBase
                 MainWindow.SetLogTrafficEnabled(value);
         }
     }
+
+    // Independent file-logging toggle. When on, MainWindow.FileLog opens a
+    // fresh bus_yyyyMMdd_HHmmss.csv under %LOCALAPPDATA%\GmEcuSimulator\logs
+    // and a dedicated background thread streams every bus + diagnostic line
+    // there - independent of the textbox gate above. Use this for high-volume
+    // downloads / sustained DPID streaming where the textbox can't keep up.
+    //
+    // Coupled to the three sub-option toggles so the file log can't be on
+    // with nothing selected to log: turning it ON with all three off
+    // auto-selects "Include bus traffic"; turning the last sub-option OFF
+    // auto-turns this off.
+    private bool isFileLoggingEnabled;
+    public bool IsFileLoggingEnabled
+    {
+        get => isFileLoggingEnabled;
+        set
+        {
+            // Turning ON with nothing selected to log - auto-enable bus traffic
+            // so the file isn't empty. Has to happen before the sink starts so
+            // the gate is in place by the time the first frame lands.
+            if (value && !logIncludeJ2534Calls && !logIncludeBusTraffic && !logAppendDescriptionTag)
+                LogIncludeBusTraffic = true;
+
+            if (!SetField(ref isFileLoggingEnabled, value)) return;
+            if (value)
+                MainWindow.FileLog.Start(Core.Bus.FileLogSink.DefaultPath());
+            else
+                MainWindow.FileLog.Stop();
+            OnPropertyChanged(nameof(FileLogStatus));
+            PersistAppSettings();
+        }
+    }
+
+    // "Include J2534 calls" - per-stream gate on the file sink only.
+    // The textbox / Download tab mirror is unaffected.
+    private bool logIncludeJ2534Calls = true;
+    public bool LogIncludeJ2534Calls
+    {
+        get => logIncludeJ2534Calls;
+        set
+        {
+            if (!SetField(ref logIncludeJ2534Calls, value)) return;
+            MainWindow.SetIncludeJ2534FileLog(value);
+            AutoDisableFileLogIfAllSubOptionsOff();
+            PersistAppSettings();
+        }
+    }
+
+    // "Include bus traffic" - per-stream gate on the file sink only.
+    private bool logIncludeBusTraffic = true;
+    public bool LogIncludeBusTraffic
+    {
+        get => logIncludeBusTraffic;
+        set
+        {
+            if (!SetField(ref logIncludeBusTraffic, value)) return;
+            MainWindow.SetIncludeBusFileLog(value);
+            AutoDisableFileLogIfAllSubOptionsOff();
+            PersistAppSettings();
+        }
+    }
+
+    // "Append description tag" - flips VirtualBus.AnnotateFrames so each
+    // bus log line gets a "  ; ServiceName ..." suffix produced by
+    // Gmw3110Annotator. Affects BOTH file and textbox output because the
+    // annotation is computed at the bus layer (one place; one truth).
+    private bool logAppendDescriptionTag;
+    public bool LogAppendDescriptionTag
+    {
+        get => logAppendDescriptionTag;
+        set
+        {
+            if (!SetField(ref logAppendDescriptionTag, value)) return;
+            bus.AnnotateFrames = value;
+            AutoDisableFileLogIfAllSubOptionsOff();
+            PersistAppSettings();
+        }
+    }
+
+    // "Collapse bulk transfers" - flips VirtualBus.CollapseBulkTransfers so
+    // long ISO-TP transfers get condensed in the bus log (first 3 + last 3
+    // CFs visible, middle replaced with a single marker line). Affects both
+    // file and textbox output. Does NOT participate in the auto-disable
+    // rule for "Log to file" - this is a formatting modifier, not a stream
+    // gate, and the file is still meaningful with this off and the other
+    // options on.
+    private bool logCollapseBulkTransfers;
+    public bool LogCollapseBulkTransfers
+    {
+        get => logCollapseBulkTransfers;
+        set
+        {
+            if (!SetField(ref logCollapseBulkTransfers, value)) return;
+            bus.CollapseBulkTransfers = value;
+            PersistAppSettings();
+        }
+    }
+
+    // Called from each sub-option setter after the change lands. If the user
+    // has just turned off the LAST of the three sub-options while file
+    // logging is on, kill the master toggle - an empty log file is just
+    // confusing.
+    private void AutoDisableFileLogIfAllSubOptionsOff()
+    {
+        if (!isFileLoggingEnabled) return;
+        if (logIncludeJ2534Calls || logIncludeBusTraffic || logAppendDescriptionTag) return;
+        IsFileLoggingEnabled = false;
+    }
+
+    private void PersistAppSettings()
+    {
+        if (appSettings == null) return;
+        appSettings.LogToFile                = isFileLoggingEnabled;
+        appSettings.LogIncludeJ2534Calls     = logIncludeJ2534Calls;
+        appSettings.LogIncludeBusTraffic     = logIncludeBusTraffic;
+        appSettings.LogAppendDescriptionTag  = logAppendDescriptionTag;
+        appSettings.LogCollapseBulkTransfers = logCollapseBulkTransfers;
+        appSettings.Save();
+    }
+
+    /// <summary>Human-readable status of the file-logging sink. Refreshed by the 10 Hz UI timer.</summary>
+    public string FileLogStatus
+    {
+        get
+        {
+            var sink = MainWindow.FileLog;
+            if (!sink.IsRunning) return "Not logging";
+            double kb = sink.BytesWritten / 1024.0;
+            return $"{System.IO.Path.GetFileName(sink.CurrentPath)} - {sink.LinesWritten:N0} lines, {kb:N1} KB";
+        }
+    }
+
+    /// <summary>Called from MainWindow's 10 Hz refresh tick to update the live status text.</summary>
+    public void RefreshFileLogStatus() => OnPropertyChanged(nameof(FileLogStatus));
 
     // Two-way bound by both Maximize checkboxes (Bus log tab + Download tab)
     // so the editor pane / tab-header collapse stays consistent regardless of

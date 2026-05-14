@@ -39,7 +39,13 @@ public static class EcuExitLogic
             node.State.DynamicallyDefinedPids.Clear();
         }
 
-        // 3a. Clear $28 / $A5 / $34 / $36 programming-session state. Per
+        // 3a. Bootloader capture: if the user has the Capture Bootloader tab's
+        //     checkbox on and a $36 payload was assembled during this session,
+        //     dump it to disk BEFORE ClearProgrammingState wipes the buffer.
+        //     No-op when capture is off (the spec-correct default).
+        BootloaderCaptureWriter.MaybeWrite(node, scheduler.Bus);
+
+        // 3b. Clear $28 / $A5 / $34 / $36 programming-session state. Per
         //     GMW3110 §8.17 "The tester can end a programming event by sending
         //     a ReturnToNormalMode ($20) request message, or by allowing a P3C
         //     timeout to occur." Both paths funnel through here.

@@ -5,7 +5,9 @@ using System.Text.Json;
 using Common.Protocol;
 using Common.Waveforms;
 using Core.Ecu;
+using Core.Scheduler;
 using Core.Security;
+using Core.Services;
 
 namespace GmEcuSimulator.ViewModels;
 
@@ -84,6 +86,42 @@ public sealed class EcuViewModel : NotifyPropertyChangedBase
     {
         get => Model.AllowPeriodicTesterPresent;
         set { if (Model.AllowPeriodicTesterPresent != value) { Model.AllowPeriodicTesterPresent = value; OnPropertyChanged(); } }
+    }
+
+    /// <summary>FC.BS byte sent on First Frame reception. Hex display, e.g. "0x01".</summary>
+    public string FlowControlBlockSizeHex
+    {
+        get => $"0x{Model.FlowControlBlockSize:X2}";
+        set
+        {
+            if (TryParseHexByte(value, out var v) && Model.FlowControlBlockSize != v)
+            {
+                Model.FlowControlBlockSize = v;
+                OnPropertyChanged();
+            }
+        }
+    }
+
+    /// <summary>FC.STmin byte sent on First Frame reception. Hex display, e.g. "0x00".</summary>
+    public string FlowControlSeparationTimeHex
+    {
+        get => $"0x{Model.FlowControlSeparationTime:X2}";
+        set
+        {
+            if (TryParseHexByte(value, out var v) && Model.FlowControlSeparationTime != v)
+            {
+                Model.FlowControlSeparationTime = v;
+                OnPropertyChanged();
+            }
+        }
+    }
+
+    private static bool TryParseHexByte(string s, out byte v)
+    {
+        var trimmed = (s ?? "").Trim();
+        if (trimmed.StartsWith("0x", StringComparison.OrdinalIgnoreCase)) trimmed = trimmed[2..];
+        return byte.TryParse(trimmed, System.Globalization.NumberStyles.HexNumber,
+                             System.Globalization.CultureInfo.InvariantCulture, out v);
     }
 
     public PidViewModel? SelectedPid
@@ -169,6 +207,24 @@ public sealed class EcuViewModel : NotifyPropertyChangedBase
     }
 
     /// <summary>
+    /// Simulated power-cycle for this ECU. Combines the spec-defined $20
+    /// ReturnToNormalMode exit (clears programming/download/$28/$A5 state and
+    /// emits the unsolicited $60 if a host is still attached) with a full
+    /// security re-lock. This is the canonical behaviour for any "Reset ECU
+    /// state" button across the workspace tabs - keep all such buttons routed
+    /// through here so they stay in sync.
+    ///
+    /// Note: $20 alone is spec-correct to NOT touch security (GMW3110 §8.5.6.2),
+    /// so EcuExitLogic deliberately omits it; the power-cycle delta is added here.
+    /// </summary>
+    public void ResetEcuState(DpidScheduler scheduler)
+    {
+        var channel = Model.State.LastEnhancedChannel;
+        EcuExitLogic.Run(Model, scheduler, channel);
+        ResetSecurityState();
+    }
+
+    /// <summary>
     /// Re-locks the ECU and clears every transient $27 field on its NodeState
     /// (unlocked level, pending seed, failed-attempt counter, lockout deadline,
     /// module-private bookkeeping). Equivalent to a power-cycle for this one
@@ -222,6 +278,16 @@ public sealed class EcuViewModel : NotifyPropertyChangedBase
             SecurityPendingSeedText =
                 $"level {s.SecurityPendingSeedLevel}, seed = {string.Join(" ", seed.Select(b => b.ToString("X2")))}";
         }
+    }
+
+    /// <summary>
+    /// When true the security module short-circuits every $27 step to a
+    /// positive response without invoking the algorithm. Persisted per ECU.
+    /// </summary>
+    public bool BypassSecurity
+    {
+        get => Model.BypassSecurity;
+        set { if (Model.BypassSecurity != value) { Model.BypassSecurity = value; OnPropertyChanged(); } }
     }
 
     private string selectedSecurityModuleId;

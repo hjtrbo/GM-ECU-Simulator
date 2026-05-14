@@ -132,6 +132,20 @@ public sealed class NodeState
     public bool ProgrammingHighSpeed { get; set; }
 
     /// <summary>
+    /// True once $10 $02 InitiateDiagnosticOperation has been accepted, OR once
+    /// the full GMW3110 $28 + $A5 $01/02 + $A5 $03 chain has completed (i.e.
+    /// any time ProgrammingModeActive is true). Read by the $27 security
+    /// module to decide whether an algorithm whose
+    /// <see cref="Core.Security.ProgrammingSessionBehavior"/> is
+    /// <c>BypassAll</c> (T43 boot-block stub) should short-circuit. Distinct
+    /// from <see cref="ProgrammingModeActive"/> because $10 $02 is a UDS-style
+    /// shortcut into programming session for security purposes only - it must
+    /// NOT bypass the $A5 sequence-error checks that gate $34
+    /// RequestDownload. Cleared by <see cref="ClearProgrammingState"/>.
+    /// </summary>
+    public bool SecurityProgrammingShortcutActive { get; set; }
+
+    /// <summary>
     /// True between a successful $34 RequestDownload and the end of the
     /// programming session (P3C timeout, $20, or another $34 - same-session
     /// repeated $34 is allowed per §8.12 once the previous transfer is complete,
@@ -168,6 +182,15 @@ public sealed class NodeState
     public int DownloadAddressByteCount { get; set; } = 3;
 
     /// <summary>
+    /// startingAddress of the first $36 in the current session, used as the
+    /// base when capture mode is on (real GM hosts send absolute RAM/flash
+    /// addresses like $003FB800; we store everything relative to that). Set
+    /// on the first $36, cleared by ClearProgrammingState. Null = no $36
+    /// has arrived yet in this session.
+    /// </summary>
+    public uint? DownloadCaptureBaseAddress { get; set; }
+
+    /// <summary>
     /// Wipes all programming + download flags. Called from EcuExitLogic so $20
     /// and P3C timeout return the ECU to Normal Communication Mode.
     /// </summary>
@@ -177,9 +200,11 @@ public sealed class NodeState
         ProgrammingModeRequested = false;
         ProgrammingModeActive = false;
         ProgrammingHighSpeed = false;
+        SecurityProgrammingShortcutActive = false;
         DownloadActive = false;
         DownloadDeclaredSize = 0;
         DownloadBuffer = null;
         DownloadBytesReceived = 0;
+        DownloadCaptureBaseAddress = null;
     }
 }

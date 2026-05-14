@@ -173,6 +173,48 @@
                     <MenuItem Header="_Theme" x:Name="ThemeMenu"
                               ToolTip="Switch the colour palette. Drop your own .xaml palette into %APPDATA%\GmEcuSimulator\Palettes\ to see it listed here."/>
                 </MenuItem>
+                <MenuItem Header="_Log">
+                    <!-- Master gate. When unchecked, the four items below grey
+                         out (their IsEnabled is bound to IsFileLoggingEnabled).
+                         StaysOpenOnClick=True on every IsCheckable item keeps
+                         the menu open so the user can flip several toggles at
+                         once without re-opening the menu each time. -->
+                    <MenuItem x:Name="LogToFileCheck"
+                              Header="_Log to file"
+                              IsCheckable="True"
+                              StaysOpenOnClick="True"
+                              IsChecked="{Binding IsFileLoggingEnabled, Mode=TwoWay}"
+                              ToolTip="Stream every bus + diagnostic line to %LOCALAPPDATA%\GmEcuSimulator\logs\bus_*.csv on a dedicated background thread. Independent of the 'Log traffic' textbox gate - use when high-volume downloads make the textbox impractical."/>
+                    <MenuItem Header="_Open folder…"
+                              Click="OnOpenLogFolderClicked"
+                              IsEnabled="{Binding IsFileLoggingEnabled}"
+                              ToolTip="Open the log directory in Explorer."/>
+                    <Separator/>
+                    <MenuItem Header="Include _J2534 calls"
+                              IsCheckable="True"
+                              StaysOpenOnClick="True"
+                              IsChecked="{Binding LogIncludeJ2534Calls, Mode=TwoWay}"
+                              IsEnabled="{Binding IsFileLoggingEnabled}"
+                              ToolTip="When on, pipe-level J2534 calls (Open/Connect/StartMsgFilter/etc.) reach the file. The textbox / Download tab mirror is unaffected."/>
+                    <MenuItem Header="Include _bus traffic"
+                              IsCheckable="True"
+                              StaysOpenOnClick="True"
+                              IsChecked="{Binding LogIncludeBusTraffic, Mode=TwoWay}"
+                              IsEnabled="{Binding IsFileLoggingEnabled}"
+                              ToolTip="When on, every CAN frame (Rx/Tx, including HOST FILTERED) reaches the file. The textbox is unaffected."/>
+                    <MenuItem Header="_Append description tag"
+                              IsCheckable="True"
+                              StaysOpenOnClick="True"
+                              IsChecked="{Binding LogAppendDescriptionTag, Mode=TwoWay}"
+                              IsEnabled="{Binding IsFileLoggingEnabled}"
+                              ToolTip="Suffix every bus-frame line with a short human-readable tag (e.g. 'SecurityAccess - RequestSeed', 'ISO-TP FF (3110B) - TransferData @ 003FAFE0'). Tag is produced by Gmw3110Annotator from the raw bytes."/>
+                    <MenuItem Header="_Collapse bulk transfers"
+                              IsCheckable="True"
+                              StaysOpenOnClick="True"
+                              IsChecked="{Binding LogCollapseBulkTransfers, Mode=TwoWay}"
+                              IsEnabled="{Binding IsFileLoggingEnabled}"
+                              ToolTip="Condense long ISO-TP transfers in the bus log: first 3 + last 3 CFs visible, middle replaced with a single '-- bulk transfer collapsed: N frames hidden --' marker. FC/TesterPresent noise inside the collapsed window is suppressed too. Threshold is 10 CFs - shorter transfers log normally."/>
+                </MenuItem>
             </Menu>
         </Border>
 
@@ -233,7 +275,7 @@
                                  window is short - that lets its ScrollViewer
                                  engage AND keeps the Add/Remove row visible. -->
                             <RowDefinition Height="Auto"/>
-                            <RowDefinition Height="*" MinHeight="60"/>
+                            <RowDefinition Height="*" MinHeight="66"/>
                             <RowDefinition Height="4*" MinHeight="80" MaxHeight="280"/>
                             <RowDefinition Height="Auto"/>
                         </Grid.RowDefinitions>
@@ -267,7 +309,7 @@
                              window. The inner ScrollViewer surfaces a
                              vertical scrollbar whenever the row is shorter
                              than the contained fields. -->
-                        <Border Grid.Row="2" Margin="0,12,0,0"
+                        <Border Grid.Row="2" Margin="0,8,0,0"
                                 Background="{DynamicResource Bg.ElevatedBrush}"
                                 BorderBrush="{DynamicResource Border.SubtleBrush}"
                                 BorderThickness="1"
@@ -279,7 +321,7 @@
                                 <TextBlock DockPanel.Dock="Top"
                                            Text="SELECTED"
                                            Style="{StaticResource Text.SectionHeader}"
-                                           Margin="0,0,0,8"/>
+                                           Margin="0,0,0,6"/>
                                 <ScrollViewer VerticalScrollBarVisibility="Auto"
                                               HorizontalScrollBarVisibility="Disabled">
                                     <Grid>
@@ -288,6 +330,8 @@
                                             <ColumnDefinition Width="*"/>
                                         </Grid.ColumnDefinitions>
                                         <Grid.RowDefinitions>
+                                            <RowDefinition Height="Auto"/>
+                                            <RowDefinition Height="Auto"/>
                                             <RowDefinition Height="Auto"/>
                                             <RowDefinition Height="Auto"/>
                                             <RowDefinition Height="Auto"/>
@@ -309,7 +353,17 @@
                                         <TextBox Grid.Row="3" Grid.Column="1" Margin="0,2"
                                                  Text="{Binding UudtResponseCanIdHex, UpdateSourceTrigger=LostFocus}"
                                                  FontFamily="{StaticResource Font.Mono}"/>
-                                        <CheckBox Grid.Row="4" Grid.Column="1" Margin="0,8,0,0"
+                                        <Label Style="{StaticResource Label.FormPair}"   Grid.Row="4" Grid.Column="0" Content="FC.BS"/>
+                                        <TextBox Grid.Row="4" Grid.Column="1" Margin="0,2"
+                                                 Text="{Binding FlowControlBlockSizeHex, UpdateSourceTrigger=LostFocus}"
+                                                 FontFamily="{StaticResource Font.Mono}"
+                                                 ToolTip="ISO 15765-2 FlowControl BlockSize byte (FC.BS). 0 = send all CFs without further FC. Set to 1 to match real T43 (FC = 30 01 00)."/>
+                                        <Label Style="{StaticResource Label.FormPair}"   Grid.Row="5" Grid.Column="0" Content="FC.STmin"/>
+                                        <TextBox Grid.Row="5" Grid.Column="1" Margin="0,2"
+                                                 Text="{Binding FlowControlSeparationTimeHex, UpdateSourceTrigger=LostFocus}"
+                                                 FontFamily="{StaticResource Font.Mono}"
+                                                 ToolTip="ISO 15765-2 FlowControl SeparationTime byte (FC.STmin). 0 = no inter-frame delay. Values 1..7F = N ms, F1..F9 = 100..900 us."/>
+                                        <CheckBox Grid.Row="6" Grid.Column="1" Margin="0,8,0,0"
                                                   Content="HW $3E"
                                                   IsChecked="{Binding AllowPeriodicTesterPresent}"
                                                   ToolTip="Simulator drives $3E keepalives for hosts using PassThruStartPeriodicMsg"/>
@@ -520,6 +574,16 @@
                                     <Button Content="Clear" Click="OnClearLogClicked"
                                             Margin="16,0,0,0"/>
                                     <Rectangle Width="1" Margin="12,4" Fill="{DynamicResource Border.SubtleBrush}"/>
+                                    <!-- File-log status only. The Log-to-file toggle and Open-folder
+                                         button moved to the Log menu (top-level) so all file-log
+                                         controls live in one place. The live status counter stays
+                                         here so the user can see byte/line totals at a glance. -->
+                                    <TextBlock Text="{Binding FileLogStatus, FallbackValue=Not logging}"
+                                               VerticalAlignment="Center"
+                                               FontFamily="{StaticResource Font.Mono}"
+                                               Foreground="{DynamicResource Text.SecondaryBrush}"
+                                               ToolTip="File-log status. Toggle 'Log to file' under the Log menu to start/stop the sink."/>
+                                    <Rectangle Width="1" Margin="12,4" Fill="{DynamicResource Border.SubtleBrush}"/>
                                     <CheckBox x:Name="MaximizeBusLogCheck"
                                               Content="Maximize"
                                               VerticalAlignment="Center"
@@ -662,7 +726,7 @@
                             <!-- Two-column split: traffic-light tree (left) + tx/rx log (right). -->
                             <Grid>
                                 <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="340" MinWidth="280"/>
+                                    <ColumnDefinition Width="280" MinWidth="280"/>
                                     <ColumnDefinition Width="*"/>
                                 </Grid.ColumnDefinitions>
 
@@ -848,7 +912,7 @@
                                     <TextBox x:Name="DownloadLogBox"
                                              Style="{StaticResource TextBox.Log}"
                                              IsReadOnly="True"
-                                             TextWrapping="NoWrap"/>
+                                             TextWrapping="NoWrap" HorizontalScrollBarVisibility="Auto"/>
                                 </DockPanel>
                             </Grid>
                         </DockPanel>
@@ -860,7 +924,7 @@
                     </TabItem>
 
                     <!-- Security ($27) tab -->
-                    <TabItem Header="Security ($27)">
+                    <TabItem Header="Security">
                         <DockPanel DataContext="{Binding SelectedEcu}" LastChildFill="True">
                             <Border DockPanel.Dock="Top" Style="{StaticResource Toolbar}">
                                 <StackPanel>
@@ -887,6 +951,11 @@
                                                 Style="{StaticResource Button.Ghost}"
                                                 Command="{Binding DataContext.ResetSecurityCommand, RelativeSource={RelativeSource AncestorType={x:Type Window}}}"
                                                 ToolTip="Re-lock this ECU and clear the attempt counter, pending seed, and lockout deadline. Equivalent to a power-cycle for $27 only."/>
+                                        <CheckBox Content="Bypass security"
+                                                  Margin="16,0,0,0"
+                                                  VerticalAlignment="Center"
+                                                  IsChecked="{Binding BypassSecurity}"
+                                                  ToolTip="Short-circuit $27. The ECU emits seed=00 00 on requestSeed and transitions to unlocked on sendKey regardless of the key value. Models stub-security levels seen on real hardware (e.g. T43 TCM at level 1, per HP Tuners' &quot;no unlock service required&quot;)."/>
                                     </StackPanel>
                                     <TextBlock Text="Module-specific config below. Values are passed to the module as JSON strings."
                                                Style="{StaticResource Text.Hint}"
@@ -1019,6 +1088,85 @@
                                         </StackPanel>
                                     </DockPanel>
                                 </Border>
+                            </Grid>
+                        </DockPanel>
+                    </TabItem>
+
+                    <!-- Capture Bootloader tab.
+                         Single checkbox flips bus.Capture.BootloaderCaptureEnabled
+                         which is the SOLE switch that makes Service36Handler relax
+                         its GMW3110 §8.13.4 NRC $31 bounds check and tells
+                         EcuExitLogic to dump the assembled $36 buffer to disk on
+                         session end. Unticked = spec-correct behaviour. -->
+                    <TabItem Header="Bootloader">
+                        <DockPanel DataContext="{Binding CaptureBootloader}" LastChildFill="True">
+                            <Border DockPanel.Dock="Top" Style="{StaticResource Toolbar}">
+                                <StackPanel Orientation="Horizontal">
+                                    <CheckBox Content="Enable bootloader capture"
+                                              IsChecked="{Binding Enabled}"
+                                              VerticalAlignment="Center"
+                                              FontWeight="SemiBold"
+                                              ToolTip="OFF (default): Service36Handler follows GMW3110 §8.13.4 strictly - out-of-range $36 addresses return NRC $31. ON: bounds check is relaxed (first $36's address is treated as base; the buffer grows as needed) and the assembled payload is dumped to disk when the programming session ends."/>
+                                    <Rectangle Width="1" Margin="16,3" Fill="{DynamicResource Border.SubtleBrush}"/>
+                                    <Button Content="Open folder"
+                                            Command="{Binding OpenFolderCommand}"
+                                            Style="{StaticResource Button.Ghost}"
+                                            Margin="0,0,8,0"/>
+                                    <Button Content="Refresh"
+                                            Command="{Binding RefreshCommand}"
+                                            Style="{StaticResource Button.Ghost}"/>
+                                </StackPanel>
+                            </Border>
+
+                            <Border DockPanel.Dock="Bottom"
+                                    Background="{DynamicResource Bg.BaseBrush}"
+                                    BorderBrush="{DynamicResource Border.SubtleBrush}"
+                                    BorderThickness="0,1,0,0"
+                                    Padding="14,6">
+                                <TextBlock Text="{Binding StatusText}"
+                                           Style="{StaticResource Text.Caption}"
+                                           Foreground="{DynamicResource Text.PrimaryBrush}"
+                                           TextWrapping="Wrap"/>
+                            </Border>
+
+                            <Grid>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="*"/>
+                                </Grid.RowDefinitions>
+
+                                <Border Grid.Row="0" Padding="18,12,18,6">
+                                    <StackPanel>
+                                        <TextBlock Text="CAPTURE DIRECTORY"
+                                                   Style="{StaticResource Text.SectionHeader}"
+                                                   Margin="0,0,0,4"/>
+                                        <TextBlock Text="{Binding CaptureDirectory}"
+                                                   Style="{StaticResource Text.MonoDim}"
+                                                   TextWrapping="NoWrap"
+                                                   Margin="0,0,0,12"/>
+                                        <TextBlock Text="CAPTURED FILES"
+                                                   Style="{StaticResource Text.SectionHeader}"
+                                                   Margin="0,0,0,4"/>
+                                        <TextBlock Text="Each row is one programming session (a $34/$36 sequence ending in $20 ReturnToNormalMode or a P3C timeout). Filename embeds ECU name, UTC timestamp, base $36 address, and byte count."
+                                                   Style="{StaticResource Text.Hint}"
+                                                   TextWrapping="Wrap"
+                                                   Margin="0,0,0,6"/>
+                                    </StackPanel>
+                                </Border>
+
+                                <DataGrid Grid.Row="1"
+                                          ItemsSource="{Binding Captures}"
+                                          AutoGenerateColumns="False"
+                                          CanUserAddRows="False"
+                                          CanUserDeleteRows="False"
+                                          IsReadOnly="True"
+                                          Margin="14,0,14,12">
+                                    <DataGrid.Columns>
+                                        <DataGridTextColumn Header="File"     Binding="{Binding FileName}" Width="*"/>
+                                        <DataGridTextColumn Header="Size"     Binding="{Binding SizeText}" Width="100"/>
+                                        <DataGridTextColumn Header="Modified" Binding="{Binding Modified, StringFormat=g}" Width="180"/>
+                                    </DataGrid.Columns>
+                                </DataGrid>
                             </Grid>
                         </DockPanel>
                     </TabItem>

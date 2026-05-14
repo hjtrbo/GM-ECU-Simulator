@@ -26,6 +26,34 @@ public sealed class EcuNode
     // timer is created — the P3C session will not be maintained for such hosts.
     public bool AllowPeriodicTesterPresent { get; set; } = true;
 
+    // ISO 15765-2 Flow Control bytes emitted by this ECU's reassembler in
+    // response to an inbound First Frame. The two-byte tail of the FC frame
+    // (after the 0x30 CTS PCI byte) is `BS STmin`. Defaults are 0/0, which
+    // matches the DataLogger's expectation and the most permissive ISO-TP
+    // behaviour (send all CFs without further FC, no inter-frame delay).
+    //
+    // Override per ECU to mimic real silicon: e.g. the 6Speed.T43 tester
+    // checks the FC bytes for the substring "01", so a TCM configured to
+    // emit BS=1 (FC = 30 01 00) makes that pattern match and lets the
+    // kernel-upload flow proceed.
+    public byte FlowControlBlockSize { get; set; }
+    public byte FlowControlSeparationTime { get; set; }
+
+    // GMW3110-2010 §8.16 ReportProgrammedState ($A2) value returned in the
+    // positive response. Defaults to 0x00 FullyProgrammed - what a normal
+    // running ECU reports. Other defined values:
+    //   0x00 FP   fully programmed
+    //   0x01 NSC  no op s/w or cal data
+    //   0x02 NC   op s/w present, cal missing
+    //   0x03 SDC  s/w present, default/no-start cal
+    //   0x50 GMF  general memory fault
+    //   0x51 RMF  RAM memory fault
+    //   0x52 NVRMF NVRAM memory fault
+    //   0x53 BMF  boot memory failure
+    //   0x54 FMF  flash memory failure
+    //   0x55 EEMF EEPROM memory failure
+    public byte ProgrammedState { get; set; }
+
     // Per-ECU glitch-injection configuration. The data model exists so the
     // UI/persistence layers can edit and round-trip these settings; the actual
     // injection logic in Core/Services is NOT yet implemented.
@@ -65,6 +93,17 @@ public sealed class EcuNode
     // module hot-swaps and so saving doesn't require each module to remember
     // its own config separately.
     public JsonElement? SecurityModuleConfig { get; set; }
+
+    // When true the active security module short-circuits every $27 step to
+    // a positive response: requestSeed emits all-zeros, sendKey transitions
+    // the level to unlocked, the algorithm is never invoked. Models
+    // stub-security $27 levels that exist on real hardware (HP Tuners
+    // documents T43 TCM as "no unlock service required" for tuning, which
+    // is what the 6Speed.T43 tester depends on by hardcoding key 00 00).
+    // Independent of SecurityModule selection - the module still has to be
+    // configured (i.e. not (none)) so the bypass has a wrapper to short-
+    // circuit; (none) keeps the spec-correct NRC $11.
+    public bool BypassSecurity { get; set; }
 
     /// <summary>Snapshot copy of the PID list — safe to enumerate cross-thread.</summary>
     public IReadOnlyList<Pid> Pids

@@ -18,6 +18,7 @@ public static class Service
     public const byte RequestDownload = 0x34;                 // $34 - prepare for module programming (§8.12)
     public const byte TransferData = 0x36;                    // $36 - download/execute block (§8.13)
     public const byte TesterPresent = 0x3E;                   // $3E - keepalive
+    public const byte ReportProgrammedState = 0xA2;           // $A2 - SPS programmed-state query (§8.16)
     public const byte ProgrammingMode = 0xA5;                 // $A5 - enter programming session (§8.17)
     public const byte ReadDataByPacketIdentifier = 0xAA;      // $AA - periodic DPID
 
@@ -79,4 +80,13 @@ public static class GmlanCanId
     public const ushort AllNodesRequest = 0x101;       // functional broadcast request ID
     public const byte AllNodesExtAddr = 0xFE;          // functional extended address (in data[0])
     public const byte GatewayExtAddr = 0xFD;
+
+    /// <summary>
+    /// ISO 15765-4 OBD-II functional broadcast request ID. Modern GM ECUs accept
+    /// BOTH this AND the GMLAN $101+$FE scheme - the GMW3110 form predates the
+    /// OBD-II spec, and emissions compliance requires honouring $7DF for generic
+    /// scan tools. Unlike $101+$FE, $7DF uses NORMAL addressing (data[0] is the
+    /// PCI byte, no extended-address byte).
+    /// </summary>
+    public const ushort Obd2FunctionalRequest = 0x7DF;
 }

@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Common.Protocol;
+using Core.Security;
 using Core.Security.Algorithms;
 using Core.Services;
 using EcuSimulator.Tests.TestHelpers;
@@ -85,5 +86,77 @@ public sealed class T43AlgorithmTests
             ch, nowMs: 0);
         Assert.Equal(new byte[] { Service.Positive(Service.SecurityAccess), 0x02 },
                      TestFrame.DequeueSingleFrameUsdt(ch));
+    }
+
+    // ----- Programming-session policy -----
+    //
+    // Real T43 boot block (file offset 0x2BBFC in a 24264923 image) returns
+    // seed = 00 00 and accepts any key. 6Speed.T43 relies on this and sends
+    // the literal $27 $02 00 00 regardless of what the algorithm would
+    // compute. The simulator models this by declaring BypassAll and flipping
+    // ProgrammingModeActive via $10 $02 (Service10Handler).
+
+    [Fact]
+    public void Policy_DeclaresBypassAll()
+    {
+        Assert.Equal(ProgrammingSessionBehavior.BypassAll, new T43Algorithm().ProgrammingSession);
+    }
+
+    [Fact]
+    public void EndToEnd_SixSpeedT43Wire_UnlocksAfterDollar10Dollar02()
+    {
+        // Mirrors the wire trace 6Speed.T43 actually emits:
+        //   $10 $02 -> $50 $02
+        //   $27 $01 -> $67 $01 00 00
+        //   $27 $02 00 00 -> $67 $02
+        // With a non-zero fixedSeed configured the operational-mode algorithm
+        // would reject the hardcoded 00 00 key, but $10 $02 puts the ECU into
+        // programming session and BypassAll kicks in.
+        var algo = new T43Algorithm();
+        algo.LoadConfig(JsonSerializer.SerializeToElement(new { fixedSeed = "B34C" }));
+        var node = NodeFactory.CreateNode(
+            module: new Core.Security.Modules.Gmw3110_2010_Generic(algo, id: "gm-t43-test"));
+        var ch = NodeFactory.CreateChannel();
+
+        // $10 $02 - enter programming session (security-shortcut path)
+        Service10Handler.Handle(node, new byte[] { 0x10, 0x02 }, ch);
+        Assert.Equal(new byte[] { Service.Positive(Service.InitiateDiagnosticOperation), 0x02 },
+                     TestFrame.DequeueSingleFrameUsdt(ch));
+        Assert.True(node.State.SecurityProgrammingShortcutActive);
+
+        // $27 $01 - requestSeed
+        Service27Handler.Handle(node, new byte[] { 0x27, 0x01 }, ch, nowMs: 0);
+        // Bypass: seed = 00 00 instead of the configured B3 4C.
+        Assert.Equal(new byte[] { Service.Positive(Service.SecurityAccess), 0x01, 0x00, 0x00 },
+                     TestFrame.DequeueSingleFrameUsdt(ch));
+
+        // $27 $02 00 00 - the hardcoded key 6Speed.T43 actually sends
+        Service27Handler.Handle(node, new byte[] { 0x27, 0x02, 0x00, 0x00 }, ch, nowMs: 0);
+        Assert.Equal(new byte[] { Service.Positive(Service.SecurityAccess), 0x02 },
+                     TestFrame.DequeueSingleFrameUsdt(ch));
+        Assert.Equal(1, node.State.SecurityUnlockedLevel);
+    }
+
+    [Fact]
+    public void EndToEnd_OperationalMode_RequiresRealKey()
+    {
+        // Without $10 $02, BypassAll is dormant. $27 $02 00 00 should fail
+        // when the algorithm has a non-zero fixed seed - matching the wire
+        // trace I diagnosed earlier (the NRC $35 we send before $10 $02 is
+        // accepted).
+        var algo = new T43Algorithm();
+        algo.LoadConfig(JsonSerializer.SerializeToElement(new { fixedSeed = "B34C" }));
+        var node = NodeFactory.CreateNode(
+            module: new Core.Security.Modules.Gmw3110_2010_Generic(algo, id: "gm-t43-test"));
+        var ch = NodeFactory.CreateChannel();
+
+        Service27Handler.Handle(node, new byte[] { 0x27, 0x01 }, ch, nowMs: 0);
+        Assert.Equal(new byte[] { Service.Positive(Service.SecurityAccess), 0x01, 0xB3, 0x4C },
+                     TestFrame.DequeueSingleFrameUsdt(ch));
+
+        Service27Handler.Handle(node, new byte[] { 0x27, 0x02, 0x00, 0x00 }, ch, nowMs: 0);
+        Assert.Equal(new byte[] { Service.NegativeResponse, Service.SecurityAccess, Nrc.InvalidKey },
+                     TestFrame.DequeueSingleFrameUsdt(ch));
+        Assert.Equal(0, node.State.SecurityUnlockedLevel);
     }
 }
