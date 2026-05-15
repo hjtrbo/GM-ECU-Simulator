@@ -15,7 +15,7 @@ public sealed class BulkTransferCollapserTests
     {
         var output = new List<string>();
         foreach (var (canId, payload, label) in frames)
-            c.Process(chId, canId, payload, label, label, (pretty, _) => output.Add(pretty));
+            c.Process(chId, canId, payload, label, label, isTesterPresent: false, (pretty, _, _) => output.Add(pretty));
         return output;
     }
 
@@ -251,10 +251,10 @@ public sealed class BulkTransferCollapserTests
         // Channel 2's traffic should pass through regardless of channel 1's state.
         var c = new BulkTransferCollapser();
         var output = new List<string>();
-        c.Process(1, 0x7E2, Ff(3110), "ch1-FF",   "ch1-FF",   (p, _) => output.Add(p));
-        c.Process(1, 0x7E2, Cf(1),    "ch1-CF#1", "ch1-CF#1", (p, _) => output.Add(p));
-        c.Process(2, 0x7E2, new byte[] { 0x02, 0x3E, 0x00, 0, 0, 0, 0, 0 }, "ch2-SF", "ch2-SF", (p, _) => output.Add(p));
-        c.Process(1, 0x7E2, Cf(2),    "ch1-CF#2", "ch1-CF#2", (p, _) => output.Add(p));
+        c.Process(1, 0x7E2, Ff(3110), "ch1-FF",   "ch1-FF",   isTesterPresent: false, (p, _, _) => output.Add(p));
+        c.Process(1, 0x7E2, Cf(1),    "ch1-CF#1", "ch1-CF#1", isTesterPresent: false, (p, _, _) => output.Add(p));
+        c.Process(2, 0x7E2, new byte[] { 0x02, 0x3E, 0x00, 0, 0, 0, 0, 0 }, "ch2-SF", "ch2-SF", isTesterPresent: true, (p, _, _) => output.Add(p));
+        c.Process(1, 0x7E2, Cf(2),    "ch1-CF#2", "ch1-CF#2", isTesterPresent: false, (p, _, _) => output.Add(p));
 
         Assert.Contains("ch1-FF",   output);
         Assert.Contains("ch1-CF#1", output);

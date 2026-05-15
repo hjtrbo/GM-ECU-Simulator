@@ -162,8 +162,12 @@ public class ProgrammingSequenceTests
         Assert.NotNull(node.State.DownloadBuffer);
         Assert.Equal(payload, node.State.DownloadBuffer);
 
-        // 10. $20 ReturnToNormalMode - end programming session.
-        Assert.Equal(new byte[] { 0x60 }, SendAndReceive(iso, new byte[] { 0x20 }));
+        // 10. $20 ReturnToNormalMode - end programming session. Per GMW3110
+        //     §8.5 "A valid request for this service which concludes a
+        //     programming event shall not be followed by a positive response."
+        //     §8.5.6.2 pseudo-code confirms: the `programming_mode_active = YES`
+        //     branch performs a software reset with no $60 send.
+        SendExpectingNoResponse(iso, new byte[] { 0x20 });
 
         // 11. EcuExitLogic should have wiped the programming/download state.
         //     SecurityUnlockedLevel is intentionally NOT reset - GMW3110

@@ -1,6 +1,7 @@
 using Common.Protocol;
 using Core.Bus;
 using Core.Ecu;
+using Core.Ecu.Personas;
 
 namespace Core.Services;
 
@@ -84,7 +85,7 @@ public static class Service36Handler
 
         bool captureOn = ch.Bus?.Capture.BootloaderCaptureEnabled == true;
         if (captureOn)
-            return HandleCapture(node, ch, startingAddress, dataRecord);
+            return HandleCapture(node, ch, sub, startingAddress, dataRecord);
 
         // -------- Spec mode (default) --------
         // §8.13.4 NRC $31: out-of-range. startingAddress is treated as an offset
@@ -110,6 +111,14 @@ public static class Service36Handler
             node.State.DownloadBytesReceived += (uint)dataRecord.Length;
         }
 
+        // Sub $80 DownloadAndExecute hands the bus to the just-uploaded SPS
+        // kernel. Swap the ECU's persona so subsequent $31/etc. requests are
+        // dispatched by UdsKernelPersona; EcuExitLogic resets it on $20 / P3C
+        // timeout. Done before the positive response so the wire ordering
+        // matches a real kernel handover.
+        if (sub == 0x80)
+            node.Persona = UdsKernelPersona.Instance;
+
         node.State.Fragmenter.EnqueueResponse(ch, node.UsdtResponseCanId,
             [Service.Positive(Service.TransferData)]);
         return true;
@@ -120,7 +129,7 @@ public static class Service36Handler
     /// relative to that base, grow the buffer (capped) when the host writes
     /// past the declared size. Never returns NRC $31.
     /// </summary>
-    private static bool HandleCapture(EcuNode node, ChannelSession ch, uint startingAddress,
+    private static bool HandleCapture(EcuNode node, ChannelSession ch, byte sub, uint startingAddress,
                                       ReadOnlySpan<byte> dataRecord)
     {
         node.State.DownloadCaptureBaseAddress ??= startingAddress;
@@ -142,6 +151,10 @@ public static class Service36Handler
             Buffer.BlockCopy(node.State.DownloadBuffer, 0, rebased, (int)shift, oldLen);
             node.State.DownloadBuffer = rebased;
             node.State.DownloadCaptureBaseAddress = startingAddress;
+            // Existing data has moved up by `shift` bytes in the buffer; the
+            // high-water mark tracks the highest written offset and must shift
+            // too so the trim at flush still covers all real writes.
+            node.State.DownloadCaptureHighWaterMark += shift;
             baseAddr = startingAddress;
         }
 
@@ -169,7 +182,44 @@ public static class Service36Handler
         {
             dataRecord.CopyTo(node.State.DownloadBuffer.AsSpan((int)offset));
             node.State.DownloadBytesReceived += (uint)dataRecord.Length;
+            if ((uint)endExclusive > node.State.DownloadCaptureHighWaterMark)
+                node.State.DownloadCaptureHighWaterMark = (uint)endExclusive;
+
+            // Per-$36 immediate write: dump this transfer's raw data record
+            // to its own .bin file. The buffer-reassembly above is kept for
+            // unit-test introspection and for any future "sparse memory
+            // image" sidecar; the per-$36 .bin is what the user actually
+            // reads.
+            BootloaderCaptureWriter.WriteEachTransferData(node, ch.Bus!, startingAddress, dataRecord);
+
+            // Flash-region mirror: if a $31 EraseMemoryByAddress earlier this
+            // session declared a region that fully contains this $36's
+            // [startingAddress, endAddress) range, copy the dataRecord into
+            // the region's $FF-backed buffer. At session end EcuExitLogic
+            // dumps one .bin per region so the captures dir holds the
+            // consolidated calibration / OS image the kernel actually wrote.
+            // Partial overlaps with a region (start inside / end outside, or
+            // vice versa) are ignored - the kernel only sends in-region
+            // writes after declaring the erase; an out-of-region write is a
+            // kernel bug we don't want to silently truncate.
+            long endAddrExclusive = (long)startingAddress + dataRecord.Length;
+            foreach (var region in node.State.CapturedFlashRegions)
+            {
+                if (startingAddress >= region.StartAddress
+                    && endAddrExclusive <= (long)region.StartAddress + region.Size)
+                {
+                    int regionOffset = (int)(startingAddress - region.StartAddress);
+                    dataRecord.CopyTo(region.Buffer.AsSpan(regionOffset));
+                    region.BytesWritten += (uint)dataRecord.Length;
+                }
+            }
         }
+
+        // Sub $80 DownloadAndExecute in capture mode behaves like spec mode
+        // for persona purposes: the kernel "took control", so subsequent
+        // requests dispatch through UdsKernelPersona until $20 / P3C resets.
+        if (sub == 0x80)
+            node.Persona = UdsKernelPersona.Instance;
 
         node.State.Fragmenter.EnqueueResponse(ch, node.UsdtResponseCanId,
             [Service.Positive(Service.TransferData)]);

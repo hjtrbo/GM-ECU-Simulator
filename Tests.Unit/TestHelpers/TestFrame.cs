@@ -16,7 +16,16 @@ internal static class TestFrame
     public static byte[] DequeueSingleFrameUsdt(ChannelSession ch)
     {
         Assert.True(ch.RxQueue.TryDequeue(out var msg), "expected a response frame on the Rx queue");
-        var data = msg!.Data;
+        return SingleFramePayload(msg!.Data);
+    }
+
+    /// <summary>
+    /// Extracts the USDT Single-Frame payload from a raw [4-byte BE CAN ID]
+    /// [N-byte CAN data] frame. Use when you've already dequeued the message
+    /// yourself (e.g. inspecting a mixed UUDT/USDT queue).
+    /// </summary>
+    public static byte[] SingleFramePayload(byte[] data)
+    {
         Assert.True(data.Length > CanFrame.IdBytes, "frame too short for PCI");
         byte pci = data[CanFrame.IdBytes];
         Assert.Equal(0x00, pci & 0xF0); // Single Frame nibble

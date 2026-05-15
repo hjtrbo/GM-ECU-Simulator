@@ -194,6 +194,42 @@ public sealed class NodeState
     public uint? DownloadCaptureBaseAddress { get; set; }
 
     /// <summary>
+    /// Highest (startingAddress + dataRecord.Length - base) seen by any $36
+    /// since the most recent $34. Tracks the actual extent of bytes written
+    /// to the sink buffer so BootloaderCaptureWriter can trim trailing
+    /// untouched bytes from the doubling-growth headroom. Reset on every
+    /// $34 (since each $34 opens a fresh bin under the rotate rule).
+    /// </summary>
+    public uint DownloadCaptureHighWaterMark { get; set; }
+
+    /// <summary>
+    /// Monotonic counter of $34 RequestDownloads observed in capture mode
+    /// during the current programming session. Used as the seq field in
+    /// the capture filename so multiple bins from one session sort and
+    /// don't collide. Reset by ClearProgrammingState.
+    /// </summary>
+    public uint DownloadCaptureSequence { get; set; }
+
+    /// <summary>
+    /// UTC timestamp pinned on the first $34 of a capture-mode session, so
+    /// every .bin written by that session shares a stable yyyymmdd_hhmmss
+    /// prefix and groups visually in the captures dir. Null until the first
+    /// $34 in capture mode arrives. Reset by ClearProgrammingState.
+    /// </summary>
+    public DateTime? DownloadCaptureSessionTimestampUtc { get; set; }
+
+    /// <summary>
+    /// Flash regions erased by the SPS kernel via $31 RoutineControl
+    /// (routineId $FF00 EraseMemoryByAddress) since the start of the
+    /// current programming session. Each region carries a $FF-filled
+    /// backing buffer; $36 TransferData writes mirror into the matching
+    /// region (when capture mode is on) so the captures dir gets one
+    /// consolidated flash image per erase at session end. Reset by
+    /// ClearProgrammingState.
+    /// </summary>
+    public List<FlashEraseRegion> CapturedFlashRegions { get; } = new();
+
+    /// <summary>
     /// Wipes all programming + download flags. Called from EcuExitLogic so $20
     /// and P3C timeout return the ECU to Normal Communication Mode.
     /// </summary>
@@ -209,5 +245,9 @@ public sealed class NodeState
         DownloadBuffer = null;
         DownloadBytesReceived = 0;
         DownloadCaptureBaseAddress = null;
+        DownloadCaptureHighWaterMark = 0;
+        DownloadCaptureSequence = 0;
+        DownloadCaptureSessionTimestampUtc = null;
+        CapturedFlashRegions.Clear();
     }
 }

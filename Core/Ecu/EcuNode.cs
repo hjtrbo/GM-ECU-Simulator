@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Common.Glitch;
+using Core.Ecu.Personas;
 using Core.Security;
 
 namespace Core.Ecu;
@@ -11,7 +12,7 @@ namespace Core.Ecu;
 //
 // CAN ID convention: real OBD-II-compliant GM vehicles use the $7E0+ pair
 // (USDT request $7E0..$7E7, response $7E8..$7EF). GMW3110's worked examples
-// use $241/$641/$541 — pedagogical only. Defaults match the real hardware
+// use $241/$641/$541 - pedagogical only. Defaults match the real hardware
 // convention; tests that quote the spec's example IDs do so on purpose to
 // keep the test bytes traceable to the spec tables.
 public sealed class EcuNode
@@ -20,11 +21,6 @@ public sealed class EcuNode
     public ushort PhysicalRequestCanId { get; set; }
     public ushort UsdtResponseCanId { get; set; }
     public ushort UudtResponseCanId { get; set; }
-
-    // When true the simulator drives $3E keepalives for hosts that delegate via
-    // PassThruStartPeriodicMsg. When false the registration is accepted but no
-    // timer is created — the P3C session will not be maintained for such hosts.
-    public bool AllowPeriodicTesterPresent { get; set; } = true;
 
     // ISO 15765-2 Flow Control bytes emitted by this ECU's reassembler in
     // response to an inbound First Frame. The two-byte tail of the FC frame
@@ -92,6 +88,14 @@ public sealed class EcuNode
     // NodeState. EcuNode keeps user config; State carries runtime state.
     public NodeState State { get; } = new();
 
+    // The diagnostic dispatch table the ECU presents on the wire RIGHT NOW.
+    // Defaults to GMW3110-2010 (what every stock ECU spends its life speaking).
+    // Swapped to UdsKernelPersona by Service36Handler when $36 sub $80
+    // DownloadAndExecute lands; reset back by EcuExitLogic on $20 / P3C
+    // timeout. The persona is per-ECU, not per-channel: a kernel handover
+    // changes what every tester on the bus sees from this ECU.
+    public IDiagnosticPersona Persona { get; set; } = Gmw3110Persona.Instance;
+
     // The chosen security module for this ECU (null = $27 returns NRC $11
     // ServiceNotSupported). Mutable so the editor can hot-swap modules at
     // runtime, mirroring how identity fields work. The module instance is
@@ -116,7 +120,7 @@ public sealed class EcuNode
     // circuit; (none) keeps the spec-correct NRC $11.
     public bool BypassSecurity { get; set; }
 
-    /// <summary>Snapshot copy of the PID list — safe to enumerate cross-thread.</summary>
+    /// <summary>Snapshot copy of the PID list - safe to enumerate cross-thread.</summary>
     public IReadOnlyList<Pid> Pids
     {
         get { lock (pidsLock) return pids.ToArray(); }
@@ -131,7 +135,7 @@ public sealed class EcuNode
     {
         lock (pidsLock)
         {
-            // Replace by address if one already exists — matches the prior
+            // Replace by address if one already exists - matches the prior
             // ConcurrentDictionary semantics that callers relied on.
             int existing = pids.FindIndex(p => p.Address == pid.Address);
             if (existing >= 0) pids[existing] = pid;
@@ -163,7 +167,7 @@ public sealed class EcuNode
     /// </summary>
     public void RaisePidsChanged() => PidsChanged?.Invoke(this, EventArgs.Empty);
 
-    /// <summary>Snapshot copy of the identifier map — safe to enumerate cross-thread.</summary>
+    /// <summary>Snapshot copy of the identifier map - safe to enumerate cross-thread.</summary>
     public IReadOnlyDictionary<byte, byte[]> Identifiers
     {
         get { lock (identifiersLock) return identifiers.ToDictionary(kv => kv.Key, kv => (byte[])kv.Value.Clone()); }

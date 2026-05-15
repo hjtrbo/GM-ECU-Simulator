@@ -191,6 +191,21 @@ public sealed class NamedPipeServer : IAsyncDisposable
                 // Unsubscribes from VirtualBus.IdleReset and disposes any
                 // remaining periodic timers so the broken pipe doesn't leak.
                 sessionState.Dispose();
+
+                // Pipe drop = host gone (single-instance pipe, no other transport).
+                // Treat it as the authoritative end-of-session signal so the CSV
+                // log lands its trailer immediately, bin replay stops, and any
+                // periodic timers the host registered are cancelled (via the
+                // IpcSessionState.Dispose above). With the IdleBusSupervisor
+                // stubbed, this is the ONLY signal that fires session-end on a
+                // dirty disconnect - so the finally block must be reached on
+                // every exit path. On a clean PassThruClose RequestDispatcher.Close
+                // already raised HostDisconnected; subscribers are guarded for
+                // idempotency so the second raise is a no-op.
+                try { bus.RaiseHostDisconnected(); }
+                catch (Exception ex) { log($"[pipe-drop] HostDisconnected subscriber threw: {ex.Message}"); }
+                bus.OnStatusMessage?.Invoke("J2534 host disconnected (pipe dropped)");
+
                 log("Pipe client disconnected.");
             }
         }

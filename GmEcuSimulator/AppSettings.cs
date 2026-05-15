@@ -32,6 +32,23 @@ public sealed class AppSettings
     /// </summary>
     public bool LogCollapseBulkTransfers { get; set; }
 
+    /// <summary>
+    /// When on, the simulator drives $3E TesterPresent on the host's behalf
+    /// for any frame registered via PassThruStartPeriodicMsg. When off the
+    /// registration succeeds but no timer ticks - delegating hosts must keep
+    /// their own P3C session alive. Default true matches GM Tech 2 / GDS2
+    /// behaviour, which is what most users expect.
+    /// </summary>
+    public bool AllowPeriodicTesterPresent { get; set; } = true;
+
+    /// <summary>
+    /// UI-only filter: when on, $3E TesterPresent requests and $7E positive
+    /// responses are hidden from the bus log textbox (and the Download tab
+    /// mirror). The file-log capture is unaffected - this is purely a
+    /// readability tweak for the live window.
+    /// </summary>
+    public bool LogSuppressTesterPresentInWindow { get; set; }
+
     public static string DefaultPath
     {
         get

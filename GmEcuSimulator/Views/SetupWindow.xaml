@@ -1,0 +1,322 @@
+<Window x:Class="GmEcuSimulator.Views.SetupWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:conv="clr-namespace:GmEcuSimulator.Converters"
+        xmlns:sys="clr-namespace:System;assembly=mscorlib"
+        xmlns:proto="clr-namespace:Common.Protocol;assembly=EcuSim.Common"
+        xmlns:wave="clr-namespace:Common.Waveforms;assembly=EcuSim.Common"
+        xmlns:shell="clr-namespace:System.Windows.Shell;assembly=PresentationFramework"
+        xmlns:av="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        mc:Ignorable="av"
+        Title="ECU Setup"
+        Icon="/Resources/app.ico"
+        Height="720" Width="1100"
+        MinHeight="480" MinWidth="760"
+        WindowStartupLocation="CenterOwner"
+        ShowInTaskbar="True"
+        Style="{StaticResource Window.AppShell}">
+
+    <Window.Resources>
+        <conv:BoolToVisibilityConverter x:Key="BoolToVis"/>
+
+        <!-- Validation error template + implicit TextBox style. Duplicated
+             from MainWindow so validation rendering is consistent between
+             windows. Keeping them per-window avoids a wider App.xaml refactor. -->
+        <ControlTemplate x:Key="ValidationErrorTemplate">
+            <StackPanel>
+                <AdornedElementPlaceholder x:Name="placeholder">
+                    <Border BorderBrush="#E04848" BorderThickness="1"/>
+                </AdornedElementPlaceholder>
+            </StackPanel>
+        </ControlTemplate>
+
+        <Style TargetType="TextBox" BasedOn="{StaticResource {x:Type TextBox}}">
+            <Setter Property="Validation.ErrorTemplate" Value="{StaticResource ValidationErrorTemplate}"/>
+            <Style.Triggers>
+                <Trigger Property="Validation.HasError" Value="True">
+                    <Setter Property="ToolTip"
+                            Value="{Binding RelativeSource={RelativeSource Self}, Path=(Validation.Errors)[0].ErrorContent}"/>
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+
+        <!-- Same enum providers used by MainWindow. FileStream is omitted on
+             purpose; bin-stream PIDs adopt it internally - the user picks
+             from this list. -->
+        <x:Array x:Key="WaveformShapes" Type="{x:Type wave:WaveformShape}">
+            <wave:WaveformShape>Sin</wave:WaveformShape>
+            <wave:WaveformShape>Triangle</wave:WaveformShape>
+            <wave:WaveformShape>Square</wave:WaveformShape>
+            <wave:WaveformShape>Sawtooth</wave:WaveformShape>
+            <wave:WaveformShape>Constant</wave:WaveformShape>
+        </x:Array>
+        <ObjectDataProvider x:Key="PidSizes" MethodName="GetValues" ObjectType="{x:Type sys:Enum}">
+            <ObjectDataProvider.MethodParameters>
+                <x:Type TypeName="proto:PidSize"/>
+            </ObjectDataProvider.MethodParameters>
+        </ObjectDataProvider>
+        <ObjectDataProvider x:Key="PidDataTypes" MethodName="GetValues" ObjectType="{x:Type sys:Enum}">
+            <ObjectDataProvider.MethodParameters>
+                <x:Type TypeName="proto:PidDataType"/>
+            </ObjectDataProvider.MethodParameters>
+        </ObjectDataProvider>
+    </Window.Resources>
+
+    <DockPanel LastChildFill="True">
+
+        <!-- Custom titlebar matching the main shell. -->
+        <Grid DockPanel.Dock="Top" Background="{DynamicResource Chrome.GradientBrush}" Height="36">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+
+            <StackPanel Grid.Column="0" Orientation="Horizontal" Margin="12,0,0,0" VerticalAlignment="Center">
+                <Border Width="18" Height="18" CornerRadius="3"
+                        Background="{DynamicResource Accent.PrimaryBrush}"
+                        Margin="0,0,8,0">
+                    <TextBlock Text="G" Foreground="White"
+                               FontFamily="{StaticResource Font.SansDisplay}"
+                               FontWeight="Bold" FontSize="12"
+                               HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                </Border>
+                <TextBlock Text="ECU Setup"
+                           Style="{StaticResource Text.Body}"
+                           Foreground="{DynamicResource Text.PrimaryBrush}"
+                           FontWeight="SemiBold"
+                           VerticalAlignment="Center"/>
+            </StackPanel>
+
+            <StackPanel Grid.Column="2" Orientation="Horizontal">
+                <Button x:Name="MinimizeBtn"
+                        Style="{StaticResource Button.Chrome}"
+                        Click="OnMinimizeClicked"
+                        ToolTip="Minimize">
+                    <Path Data="{StaticResource Icon.Minimize}"
+                          Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType={x:Type Button}}}"
+                          StrokeThickness="1.2"
+                          Width="10" Height="10"/>
+                </Button>
+                <Button x:Name="MaximizeBtn"
+                        Style="{StaticResource Button.Chrome}"
+                        Click="OnMaximizeClicked"
+                        ToolTip="Maximize">
+                    <Path x:Name="MaxIcon"
+                          Data="{StaticResource Icon.Maximize}"
+                          Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType={x:Type Button}}}"
+                          StrokeThickness="1.2"
+                          Width="10" Height="10"/>
+                </Button>
+                <Button x:Name="CloseBtn"
+                        Style="{StaticResource Button.ChromeClose}"
+                        Click="OnCloseWindowClicked"
+                        ToolTip="Close">
+                    <Path Data="{StaticResource Icon.Close}"
+                          Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType={x:Type Button}}}"
+                          StrokeThickness="1.2"
+                          Width="10" Height="10"/>
+                </Button>
+            </StackPanel>
+        </Grid>
+
+        <!--
+            Three-pane editor (ECU list | PIDs | Waveform). Same layout as the
+            workspace MainWindow used to host - lifted wholesale into this
+            window so the user can edit PIDs / waveforms next to the main
+            window's Selected ECU inspector.
+
+            The ECU list here drives SetupSelectedEcu, not SelectedEcu, so
+            picking a different ECU in this window does NOT disturb the main
+            window's inspector.
+        -->
+        <Grid Margin="14">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="240" MinWidth="240"/>
+                <ColumnDefinition Width="*"   MinWidth="320"/>
+                <ColumnDefinition Width="260" MinWidth="260"/>
+            </Grid.ColumnDefinitions>
+
+            <!-- ECU sidebar (independent selection: SetupSelectedEcu) -->
+            <Border Grid.Column="0" Style="{StaticResource Card}" Margin="0,0,12,0">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                    </Grid.RowDefinitions>
+
+                    <Grid Grid.Row="0" Margin="0,0,0,8">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Text="ECUs" Style="{StaticResource Text.SectionHeader}"
+                                   Margin="0" VerticalAlignment="Center"/>
+                        <TextBlock Grid.Column="1"
+                                   Text="{Binding Ecus.Count, StringFormat=\{0\} configured}"
+                                   Style="{StaticResource Text.Caption}"
+                                   VerticalAlignment="Center"/>
+                    </Grid>
+
+                    <ListBox Grid.Row="1"
+                             ItemsSource="{Binding Ecus}"
+                             SelectedItem="{Binding SetupSelectedEcu}"
+                             DisplayMemberPath="Name"
+                             BorderThickness="0"
+                             Background="Transparent"
+                             Padding="0" av:ItemsSource="{av:SampleData ItemCount=5}"/>
+                </Grid>
+            </Border>
+
+            <!-- PIDs main pane -->
+            <Border Grid.Column="1" Style="{StaticResource Card}" Margin="0,0,12,0">
+                <DockPanel DataContext="{Binding SetupSelectedEcu}" LastChildFill="True">
+                    <Grid DockPanel.Dock="Top" Margin="0,0,0,10">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Text="PIDs"
+                                   Style="{StaticResource Text.Subtitle}"
+                                   VerticalAlignment="Center"/>
+                        <TextBlock Grid.Column="1"
+                                   Text="{Binding Pids.Count, FallbackValue=no ECU selected, StringFormat=\{0\} parameter(s)}"
+                                   Style="{StaticResource Text.Caption}"
+                                   VerticalAlignment="Center"
+                                   Margin="12,0,0,0"/>
+                        <StackPanel Grid.Column="2" Orientation="Horizontal">
+                            <!-- AncestorType=Window resolves the DataContext back to MainViewModel
+                                 (the Window's DataContext), bypassing the inner DataContext that
+                                 was rebased to SetupSelectedEcu for the rest of this pane. -->
+                            <Button Style="{StaticResource Button.Primary}"
+                                    Content="Add PID"
+                                    Margin="0,0,8,0"
+                                    Command="{Binding DataContext.AddSetupPidCommand, RelativeSource={RelativeSource AncestorType={x:Type Window}}}"/>
+                            <Button Content="Remove PID"
+                                    Command="{Binding DataContext.RemoveSetupPidCommand, RelativeSource={RelativeSource AncestorType={x:Type Window}}}"/>
+                        </StackPanel>
+                    </Grid>
+
+                    <DataGrid ItemsSource="{Binding Pids}"
+                              SelectedItem="{Binding SelectedPid}"
+                              AutoGenerateColumns="False"
+                              CanUserAddRows="False"
+                              CanUserDeleteRows="False">
+                        <DataGrid.RowStyle>
+                            <Style TargetType="{x:Type DataGridRow}" BasedOn="{StaticResource {x:Type DataGridRow}}">
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding HasAliasWarning}" Value="True">
+                                        <Setter Property="BorderBrush" Value="{DynamicResource Status.ErrorBrush}"/>
+                                        <Setter Property="BorderThickness" Value="3,0,0,0"/>
+                                        <Setter Property="ToolTip" Value="{Binding AliasWarningTooltip}"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </DataGrid.RowStyle>
+                        <DataGrid.Columns>
+                            <DataGridTextColumn Header="Address" Binding="{Binding AddressHex, UpdateSourceTrigger=LostFocus}" Width="86"/>
+                            <DataGridTextColumn Header="Name"    Binding="{Binding Name, UpdateSourceTrigger=LostFocus}"       Width="*" MinWidth="120"/>
+                            <DataGridTemplateColumn Header="Size" Width="84">
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <ComboBox Style="{StaticResource ComboBox.Cell}"
+                                                  ItemsSource="{Binding Source={StaticResource PidSizes}}"
+                                                  SelectedItem="{Binding Size, UpdateSourceTrigger=PropertyChanged}"/>
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
+                            <DataGridTemplateColumn Header="Type" Width="96">
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <ComboBox Style="{StaticResource ComboBox.Cell}"
+                                                  ItemsSource="{Binding Source={StaticResource PidDataTypes}}"
+                                                  SelectedItem="{Binding DataType, UpdateSourceTrigger=PropertyChanged}"/>
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
+                            <DataGridTextColumn Header="Scalar" Binding="{Binding Scalar, StringFormat=G, UpdateSourceTrigger=LostFocus}" Width="78"/>
+                            <DataGridTextColumn Header="Offset" Binding="{Binding Offset, StringFormat=G, UpdateSourceTrigger=LostFocus}" Width="78"/>
+                            <DataGridTextColumn Header="Unit"   Binding="{Binding Unit, UpdateSourceTrigger=LostFocus}"   Width="72"/>
+                            <DataGridTextColumn Header="Live"   Binding="{Binding LiveValue}" IsReadOnly="True" Width="90"/>
+                        </DataGrid.Columns>
+                    </DataGrid>
+                </DockPanel>
+            </Border>
+
+            <!-- Waveform inspector. Bound to the setup-selected ECU's
+                 selected PID's waveform so changing ECU here flips the
+                 waveform fields too. -->
+            <Border Grid.Column="2" Style="{StaticResource Card}"
+                    DataContext="{Binding SetupSelectedEcu.SelectedPid.Waveform}">
+                <DockPanel>
+                    <TextBlock DockPanel.Dock="Top"
+                               Text="Waveform"
+                               Style="{StaticResource Text.Subtitle}"
+                               Margin="0,0,0,12"/>
+                    <TextBlock DockPanel.Dock="Top"
+                               Text="Generator for the selected PID."
+                               Style="{StaticResource Text.Hint}"
+                               Margin="0,-4,0,12"/>
+
+                    <ScrollViewer VerticalScrollBarVisibility="Auto"
+                                  HorizontalScrollBarVisibility="Disabled">
+                        <Grid VerticalAlignment="Top">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" MinWidth="74"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="40"/>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                            </Grid.RowDefinitions>
+
+                            <Label Style="{StaticResource Label.FormPair}" Grid.Row="0" Grid.Column="0" Content="Shape"/>
+                            <ComboBox Grid.Row="0" Grid.Column="1" Margin="0,2"
+                                      ItemsSource="{Binding Source={StaticResource WaveformShapes}}"
+                                      SelectedItem="{Binding Shape, UpdateSourceTrigger=PropertyChanged}"/>
+
+                            <Label Style="{StaticResource Label.FormPair}" Grid.Row="1" Grid.Column="0" Content="Amplitude"
+                                   Visibility="{Binding SupportsAmplitude, Converter={StaticResource BoolToVis}}"/>
+                            <TextBox Grid.Row="1" Grid.Column="1" Margin="0,2"
+                                     Text="{Binding Amplitude, StringFormat=G, UpdateSourceTrigger=LostFocus}"
+                                     Visibility="{Binding SupportsAmplitude, Converter={StaticResource BoolToVis}}"
+                                     FontFamily="{StaticResource Font.Mono}"/>
+
+                            <Label Style="{StaticResource Label.FormPair}" Grid.Row="2" Grid.Column="0" Content="Offset"/>
+                            <TextBox Grid.Row="2" Grid.Column="1" Margin="0,2"
+                                     Text="{Binding Offset, StringFormat=G, UpdateSourceTrigger=LostFocus}"
+                                     FontFamily="{StaticResource Font.Mono}"/>
+
+                            <Label Style="{StaticResource Label.FormPair}" Grid.Row="3" Grid.Column="0" Content="Freq (Hz)"
+                                   Visibility="{Binding SupportsFrequency, Converter={StaticResource BoolToVis}}"/>
+                            <TextBox Grid.Row="3" Grid.Column="1" Margin="0,2"
+                                     Text="{Binding FrequencyHz, StringFormat=G, UpdateSourceTrigger=LostFocus}"
+                                     Visibility="{Binding SupportsFrequency, Converter={StaticResource BoolToVis}}"
+                                     FontFamily="{StaticResource Font.Mono}"/>
+
+                            <Label Style="{StaticResource Label.FormPair}" Grid.Row="4" Grid.Column="0" Content="Phase (°)"
+                                   Visibility="{Binding SupportsFrequency, Converter={StaticResource BoolToVis}}"/>
+                            <TextBox Grid.Row="4" Grid.Column="1" Margin="0,2"
+                                     Text="{Binding PhaseDeg, StringFormat=G, UpdateSourceTrigger=LostFocus}"
+                                     Visibility="{Binding SupportsFrequency, Converter={StaticResource BoolToVis}}"
+                                     FontFamily="{StaticResource Font.Mono}"/>
+
+                            <Label Style="{StaticResource Label.FormPair}" Grid.Row="5" Grid.Column="0" Content="Duty (0..1)"
+                                   Visibility="{Binding SupportsDuty, Converter={StaticResource BoolToVis}}"/>
+                            <TextBox Grid.Row="5" Grid.Column="1" Margin="0,2"
+                                     Text="{Binding DutyCycle, StringFormat=G, UpdateSourceTrigger=LostFocus}"
+                                     Visibility="{Binding SupportsDuty, Converter={StaticResource BoolToVis}}"
+                                     FontFamily="{StaticResource Font.Mono}"/>
+                        </Grid>
+                    </ScrollViewer>
+                </DockPanel>
+            </Border>
+        </Grid>
+    </DockPanel>
+</Window>

@@ -35,11 +35,9 @@ public sealed class Service10HandlerTests
     }
 
     [Theory]
-    [InlineData((byte)0x01)]
-    [InlineData((byte)0x03)]
-    [InlineData((byte)0x04)]
-    [InlineData((byte)0x81)]
-    public void OtherSubs_LeaveSecurityShortcutUnset(byte sub)
+    [InlineData((byte)0x03)]   // enableDTCsDuringDevCntrl
+    [InlineData((byte)0x04)]   // wakeUpLinks
+    public void ValidNonProgrammingSubs_LeaveSecurityShortcutUnset(byte sub)
     {
         var node = NodeFactory.CreateNode();
         var ch = NodeFactory.CreateChannel();
@@ -48,6 +46,27 @@ public sealed class Service10HandlerTests
 
         Assert.False(node.State.SecurityProgrammingShortcutActive);
         Assert.Equal(new byte[] { Service.Positive(Service.InitiateDiagnosticOperation), sub },
+                     TestFrame.DequeueSingleFrameUsdt(ch));
+    }
+
+    [Theory]
+    [InlineData((byte)0x00)]   // ReservedByDocument
+    [InlineData((byte)0x01)]   // ReservedByDocument
+    [InlineData((byte)0x05)]   // ReservedByDocument (first byte past wakeUpLinks)
+    [InlineData((byte)0x81)]   // far out of range
+    [InlineData((byte)0xFF)]
+    public void UndefinedSubs_ReturnNrc12(byte sub)
+    {
+        // §8.2.6.2 OTHERWISE branch and §8.2.4 Table 51 SFNS-IF: anything
+        // outside {$02, $03, $04} must produce NRC $12.
+        var node = NodeFactory.CreateNode();
+        var ch = NodeFactory.CreateChannel();
+
+        bool ok = Service10Handler.Handle(node, new byte[] { 0x10, sub }, ch);
+
+        Assert.False(ok);
+        Assert.False(node.State.SecurityProgrammingShortcutActive);
+        Assert.Equal(new byte[] { Service.NegativeResponse, Service.InitiateDiagnosticOperation, Nrc.SubFunctionNotSupportedInvalidFormat },
                      TestFrame.DequeueSingleFrameUsdt(ch));
     }
 

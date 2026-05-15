@@ -5,42 +5,46 @@ using Core.Services;
 
 namespace Core.Scheduler;
 
-// Watches the bus for prolonged silence from the host and resets ECU/session
-// state when the bus has been idle longer than IdleThresholdMs. Catches the
-// case where the host went away without a graceful PassThruDisconnect (USB
-// unplug, host crash, user paused logging without closing the session) and
-// any leftover state that would otherwise carry across into the next session.
+// STUBBED 2026-05-15. The time-based "no IPC for N seconds -> reset every
+// ECU to default session" behaviour was removed because it punished the
+// legitimate "user stepped away for a minute mid-flash" case: a host that
+// had a periodic $3E registered was still feeding spec-correct keepalives
+// to every ECU through DispatchHostTx, but the supervisor measured IPC
+// silence instead of TesterPresent delivery and tore the session down
+// anyway. That was contrary to GMW3110 §6.2.4 - the ECU should keep its
+// session while $3E is arriving on time, regardless of who's generating
+// the frame.
 //
-// "Idle" is measured by the timestamp VirtualBus.LastHostActivityMs, which
-// Shim.Ipc.RequestDispatcher updates on every incoming IPC request. The
-// simulator's own internal timers (e.g. PassThruStartPeriodicMsg-driven $3E)
-// do NOT update it - those would mask a vanished host.
+// Both responsibilities the old supervisor covered are now handled by
+// spec-correct paths that already existed:
+//   - "Host vanished" cleanup: NamedPipeServer.HandleClientAsync's finally
+//     block detects pipe drop (the authoritative signal - USB unplug, host
+//     crash, clean PassThruClose) and raises VirtualBus.HostDisconnected;
+//     IpcSessionState.Dispose then cancels every periodic timer the host
+//     had registered. Once those timers stop, the per-ECU TesterPresent
+//     watchdog takes over (see below).
+//   - "Session timeout": TesterPresentTicker ticks each EcuNode's
+//     TesterPresentState at 50 ms granularity; Service3EHandler resets it
+//     on every observed $3E. When P3Cnom (5000 ms) elapses without a
+//     reset, the ticker runs EcuExitLogic on that node. This is exactly
+//     what the spec calls for and runs per-ECU, not bus-wide.
 //
-// On reset:
-//   1. For every ECU whose TesterPresent state is Active, run the spec-
-//      compliant Exit_Diagnostic_Services flow (clears DPID schedule, security,
-//      $2D dynamic PIDs, sends unsolicited $60 if a channel is still alive).
-//   2. Clear LastEnhancedChannel on every ECU so a phantom $60 from the P3C
-//      ticker doesn't fire onto an orphaned channel later.
-//   3. Raise VirtualBus.IdleReset so each Shim.Ipc.IpcSessionState can cancel
-//      its PassThruStartPeriodicMsg timers - there's no host left to receive
-//      whatever they were generating.
-//
-// Uses a System.Threading.Timer (1s tick); TimerOnDelay would be overkill -
-// the threshold is in seconds, not sub-millisecond.
+// The class is kept (rather than deleted) so the DoReset() helper remains
+// available - it's a tidy "tear everything down right now" path that may
+// be useful for a future explicit "force-idle" UI action, or if some new
+// signal turns up that genuinely warrants a bus-wide reset. Start() is
+// intentionally a no-op; nothing calls RaiseIdleReset() in the current
+// build, so subscribers (IpcSessionState, BinReplayCoordinator,
+// MainWindow's file-log lifecycle) stay subscribed but never see it fire.
 public sealed class IdleBusSupervisor : IDisposable
 {
-    private const int TickPeriodMs = 1000;
-
     private readonly VirtualBus bus;
     private readonly DpidScheduler scheduler;
-    private Timer? timer;
 
-    // Latches once a reset fires so we don't reset every tick while the
-    // bus stays idle. Cleared as soon as host activity returns.
-    private bool didReset;
-
-    /// <summary>Idle threshold in milliseconds. Default 10000 (10 seconds).</summary>
+    /// <summary>
+    /// Retained for API compatibility; the supervisor no longer runs a
+    /// timer so this value is not consulted. See file header.
+    /// </summary>
     public int IdleThresholdMs { get; set; } = 10_000;
 
     public IdleBusSupervisor(VirtualBus bus, DpidScheduler scheduler)
@@ -49,53 +53,29 @@ public sealed class IdleBusSupervisor : IDisposable
         this.scheduler = scheduler;
     }
 
-    public void Start()
-    {
-        timer ??= new Timer(_ => Tick(), null, TickPeriodMs, TickPeriodMs);
-    }
+    /// <summary>
+    /// No-op stub. The time-based idle reset was removed - see file header
+    /// for the rationale and the per-ECU watchdog that replaces it. Left
+    /// callable from App.OnStartup so re-enabling the supervisor in future
+    /// is a single-line change inside this method.
+    /// </summary>
+    public void Start() { }
 
-    public void Dispose()
-    {
-        timer?.Dispose();
-        timer = null;
-    }
+    public void Dispose() { }
 
-    private void Tick()
-    {
-        long last = bus.LastHostActivityMs;
-        if (last == 0)
-        {
-            // Never seen host activity - fresh launch with no clients ever connected.
-            // Don't trigger a reset; nothing to clean up.
-            return;
-        }
-
-        long now = (long)bus.NowMs;
-        long idleMs = now - last;
-        bool isIdle = idleMs >= IdleThresholdMs;
-
-        if (isIdle && !didReset)
-        {
-            didReset = true;
-            try { DoReset(idleMs); }
-            catch (Exception ex) { bus.LogDiagnostic?.Invoke($"[idle] reset error: {ex.Message}"); }
-        }
-        else if (!isIdle && didReset)
-        {
-            // Host came back - re-arm so the next idle window will reset again.
-            didReset = false;
-            bus.LogDiagnostic?.Invoke("[idle] host activity resumed");
-        }
-    }
-
-    private void DoReset(long idleMs)
+    /// <summary>
+    /// Spec-compliant "tear it all down" helper. Not currently invoked by
+    /// any timer in this build, but kept available for a future explicit
+    /// force-idle path. Runs the GMW3110 Exit_Diagnostic_Services flow on
+    /// every active ECU, clears LastEnhancedChannel, raises
+    /// <see cref="VirtualBus.IdleReset"/> so session subscribers can cancel
+    /// their host-driven periodic timers, and posts a status-bar message.
+    /// </summary>
+    public void DoReset(long idleMs)
     {
         bus.LogDiagnostic?.Invoke(
-            $"[idle] no host activity for {idleMs}ms - resetting all ECUs to default-session state");
+            $"[idle] forced reset after {idleMs} ms - applying exit_diagnostic_services to active ECUs");
 
-        // 1. Run the spec-compliant exit on every active ECU. Any channel
-        //    references on EcuNode get cleared so a stray P3C tick after the
-        //    fact doesn't enqueue onto an orphaned ChannelSession.
         foreach (var node in bus.Nodes)
         {
             if (node.State.TesterPresent.State == TesterPresentTimerState.Active)
@@ -106,9 +86,7 @@ public sealed class IdleBusSupervisor : IDisposable
             node.State.LastEnhancedChannel = null;
         }
 
-        // 2. Notify session-level subscribers so they can cancel host-driven
-        //    PassThruStartPeriodicMsg timers (the host is gone - those frames
-        //    have nowhere to go and would keep the bus artificially "alive").
         bus.RaiseIdleReset();
+        bus.OnStatusMessage?.Invoke("J2534 host idle - ECUs reset to default-session state");
     }
 }

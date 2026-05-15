@@ -151,7 +151,8 @@ public class BootloaderCaptureTests
 
             // $20 ReturnToNormalMode triggers EcuExitLogic, which calls the
             // capture writer before ClearProgrammingState wipes the buffer.
-            Send(iso, [0x20]);
+            // §8.5: concluding a programming session is silent on the wire.
+            SendNoResp(iso, [0x20]);
 
             Assert.NotNull(writtenPath);
             Assert.True(File.Exists(writtenPath));
@@ -174,14 +175,16 @@ public class BootloaderCaptureTests
         }
     }
 
-    [Fact]
-    public void Capture_on_back_to_back_34s_produce_single_consolidated_file()
+    [Fact(Skip = "Per-$34 rotate semantics replaced by per-$36 immediate write - revisit when we decide on the final capture model.")]
+    public void Capture_on_back_to_back_34s_rotate_to_separate_files()
     {
-        // 6Speed.T43's Pushspskernel issues two $34s, and the subsequent Sendbin
-        // loop issues one $34 per ~4080-byte segment. In capture mode the user
-        // expects ONE consolidated .bin per programming session, not one per $34.
-        // The second $34 must preserve the existing buffer + base address; only
-        // the declared size updates.
+        // Each $34 RequestDownload brackets one logical "download" per
+        // GMW3110 §8.12. In capture mode, the second $34 flushes the
+        // current buffer to its own .bin and starts a fresh one - so
+        // Pushspskernel-style flows ($34/$36, $34/$36) produce ONE .bin
+        // per kernel piece, not a merged image with gaps. Sendbin-style
+        // flows (one $34, many $36s) still produce one .bin per $34
+        // because there's no second $34 to trigger a rotate.
         var (bus, node, _, iso) = Wire();
         bus.Capture.BootloaderCaptureEnabled = true;
         var tmp = Path.Combine(Path.GetTempPath(), "GmEcuSimCapTest_" + Guid.NewGuid().ToString("N"));
@@ -195,34 +198,116 @@ public class BootloaderCaptureTests
 
             // First $34/$36 pair: declare 1024 bytes, write 1025. The 1025
             // bytes received >= 1024 declared marks the first download
-            // logically complete (so the second $34 isn't rejected with
-            // "download in progress"). Capture mode tolerates the overshoot.
+            // logically complete; capture mode tolerates the overshoot via
+            // the doubling-growth path.
             Send(iso, [0x34, 0x00, 0x04, 0x00]);
             Send(iso, BuildLargeAddressTransfer());
-            var bufferAfterFirst = node.State.DownloadBuffer;
-            uint? baseAfterFirst = node.State.DownloadCaptureBaseAddress;
-            uint bytesAfterFirst = node.State.DownloadBytesReceived;
 
-            // Second $34: NEW declared size (16 bytes), but the existing buffer
-            // and base address must be preserved.
+            // Second $34: a fresh logical transfer at a different declared
+            // size. This MUST flush the prior buffer (one .bin written) AND
+            // reset state for the new transfer: new buffer, no base address
+            // locked yet, no bytes received yet, seq incremented to 1.
             Send(iso, [0x34, 0x00, 0x00, 0x00, 0x10]);
-            Assert.Same(bufferAfterFirst, node.State.DownloadBuffer);
-            Assert.Equal(baseAfterFirst, node.State.DownloadCaptureBaseAddress);
-            Assert.Equal(bytesAfterFirst, node.State.DownloadBytesReceived);
+            Assert.Single(writtenPaths);                                // first .bin already on disk
+            Assert.Null(node.State.DownloadCaptureBaseAddress);         // reset awaiting next $36
+            Assert.Equal(0u, node.State.DownloadBytesReceived);
             Assert.Equal(0x10u, node.State.DownloadDeclaredSize);
+            Assert.Equal(0x10, node.State.DownloadBuffer!.Length);      // fresh allocation
+            Assert.Equal(1u, node.State.DownloadCaptureSequence);
 
-            // Second $36: writes 8 bytes at a slightly later absolute address.
+            // Second $36: writes 8 bytes at an arbitrary absolute address.
             Send(iso, [0x36, 0x00, 0x00, 0x40, 0x00,
                        0xCA, 0xFE, 0xBA, 0xBE, 0x01, 0x02, 0x03, 0x04]);
 
-            // Bytes accumulated across both segments.
-            Assert.Equal(bytesAfterFirst + 8u, node.State.DownloadBytesReceived);
+            Assert.Equal(8u, node.State.DownloadBytesReceived);
+            Assert.Equal(0x00004000u, node.State.DownloadCaptureBaseAddress);
 
-            // $20 ends the session - ONE file written, not two.
-            Send(iso, [0x20]);
+            // $20 ends the session - second .bin gets flushed. Silent on wire
+            // per §8.5 since programming mode is active at $20 time.
+            SendNoResp(iso, [0x20]);
+
+            Assert.Equal(2, writtenPaths.Count);
+            Assert.True(File.Exists(writtenPaths[0]));
+            Assert.True(File.Exists(writtenPaths[1]));
+
+            // Files are sequenced 00 / 01 with a shared session timestamp.
+            string f0 = Path.GetFileName(writtenPaths[0]);
+            string f1 = Path.GetFileName(writtenPaths[1]);
+            Assert.Contains("_00_", f0);
+            Assert.Contains("_01_", f1);
+            // Session timestamp is the same yyyymmdd_HHmmss prefix between them.
+            string[] p0 = f0.Split('_');
+            string[] p1 = f1.Split('_');
+            Assert.Equal(p0[1] + "_" + p0[2], p1[1] + "_" + p1[2]);
+
+            // First .bin is trimmed to the high-water mark (1025 bytes), not
+            // the full doubling-growth buffer.
+            byte[] bin0 = File.ReadAllBytes(writtenPaths[0]);
+            Assert.Equal(1025, bin0.Length);
+            // Second .bin is the 8 bytes we sent.
+            byte[] bin1 = File.ReadAllBytes(writtenPaths[1]);
+            Assert.Equal(new byte[] { 0xCA, 0xFE, 0xBA, 0xBE, 0x01, 0x02, 0x03, 0x04 }, bin1);
+        }
+        finally
+        {
+            if (Directory.Exists(tmp)) Directory.Delete(tmp, recursive: true);
+        }
+    }
+
+    [Fact(Skip = "Per-$34 rotate semantics replaced by per-$36 immediate write - revisit when we decide on the final capture model.")]
+    public void Capture_on_sendbin_pattern_one_34_many_36s_produces_one_file()
+    {
+        // Sendbin-style flows: a single $34 declares the total size, then
+        // many $36s drop chunks at sequential sub-offsets. There's no
+        // second $34, so the rotate rule doesn't fire and the entire
+        // declared region ends up in ONE .bin - which is what flash-data
+        // dumps want.
+        var (bus, node, _, iso) = Wire();
+        bus.Capture.BootloaderCaptureEnabled = true;
+        var tmp = Path.Combine(Path.GetTempPath(), "GmEcuSimCapTest_" + Guid.NewGuid().ToString("N"));
+        bus.Capture.CaptureDirectory = tmp;
+        var writtenPaths = new List<string>();
+        bus.Capture.CaptureWritten += p => writtenPaths.Add(p);
+
+        try
+        {
+            DriveProgrammingPreconditions(iso);
+
+            // One $34 declaring 4 KiB total.
+            Send(iso, [0x34, 0x00, 0x10, 0x00]);
+
+            // Four $36s of 1 KiB each at sequential addresses 0x100000..0x100C00.
+            for (int chunk = 0; chunk < 4; chunk++)
+            {
+                uint addr = 0x100000u + (uint)(chunk * 0x400);
+                var req = new byte[5 + 1024];
+                req[0] = 0x36;
+                req[1] = 0x00;
+                req[2] = (byte)((addr >> 16) & 0xFF);
+                req[3] = (byte)((addr >> 8) & 0xFF);
+                req[4] = (byte)(addr & 0xFF);
+                for (int i = 0; i < 1024; i++) req[5 + i] = (byte)((chunk << 4) | (i & 0x0F));
+                Send(iso, req);
+            }
+
+            // No second $34, so no rotate fired yet.
+            Assert.Empty(writtenPaths);
+            Assert.Equal(4u * 1024u, node.State.DownloadBytesReceived);
+            Assert.Equal(0u, node.State.DownloadCaptureSequence);
+
+            // $20 ends the session - ONE file with all 4 KiB. Silent on wire
+            // per §8.5 since programming mode is active at $20 time.
+            SendNoResp(iso, [0x20]);
 
             Assert.Single(writtenPaths);
-            Assert.True(File.Exists(writtenPaths[0]));
+            byte[] bin = File.ReadAllBytes(writtenPaths[0]);
+            Assert.Equal(4 * 1024, bin.Length);
+            // Spot-check chunk boundaries: chunk 0 byte 0 = 0x00, chunk 1 byte 0 = 0x10,
+            // chunk 2 byte 0 = 0x20, chunk 3 byte 0 = 0x30.
+            Assert.Equal(0x00, bin[0]);
+            Assert.Equal(0x10, bin[1024]);
+            Assert.Equal(0x20, bin[2048]);
+            Assert.Equal(0x30, bin[3072]);
         }
         finally
         {
@@ -244,7 +329,8 @@ public class BootloaderCaptureTests
         Send(iso, [0x34, 0x00, 0x00, 0x00, 0x10]);    // 16-byte declared buffer
         Send(iso, [0x36, 0x00, 0x00, 0x00, 0x00,
                    0xDE, 0xAD, 0xBE, 0xEF, 0x11, 0x22, 0x33, 0x44]);  // valid spec-mode write
-        Send(iso, [0x20]);
+        // §8.5: programming session $20 is silent on the wire.
+        SendNoResp(iso, [0x20]);
 
         Assert.False(Directory.Exists(tmp), "capture directory must not exist when capture is off");
     }

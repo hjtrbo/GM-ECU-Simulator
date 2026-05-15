@@ -272,8 +272,9 @@ public class ProgrammingSequenceCanProtocolTests
         Assert.Equal(4096u, node.State.DownloadBytesReceived);
         Assert.Equal(payload, node.State.DownloadBuffer);
 
-        // 10. $20 ReturnToNormalMode ends the session.
-        Assert.Equal(new byte[] { 0x60 }, SendAndReceive(bus, ch, new byte[] { 0x20 }));
+        // 10. $20 ReturnToNormalMode ends the session. §8.5: concluding a
+        //     programming event produces no positive response on the wire.
+        SendExpectingNoResponse(bus, ch, new byte[] { 0x20 });
         Assert.False(node.State.ProgrammingModeActive);
         Assert.False(node.State.DownloadActive);
         Assert.Null(node.State.DownloadBuffer);

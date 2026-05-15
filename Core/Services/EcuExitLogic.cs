@@ -2,6 +2,7 @@ using Common.PassThru;
 using Common.Protocol;
 using Core.Bus;
 using Core.Ecu;
+using Core.Ecu.Personas;
 using Core.Scheduler;
 using Core.Transport;
 
@@ -18,12 +19,23 @@ namespace Core.Services;
 public static class EcuExitLogic
 {
     // The ChannelSession argument may be null when the caller is a P3C
-    // timeout — in that case the unsolicited $60 needs to land on whichever
+    // timeout - in that case the unsolicited $60 needs to land on whichever
     // channel(s) that ECU was previously talking to. We store the last
     // channel a periodic was scheduled on; if there was no enhanced traffic
     // there's no $20 response to send.
     public static void Run(EcuNode node, DpidScheduler scheduler, ChannelSession? respondOn)
     {
+        // Capture before ClearProgrammingState wipes it. Per GMW3110 §8.5.6.2
+        // pseudo-code, the $60 positive response is only sent on the
+        // `programming_mode_active = NO` branch. §8.5 paragraph "When using
+        // this service to end a programming session, ... A valid request for
+        // this service which concludes a programming event shall not be
+        // followed by a positive response." And §8.5.1 "An ECU shall send an
+        // unsolicited service $20 positive response message any time a
+        // TesterPresent ($3E) timeout (P3C) occurs and a programming session
+        // is not active." Both rules share the same gate.
+        bool wasProgrammingActive = node.State.ProgrammingModeActive;
+
         // 1. Reset P3C state.
         node.State.TesterPresent.Deactivate();
 
@@ -39,11 +51,18 @@ public static class EcuExitLogic
             node.State.DynamicallyDefinedPids.Clear();
         }
 
-        // 3a. Bootloader capture: if the user has the Capture Bootloader tab's
-        //     checkbox on and a $36 payload was assembled during this session,
-        //     dump it to disk BEFORE ClearProgrammingState wipes the buffer.
-        //     No-op when capture is off (the spec-correct default).
-        BootloaderCaptureWriter.MaybeWrite(node, scheduler.Bus);
+        // 3a. Bootloader capture: per-$36 fragments are already on disk
+        //     (BootloaderCaptureWriter.WriteEachTransferData fires inline
+        //     from Service36Handler). But any flash regions the kernel
+        //     declared via $31 EraseMemoryByAddress still need to be
+        //     flushed - their $FF-backed buffers got $36 writes mirrored
+        //     in but haven't been dumped yet. Functional $20 passes
+        //     respondOn=null; fall back to LastEnhancedChannel for the
+        //     bus handle. Skip when no channel is reachable (unit-test
+        //     paths construct ECUs with no bus attached at all).
+        var captureBus = respondOn?.Bus ?? node.State.LastEnhancedChannel?.Bus;
+        if (captureBus is not null)
+            BootloaderCaptureWriter.WriteFlashRegions(node, captureBus);
 
         // 3b. Clear $28 / $A5 / $34 / $36 programming-session state. Per
         //     GMW3110 §8.17 "The tester can end a programming event by sending
@@ -51,8 +70,17 @@ public static class EcuExitLogic
         //     timeout to occur." Both paths funnel through here.
         node.State.ClearProgrammingState();
 
-        // 4. Send unsolicited $60 positive response (only if we have a channel).
-        if (respondOn != null)
+        // 3c. Reset persona back to GMW3110. After a $36 sub $80
+        //     DownloadAndExecute the ECU was speaking UDS via UdsKernelPersona;
+        //     $20 / P3C timeout is the documented "kernel hands control back to
+        //     the boot ROM" point, so the ECU answers as a stock GMW3110 module
+        //     again from here on.
+        node.Persona = Gmw3110Persona.Instance;
+
+        // 4. Send $60 positive response only when the spec demands it: caller
+        //    provided a channel AND a programming session was NOT being torn
+        //    down. Concluding a programming event is silent on the wire.
+        if (respondOn != null && !wasProgrammingActive)
         {
             node.State.Fragmenter.EnqueueResponse(respondOn, node.UsdtResponseCanId,
                 [Service.Positive(Service.ReturnToNormalMode)]);

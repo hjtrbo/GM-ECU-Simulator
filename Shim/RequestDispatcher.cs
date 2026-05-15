@@ -23,10 +23,12 @@ public sealed class RequestDispatcher
 
     public (byte responseType, byte[] payload) Dispatch(byte requestType, ReadOnlySpan<byte> payload)
     {
-        // Touch the activity timestamp so the IdleBusSupervisor knows the host
-        // is still present. Done at the IPC entry rather than per-handler so
-        // every kind of request counts (including the spammy ReadMsgs polls
-        // that we deliberately don't log).
+        // Touch the activity timestamp. The IdleBusSupervisor that consumed
+        // this is stubbed (see IdleBusSupervisor.cs header), so the value is
+        // informational now - tests still read it and a future metrics /
+        // diagnostic path may put it back to use. Done at the IPC entry
+        // rather than per-handler so every kind of request counts (including
+        // the spammy ReadMsgs polls that we deliberately don't log).
         state.Bus.NoteHostActivity();
 
         LogIncoming(requestType, payload);
@@ -214,6 +216,7 @@ public sealed class RequestDispatcher
         {
             state.Bus.LogDiagnostic?.Invoke($"[host-disconnected] subscriber threw: {ex.Message}");
         }
+        state.Bus.OnStatusMessage?.Invoke("J2534 host disconnected");
         return (IpcMessageTypes.CloseResponse, OkResultPayload());
     }
 
@@ -515,15 +518,12 @@ public sealed class RequestDispatcher
 
         uint periodicId = state.AllocatePeriodicId();
 
-        // Look up the target ECU to check AllowPeriodicTesterPresent. If the
-        // frame is a functional broadcast (no matching ECU found) we let it
-        // through so the bus routing handles it as normal.
+        // HW $3E delegation is a simulator-wide policy (ECU > "Drive HW $3E
+        // keepalives" menu item). When off, the registration is accepted but
+        // no timer is created - the P3C session will not be maintained for
+        // hosts that delegate via PassThruStartPeriodicMsg.
         byte[] frameData = msg.Data;
-        var targetEcu = frameData.Length >= Core.Transport.CanFrame.IdBytes
-            ? state.Bus.FindByRequestId(Core.Transport.CanFrame.ReadId(frameData))
-            : null;
-
-        bool createTimer = targetEcu == null || targetEcu.AllowPeriodicTesterPresent;
+        bool createTimer = state.Bus.AllowPeriodicTesterPresent;
 
         var diag = state.Bus.LogDiagnostic;
         if (diag != null)
@@ -532,8 +532,7 @@ public sealed class RequestDispatcher
                 ? Core.Transport.CanFrame.ReadId(frameData).ToString("X3")
                 : "(short)";
             string hex = HexFormat.Bytes(frameData);
-            string ecuLabel = targetEcu != null ? $"ECU '{targetEcu.Name}'" : "no ECU (functional/unknown)";
-            diag($"[periodic] register chan={channelId} id={periodicId} interval={intervalMs}ms target={canIdStr} ({ecuLabel}) " +
+            diag($"[periodic] register chan={channelId} id={periodicId} interval={intervalMs}ms target={canIdStr} " +
                  (createTimer ? "TIMER CREATED" : "SKIPPED (HW $3E disabled)") +
                  $" data={hex}");
         }

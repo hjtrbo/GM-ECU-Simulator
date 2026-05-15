@@ -40,17 +40,21 @@ public sealed class VirtualBus
     public BinReplayCoordinator? Replay { get; set; }
 
     // Last time any host activity was observed (any incoming IPC request).
-    // Updated by Shim.Ipc.RequestDispatcher.Dispatch via NoteHostActivity. The
-    // IdleBusSupervisor checks the gap to detect a stalled / disconnected host.
+    // Updated by Shim.Ipc.RequestDispatcher.Dispatch via NoteHostActivity.
+    // Currently informational - the IdleBusSupervisor that used to react to
+    // gaps in this stream was stubbed 2026-05-15 (see IdleBusSupervisor.cs
+    // header); the value is kept because tests assert on it and a future
+    // diagnostic / metrics path may want it again.
     private long lastHostActivityMs;
     public long LastHostActivityMs => Volatile.Read(ref lastHostActivityMs);
     public void NoteHostActivity() => Volatile.Write(ref lastHostActivityMs, (long)NowMs);
 
     /// <summary>
-    /// Raised by the IdleBusSupervisor when the bus has been idle past the
-    /// threshold and a full reset is being applied. Subscribers (typically
-    /// Shim.Ipc.IpcSessionState) use this to cancel periodic timers and any
-    /// other per-session resources tied to the now-vanished host.
+    /// Raised on an explicit bus-wide idle reset. The time-based supervisor
+    /// that used to fire this was stubbed 2026-05-15; nothing in the current
+    /// build raises it on a schedule. Kept so subscribers
+    /// (Shim.Ipc.IpcSessionState, MainWindow file-log lifecycle, BinReplay)
+    /// stay wired up if a future force-idle path calls IdleBusSupervisor.DoReset.
     /// </summary>
     public event Action? IdleReset;
     internal void RaiseIdleReset() => IdleReset?.Invoke();
@@ -66,11 +70,13 @@ public sealed class VirtualBus
     public void RaiseHostConnected() => HostConnected?.Invoke();
 
     /// <summary>
-    /// Raised when the host calls PassThruClose (graceful session end).
-    /// Distinct from <see cref="IdleReset"/>, which fires when the host
-    /// vanishes without a clean disconnect (USB unplug, host crash).
+    /// Raised when the host's J2534 session ends. Two paths fire it:
+    ///   - graceful: RequestDispatcher.Close on PassThruClose;
+    ///   - pipe drop: NamedPipeServer.HandleClientAsync's finally block, on
+    ///     any non-clean exit (USB unplug, host crash, host process killed).
     /// Subscribers finalise per-session resources here so each capture
-    /// lands as one tidy file with its closing trailer.
+    /// lands as one tidy file with its closing trailer. They must be
+    /// idempotent because pipe drop can follow a graceful Close.
     /// </summary>
     public event Action? HostDisconnected;
     public void RaiseHostDisconnected() => HostDisconnected?.Invoke();
@@ -88,9 +94,12 @@ public sealed class VirtualBus
     ///            e.g. "[chan 1],Rx,7E2 02 10 02,StartDiagnosticSession"
     /// Rx = frame received from the J2534 host; Tx = frame the simulator
     /// generated for the host ("- HOST FILTERED" appended when the host's own
-    /// channel filter blocked delivery). Null means no logging.
+    /// channel filter blocked delivery). The third argument is true when the
+    /// frame carries a TesterPresent request ($3E) or its positive response
+    /// ($7E) - the UI log pane can use this to suppress keepalive noise
+    /// independently of the file-log capture. Null means no logging.
     /// </summary>
-    public Action<string, string>? LogFrame { get; set; }
+    public Action<string, string, bool>? LogFrame { get; set; }
 
     /// <summary>
     /// When true, every bus-frame log line is suffixed with a short
@@ -122,6 +131,15 @@ public sealed class VirtualBus
     }
     private bool collapseBulkTransfers;
     private readonly BulkTransferCollapser bulkCollapser = new();
+
+    // When true, RequestDispatcher.StartPeriodic creates a timer that drives
+    // $3E TesterPresent on the host's behalf for any host that registered the
+    // frame via PassThruStartPeriodicMsg. Off makes the simulator accept the
+    // registration but not tick - the host's P3C session lapses unless it
+    // sends $3E some other way. Process-wide because it's a simulator-helper
+    // policy, not an ECU trait; MainViewModel pushes the user's persisted
+    // AppSettings choice in on startup and on every menu toggle.
+    public bool AllowPeriodicTesterPresent { get; set; } = true;
 
     /// <summary>
     /// Always-on diagnostic sink for control-plane events (periodic message
@@ -167,7 +185,8 @@ public sealed class VirtualBus
         var canId = CanFrame.ReadId(frame);
         var payload = CanFrame.Payload(frame);
         var (pretty, csv) = FormatFrame(chId, "Rx", canId, payload, hostFiltered: false);
-        EmitFrame(chId, canId, payload, pretty, csv, sink);
+        bool isTp = Common.Protocol.Gmw3110Annotator.IsTesterPresent(canId, payload);
+        EmitFrame(chId, canId, payload, pretty, csv, isTp, sink);
     }
 
     internal void LogRx(uint chId, ReadOnlySpan<byte> frame)
@@ -178,7 +197,8 @@ public sealed class VirtualBus
         var canId = CanFrame.ReadId(frame);
         var payload = CanFrame.Payload(frame);
         var (pretty, csv) = FormatFrame(chId, "Tx", canId, payload, hostFiltered: false);
-        EmitFrame(chId, canId, payload, pretty, csv, sink);
+        bool isTp = Common.Protocol.Gmw3110Annotator.IsTesterPresent(canId, payload);
+        EmitFrame(chId, canId, payload, pretty, csv, isTp, sink);
     }
 
     internal void LogRxFiltered(uint chId, ReadOnlySpan<byte> frame)
@@ -189,7 +209,8 @@ public sealed class VirtualBus
         var canId = CanFrame.ReadId(frame);
         var payload = CanFrame.Payload(frame);
         var (pretty, csv) = FormatFrame(chId, "Tx", canId, payload, hostFiltered: true);
-        EmitFrame(chId, canId, payload, pretty, csv, sink);
+        bool isTp = Common.Protocol.Gmw3110Annotator.IsTesterPresent(canId, payload);
+        EmitFrame(chId, canId, payload, pretty, csv, isTp, sink);
     }
 
     // Builds both the pretty (textbox) and csv (file) representations from
@@ -208,12 +229,12 @@ public sealed class VirtualBus
         return (pretty, csv);
     }
 
-    private void EmitFrame(uint chId, uint canId, ReadOnlySpan<byte> payload, string pretty, string csv, Action<string, string> sink)
+    private void EmitFrame(uint chId, uint canId, ReadOnlySpan<byte> payload, string pretty, string csv, bool isTesterPresent, Action<string, string, bool> sink)
     {
         if (collapseBulkTransfers)
-            bulkCollapser.Process(chId, canId, payload, pretty, csv, sink);
+            bulkCollapser.Process(chId, canId, payload, pretty, csv, isTesterPresent, sink);
         else
-            sink(pretty, csv);
+            sink(pretty, csv, isTesterPresent);
     }
 
     private static string FormatId(uint id)
@@ -292,7 +313,7 @@ public sealed class VirtualBus
         if (node == null)
         {
             var msg = $"[bus] no ECU at {FormatId(canId)} -- frame dropped";
-            LogFrame?.Invoke(msg, msg);
+            LogFrame?.Invoke(msg, msg, false);
             return;
         }
 
@@ -365,12 +386,6 @@ public sealed class VirtualBus
             DispatchUsdt(node, payload, ch, isFunctional: true);
     }
 
-    private static void ActivateP3C(EcuNode node, ChannelSession ch)
-    {
-        node.State.LastEnhancedChannel = ch;
-        node.State.TesterPresent.Activate();
-    }
-
     private void DispatchUsdt(EcuNode node, ReadOnlySpan<byte> usdt, ChannelSession ch, bool isFunctional)
     {
         if (usdt.Length < 1) return;
@@ -392,7 +407,17 @@ public sealed class VirtualBus
         // catch can never raise a second-order exception.
         try
         {
-            DispatchUsdtBody(node, usdt, ch, isFunctional, sid);
+            // Delegate to the ECU's currently-active persona. Default is
+            // Gmw3110Persona; a successful $36 sub $80 DownloadAndExecute
+            // swaps it to UdsKernelPersona. A persona returning false means
+            // "I don't recognise this SID" - the spec-correct reply for a
+            // physical request is NRC $11 ServiceNotSupported; functional
+            // broadcasts stay silent.
+            if (!node.Persona.Dispatch(node, usdt, ch, isFunctional, sid, NowMs, Scheduler)
+                && !isFunctional)
+            {
+                ServiceUtil.EnqueueNrc(node, ch, sid, Nrc.ServiceNotSupported);
+            }
         }
         catch (Exception ex)
         {
@@ -411,81 +436,6 @@ public sealed class VirtualBus
                         $"[bus] failed to send fallback NRC for SID 0x{sid:X2}: {ex2.GetType().Name}: {ex2.Message}");
                 }
             }
-        }
-    }
-
-    private void DispatchUsdtBody(EcuNode node, ReadOnlySpan<byte> usdt, ChannelSession ch, bool isFunctional, byte sid)
-    {
-        switch (sid)
-        {
-            case Service.ReadDataByIdentifier:
-                if (isFunctional) return;
-                Service1AHandler.Handle(node, usdt, ch);
-                break;
-            case Service.ReadDataByParameterIdentifier:
-                if (isFunctional) return;
-                Service22Handler.Handle(node, usdt, ch, NowMs);
-                break;
-            case Service.DefinePidByAddress:
-                if (isFunctional) return;
-                if (Service2DHandler.Handle(node, usdt, ch))
-                    ActivateP3C(node, ch);
-                break;
-            case Service.DynamicallyDefineMessage:
-                if (isFunctional) return;
-                if (Service2CHandler.Handle(node, usdt, ch))
-                    ActivateP3C(node, ch);
-                break;
-            case Service.ReadDataByPacketIdentifier:
-                if (isFunctional) return;
-                if (ServiceAAHandler.Handle(node, usdt, ch, Scheduler))
-                    ActivateP3C(node, ch);
-                break;
-            case Service.TesterPresent:
-                Service3EHandler.Handle(node, usdt, ch, isFunctional);
-                break;
-            case Service.ReturnToNormalMode:
-                if (isFunctional) { EcuExitLogic.Run(node, Scheduler, null); return; }
-                Service20Handler.Handle(node, usdt, ch, Scheduler);
-                break;
-            case Service.InitiateDiagnosticOperation:
-                if (isFunctional) return;
-                if (Service10Handler.Handle(node, usdt, ch))
-                    ActivateP3C(node, ch);
-                break;
-            case Service.SecurityAccess:
-                if (isFunctional) return;
-                if (Service27Handler.Handle(node, usdt, ch, (long)NowMs))
-                    ActivateP3C(node, ch);
-                break;
-            case Service.DisableNormalCommunication:
-                // §8.9: typically functional broadcast at $101 / $FE; both
-                // physical and functional are accepted per §8.9.5.1.
-                if (Service28Handler.Handle(node, usdt, ch, isFunctional))
-                    ActivateP3C(node, ch);
-                break;
-            case Service.ReportProgrammedState:
-                if (isFunctional) return;
-                if (ServiceA2Handler.Handle(node, usdt, ch))
-                    ActivateP3C(node, ch);
-                break;
-            case Service.ProgrammingMode:
-                if (isFunctional) return;
-                if (ServiceA5Handler.Handle(node, usdt, ch))
-                    ActivateP3C(node, ch);
-                break;
-            case Service.RequestDownload:
-                if (isFunctional) return;
-                if (Service34Handler.Handle(node, usdt, ch))
-                    ActivateP3C(node, ch);
-                break;
-            case Service.TransferData:
-                if (isFunctional) return;
-                if (Service36Handler.Handle(node, usdt, ch))
-                    ActivateP3C(node, ch);
-                break;
-            default:
-                break;
         }
     }
 }

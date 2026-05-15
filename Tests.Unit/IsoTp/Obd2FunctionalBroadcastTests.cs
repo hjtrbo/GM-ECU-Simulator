@@ -116,4 +116,23 @@ public class Obd2FunctionalBroadcastTests
 
         Assert.True(node.State.NormalCommunicationDisabled);
     }
+
+    [Fact]
+    public void Gmlan_101_FE_InitiateDiagnosticOperation_responds_positively()
+    {
+        // GMW3110-2010 §8.2.5.1 (p. 79): the canonical disableAllDTCs flow is
+        // T(USDT-SF) $101 $FE $02 $10 $02 -> N(USDT-SF) $641 $01 $50 (one row
+        // per responding node). 6Speed.T43 kernelprep() relies on this and
+        // prints "101 10 02 command failed" when no functional reply arrives
+        // within 100 ms.
+        var (bus, node, ch) = Wire();
+
+        bus.DispatchHostTx(BuildCanFrame(GmlanCanId.AllNodesRequest,
+            GmlanCanId.AllNodesExtAddr, 0x02, 0x10, 0x02, 0, 0, 0, 0), ch);
+
+        Assert.Equal(new byte[] { Service.Positive(Service.InitiateDiagnosticOperation), 0x02 },
+                     TestFrame.DequeueSingleFrameUsdt(ch));
+        // Sub-$02 also flips the T43-style programming-shortcut flag.
+        Assert.True(node.State.SecurityProgrammingShortcutActive);
+    }
 }

@@ -15,6 +15,38 @@ namespace Common.Protocol;
 public static class Gmw3110Annotator
 {
     /// <summary>
+    /// Lightweight classifier: true iff the frame is a TesterPresent
+    /// request ($3E) or its positive response ($7E), carried in an ISO-TP
+    /// Single Frame. FF/CF/FC and negative responses return false.
+    /// Strips the GMLAN $101 extended-addressing byte before inspecting
+    /// the PCI nibble so functional broadcasts are still recognised.
+    /// Used by VirtualBus to flag the frame so the UI log pane can drop
+    /// it without affecting the file-log capture.
+    /// </summary>
+    public static bool IsTesterPresent(uint canId, ReadOnlySpan<byte> payload)
+    {
+        if (payload.Length == 0) return false;
+
+        int offset = 0;
+        if (canId == GmlanCanId.AllNodesRequest)
+        {
+            byte ext = payload[0];
+            if (ext != GmlanCanId.AllNodesExtAddr && ext != GmlanCanId.GatewayExtAddr)
+                return false;
+            offset = 1;
+        }
+
+        if (payload.Length <= offset) return false;
+        byte pci = payload[offset];
+        if ((pci & 0xF0) != 0x00) return false;
+        int len = pci & 0x0F;
+        if (len < 1 || payload.Length < offset + 1 + len) return false;
+        byte sid = payload[offset + 1];
+        return sid == Service.TesterPresent
+            || sid == (byte)(Service.TesterPresent + 0x40);
+    }
+
+    /// <summary>
     /// Returns a short human-readable tag for the frame, or null if nothing
     /// useful can be said. Payload is the CAN data bytes only (no ID).
     /// </summary>
@@ -145,6 +177,15 @@ public static class Gmw3110Annotator
                     return $"{head} size={size}";
                 }
                 return head;
+            case Iso14229.Service.RoutineControl:
+                // Request: [$31][sub][routineId hi][routineId lo][optionRecord...]
+                // Positive: [$71][sub][routineId hi][routineId lo][statusRecord...]
+                if (usdt.Length >= 4)
+                {
+                    ushort routineId = (ushort)((usdt[2] << 8) | usdt[3]);
+                    return $"{head} {RoutineControlSub(usdt[1])} {RoutineIdName(routineId)}";
+                }
+                return head;
             case Service.TransferData:
                 if (!isPositive && usdt.Length >= 2)
                 {
@@ -187,7 +228,29 @@ public static class Gmw3110Annotator
         Service.ReportProgrammedState             => "ReportProgrammedState",
         Service.ProgrammingMode                   => "ProgrammingMode",
         Service.ReadDataByPacketIdentifier        => "ReadDataByPacketID",
+        // Foreign SIDs we still want to recognise in the bus log even though
+        // GMW3110-2010 does not define them. Testers sometimes probe with UDS
+        // services after a $36 DownloadAndExecute when the loaded kernel may
+        // speak a different protocol; tagging them helps explain the NRC $11
+        // the dispatcher sends back.
+        0x11                                      => "ECUReset (UDS)",
+        Iso14229.Service.RoutineControl           => "RoutineControl (UDS)",
         _ => null,
+    };
+
+    private static string RoutineControlSub(byte b) => b switch
+    {
+        0x01 => "Start",
+        0x02 => "Stop",
+        0x03 => "Results",
+        _    => $"sub=${b:X2}",
+    };
+
+    private static string RoutineIdName(ushort id) => id switch
+    {
+        0xFF00 => "EraseMemoryByAddress",
+        0x0401 => "CheckMemoryByAddress",
+        _      => $"id=${id:X4}",
     };
 
     private static string SessionSub(byte b) => b switch

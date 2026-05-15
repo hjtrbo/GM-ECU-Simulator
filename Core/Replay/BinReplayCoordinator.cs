@@ -6,12 +6,12 @@ namespace Core.Replay;
 // Owns an IBinSource for the lifetime of a "loaded bin" session and tracks
 // the playback state machine: NoBin -> Armed (after Load) -> Running (after
 // the first $22/$AA from a connected J2534 host triggers MaybeStart) ->
-// Stopped (host disconnect via VirtualBus.IdleReset, or all-nodes P3C
-// timeout via TesterPresentTicker calling MaybeStop).
+// Stopped (host disconnect via VirtualBus.HostDisconnected or .IdleReset,
+// or all-nodes P3C timeout via TesterPresentTicker calling MaybeStop).
 //
 // Thread safety: Sample() runs on the DPID scheduler thread, the IPC pipe
 // thread, and the WPF UI thread simultaneously. Hot path uses Volatile.Read
-// only — no locks. Lifecycle writes (Load/Unload/MaybeStart/MaybeStop) take
+// only - no locks. Lifecycle writes (Load/Unload/MaybeStart/MaybeStop) take
 // a private gate, but Sample() never does. The two state latches (startMs
 // and stoppedAtMs) are mutated only via Interlocked.CompareExchange, so two
 // concurrent first-$22 requests can race harmlessly: exactly one CAS wins.
@@ -39,16 +39,24 @@ public sealed class BinReplayCoordinator : IDisposable
 
     public event Action<BinReplayState>? StateChanged;
 
-    /// <summary>Optional bus reference; coordinator subscribes to bus.IdleReset on
-    /// construction so a host disconnect transitions the state machine to
-    /// Stopped automatically.</summary>
+    /// <summary>Optional bus reference; coordinator subscribes to both
+    /// bus.HostDisconnected (pipe drop / clean PassThruClose - the primary
+    /// signal) and bus.IdleReset (only fired now by an explicit
+    /// IdleBusSupervisor.DoReset; the time-based supervisor was stubbed
+    /// 2026-05-15) so any flavour of host-vanish transitions the state
+    /// machine to Stopped automatically. MaybeStop is idempotent so a
+    /// double-fire is harmless.</summary>
     public BinReplayCoordinator(VirtualBus? bus = null)
     {
-        if (bus != null) bus.IdleReset += OnIdleReset;
+        if (bus != null)
+        {
+            bus.HostDisconnected += OnHostSessionEnded;
+            bus.IdleReset        += OnHostSessionEnded;
+        }
     }
 
-    private void OnIdleReset()
-        => MaybeStop(double.NaN);   // stop reason: host disconnect — bus time irrelevant, freeze "now"
+    private void OnHostSessionEnded()
+        => MaybeStop(double.NaN);   // stop reason: host disconnect - bus time irrelevant, freeze "now"
 
     public BinReplayState State
     {
@@ -105,7 +113,7 @@ public sealed class BinReplayCoordinator : IDisposable
             old = source;
             source = newSource;
             loadedFilePath = path;
-            // Reset latches via direct write — under the gate, no readers
+            // Reset latches via direct write - under the gate, no readers
             // need a fence (Volatile.Read picks up the new value next call).
             Volatile.Write(ref startMsLatch, -1L);
             Volatile.Write(ref stoppedAtMsLatch, -1L);
@@ -163,10 +171,10 @@ public sealed class BinReplayCoordinator : IDisposable
 
     /// <summary>
     /// Idempotent first-write of the stop latch. Called by both stop paths
-    /// (VirtualBus.IdleReset and TesterPresentTicker's all-nodes-idle check).
-    /// busNowMs may be NaN (host-disconnect path doesn't have a meaningful
-    /// time; freeze at the current playback offset using the bus clock at
-    /// the time of the first subsequent Sample).
+    /// (VirtualBus.HostDisconnected / IdleReset, and TesterPresentTicker's
+    /// all-nodes-idle check). busNowMs may be NaN (host-disconnect path
+    /// doesn't have a meaningful time; freeze at the current playback offset
+    /// using the bus clock at the time of the first subsequent Sample).
     /// </summary>
     public void MaybeStop(double busNowMs)
     {
@@ -200,7 +208,7 @@ public sealed class BinReplayCoordinator : IDisposable
         long timeRefMs;
         if (stoppedAt == long.MaxValue)
         {
-            // IdleReset path - latch the freeze offset on the first sample
+            // Host-disconnect path - latch the freeze offset on the first sample
             // after stop. CompareExchange so concurrent first-samples agree.
             long now = (long)busNowMs;
             Interlocked.CompareExchange(ref stoppedAtMsLatch, now, long.MaxValue);

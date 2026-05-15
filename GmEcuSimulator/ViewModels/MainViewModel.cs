@@ -22,7 +22,14 @@ public sealed class MainViewModel : NotifyPropertyChangedBase
     private readonly NamedPipeServer pipeServer;
     public ObservableCollection<EcuViewModel> Ecus { get; } = new();
     private EcuViewModel? selectedEcu;
+    private EcuViewModel? setupSelectedEcu;
     private string? currentFilePath;
+
+    // Holds the currently open setup window so a second "Open setup window..."
+    // click brings the existing one back to the front instead of stacking
+    // duplicates. Nulled when the user closes the window so the next click
+    // creates a fresh one.
+    private Window? setupWindow;
     private string statusText = "Ready";
     private bool j2534Busy;
 
@@ -48,8 +55,12 @@ public sealed class MainViewModel : NotifyPropertyChangedBase
     public RelayCommand ExportCommand { get; }
     public RelayCommand AddEcuCommand { get; }
     public RelayCommand RemoveEcuCommand { get; }
+    public RelayCommand LoadEcuFromBinCommand { get; }
     public RelayCommand AddPidCommand { get; }
     public RelayCommand RemovePidCommand { get; }
+    public RelayCommand AddSetupPidCommand { get; }
+    public RelayCommand RemoveSetupPidCommand { get; }
+    public RelayCommand OpenSetupWindowCommand { get; }
     public RelayCommand ResetSecurityCommand { get; }
     public RelayCommand RegisterJ2534Command { get; }
     public RelayCommand UnregisterJ2534Command { get; }
@@ -69,14 +80,18 @@ public sealed class MainViewModel : NotifyPropertyChangedBase
         // MainWindow + bus.AnnotateFrames so behaviour matches the persisted
         // choices before any frame flows.
         appSettings = AppSettings.Load();
-        logIncludeJ2534Calls     = appSettings.LogIncludeJ2534Calls;
-        logIncludeBusTraffic     = appSettings.LogIncludeBusTraffic;
-        logAppendDescriptionTag  = appSettings.LogAppendDescriptionTag;
-        logCollapseBulkTransfers = appSettings.LogCollapseBulkTransfers;
+        logIncludeJ2534Calls         = appSettings.LogIncludeJ2534Calls;
+        logIncludeBusTraffic         = appSettings.LogIncludeBusTraffic;
+        logAppendDescriptionTag      = appSettings.LogAppendDescriptionTag;
+        logCollapseBulkTransfers     = appSettings.LogCollapseBulkTransfers;
+        allowPeriodicTesterPresent   = appSettings.AllowPeriodicTesterPresent;
+        suppressTesterPresentInWindow = appSettings.LogSuppressTesterPresentInWindow;
         MainWindow.SetIncludeJ2534FileLog(logIncludeJ2534Calls);
         MainWindow.SetIncludeBusFileLog(logIncludeBusTraffic);
-        bus.AnnotateFrames        = logAppendDescriptionTag;
-        bus.CollapseBulkTransfers = logCollapseBulkTransfers;
+        MainWindow.SetSuppressTesterPresentInWindow(suppressTesterPresentInWindow);
+        bus.AnnotateFrames               = logAppendDescriptionTag;
+        bus.CollapseBulkTransfers        = logCollapseBulkTransfers;
+        bus.AllowPeriodicTesterPresent   = allowPeriodicTesterPresent;
         // IsFileLoggingEnabled goes through the public setter so the sink
         // actually starts if the user had the toggle on at last shutdown.
         IsFileLoggingEnabled = appSettings.LogToFile;
@@ -89,8 +104,12 @@ public sealed class MainViewModel : NotifyPropertyChangedBase
         ExportCommand                = new RelayCommand(Export);
         AddEcuCommand                = new RelayCommand(AddEcu);
         RemoveEcuCommand             = new RelayCommand(RemoveEcu, () => SelectedEcu != null);
+        LoadEcuFromBinCommand        = new RelayCommand(LoadEcuFromBin, () => SelectedEcu != null);
         AddPidCommand                = new RelayCommand(AddPid,    () => SelectedEcu != null);
         RemovePidCommand             = new RelayCommand(RemovePid, () => SelectedEcu?.SelectedPid != null);
+        AddSetupPidCommand           = new RelayCommand(AddSetupPid,    () => SetupSelectedEcu != null);
+        RemoveSetupPidCommand        = new RelayCommand(RemoveSetupPid, () => SetupSelectedEcu?.SelectedPid != null);
+        OpenSetupWindowCommand       = new RelayCommand(OpenSetupWindow);
         ResetSecurityCommand         = new RelayCommand(ResetSecurity, () => SelectedEcu != null);
         RegisterJ2534Command         = new RelayCommand(RegisterJ2534,         () => !j2534Busy);
         UnregisterJ2534Command       = new RelayCommand(UnregisterJ2534,       () => !j2534Busy);
@@ -109,6 +128,16 @@ public sealed class MainViewModel : NotifyPropertyChangedBase
         }
     }
 
+    // Independent ECU selection for the setup window's PID/waveform panes.
+    // The main window's Selected ECU inspector continues to track SelectedEcu;
+    // the setup window's ECU list drives SetupSelectedEcu instead so picking
+    // a different ECU there doesn't disturb the inspector the user is reading.
+    public EcuViewModel? SetupSelectedEcu
+    {
+        get => setupSelectedEcu;
+        set => SetField(ref setupSelectedEcu, value);
+    }
+
     // Two-way bound by both Log-traffic checkboxes (Bus log tab + Download tab)
     // so toggling either pane stays in sync. Setter forwards to the static
     // gate inside MainWindow that AppendLog / AppendBusFrame consult on every
@@ -124,13 +153,14 @@ public sealed class MainViewModel : NotifyPropertyChangedBase
         }
     }
 
-    // Independent file-logging toggle. When on, MainWindow.FileLog opens a
-    // fresh bus_yyyyMMdd_HHmmss.csv under %LOCALAPPDATA%\GmEcuSimulator\logs
-    // and a dedicated background thread streams every bus + diagnostic line
-    // there - independent of the textbox gate above. Use this for high-volume
-    // downloads / sustained DPID streaming where the textbox can't keep up.
+    // Independent file-logging toggle. This is the persisted PREFERENCE -
+    // the sink itself only runs between PassThruOpen and PassThruClose (see
+    // MainWindow.OnHostSessionStarted / OnHostSessionEnded). Toggling on
+    // with no host present arms the preference (status reads "Armed");
+    // toggling on mid-session opens a fresh bus_yyyyMMdd_HHmmss.csv now;
+    // toggling off mid-session closes the current capture.
     //
-    // Coupled to the three sub-option toggles so the file log can't be on
+    // Coupled to the three sub-option toggles so the file log can't be armed
     // with nothing selected to log: turning it ON with all three off
     // auto-selects "Include bus traffic"; turning the last sub-option OFF
     // auto-turns this off.
@@ -141,16 +171,13 @@ public sealed class MainViewModel : NotifyPropertyChangedBase
         set
         {
             // Turning ON with nothing selected to log - auto-enable bus traffic
-            // so the file isn't empty. Has to happen before the sink starts so
-            // the gate is in place by the time the first frame lands.
+            // so a future capture isn't empty. Has to happen before the sink
+            // starts so the gate is in place by the time the first frame lands.
             if (value && !logIncludeJ2534Calls && !logIncludeBusTraffic && !logAppendDescriptionTag)
                 LogIncludeBusTraffic = true;
 
             if (!SetField(ref isFileLoggingEnabled, value)) return;
-            if (value)
-                MainWindow.FileLog.Start(Core.Bus.FileLogSink.DefaultPath());
-            else
-                MainWindow.FileLog.Stop();
+            MainWindow.OnFileLoggingPreferenceChanged(value);
             OnPropertyChanged(nameof(FileLogStatus));
             PersistAppSettings();
         }
@@ -221,6 +248,40 @@ public sealed class MainViewModel : NotifyPropertyChangedBase
         }
     }
 
+    // "Hide $3E" toolbar checkbox (next to Maximize on the bus log tab).
+    // UI-only filter that drops TesterPresent traffic from the textboxes.
+    // The file-log capture is intentionally untouched - this is a live-view
+    // readability tweak, not a stream gate.
+    private bool suppressTesterPresentInWindow;
+    public bool SuppressTesterPresentInWindow
+    {
+        get => suppressTesterPresentInWindow;
+        set
+        {
+            if (!SetField(ref suppressTesterPresentInWindow, value)) return;
+            MainWindow.SetSuppressTesterPresentInWindow(value);
+            PersistAppSettings();
+        }
+    }
+
+    // ECU > "Drive HW $3E keepalives" menu item. When on, RequestDispatcher
+    // creates a Timer for every PassThruStartPeriodicMsg registration so the
+    // simulator ticks $3E on the host's behalf. Off accepts the registration
+    // but skips the tick - delegating hosts have to maintain P3C themselves.
+    // Stored in AppSettings (not SimulatorConfig) because it's a simulator-
+    // wide helper preference, not part of any one ECU profile.
+    private bool allowPeriodicTesterPresent;
+    public bool AllowPeriodicTesterPresent
+    {
+        get => allowPeriodicTesterPresent;
+        set
+        {
+            if (!SetField(ref allowPeriodicTesterPresent, value)) return;
+            bus.AllowPeriodicTesterPresent = value;
+            PersistAppSettings();
+        }
+    }
+
     // Called from each sub-option setter after the change lands. If the user
     // has just turned off the LAST of the three sub-options while file
     // logging is on, kill the master toggle - an empty log file is just
@@ -235,11 +296,13 @@ public sealed class MainViewModel : NotifyPropertyChangedBase
     private void PersistAppSettings()
     {
         if (appSettings == null) return;
-        appSettings.LogToFile                = isFileLoggingEnabled;
-        appSettings.LogIncludeJ2534Calls     = logIncludeJ2534Calls;
-        appSettings.LogIncludeBusTraffic     = logIncludeBusTraffic;
-        appSettings.LogAppendDescriptionTag  = logAppendDescriptionTag;
-        appSettings.LogCollapseBulkTransfers = logCollapseBulkTransfers;
+        appSettings.LogToFile                  = isFileLoggingEnabled;
+        appSettings.LogIncludeJ2534Calls       = logIncludeJ2534Calls;
+        appSettings.LogIncludeBusTraffic       = logIncludeBusTraffic;
+        appSettings.LogAppendDescriptionTag    = logAppendDescriptionTag;
+        appSettings.LogCollapseBulkTransfers   = logCollapseBulkTransfers;
+        appSettings.AllowPeriodicTesterPresent = allowPeriodicTesterPresent;
+        appSettings.LogSuppressTesterPresentInWindow = suppressTesterPresentInWindow;
         appSettings.Save();
     }
 
@@ -249,9 +312,13 @@ public sealed class MainViewModel : NotifyPropertyChangedBase
         get
         {
             var sink = MainWindow.FileLog;
-            if (!sink.IsRunning) return "Not logging";
-            double kb = sink.BytesWritten / 1024.0;
-            return $"{System.IO.Path.GetFileName(sink.CurrentPath)} - {sink.LinesWritten:N0} lines, {kb:N1} KB";
+            if (sink.IsRunning)
+            {
+                double kb = sink.BytesWritten / 1024.0;
+                return $"{System.IO.Path.GetFileName(sink.CurrentPath)} - {sink.LinesWritten:N0} lines, {kb:N1} KB";
+            }
+            if (isFileLoggingEnabled) return "Armed - waiting for host";
+            return "Not logging";
         }
     }
 
@@ -293,6 +360,7 @@ public sealed class MainViewModel : NotifyPropertyChangedBase
         Ecus.Clear();
         foreach (var node in bus.Nodes) Ecus.Add(new EcuViewModel(node));
         SelectedEcu = Ecus.FirstOrDefault();
+        SetupSelectedEcu = Ecus.FirstOrDefault();
     }
 
     private void New()
@@ -410,9 +478,79 @@ public sealed class MainViewModel : NotifyPropertyChangedBase
         StatusText = $"Removed {name}";
     }
 
+    // Scaffold for "ECU > Load from BIN...". Surfaces an OpenFileDialog
+    // filtered to .bin and hands the path off to the (future) extractor.
+    // The extractor itself is a TODO: it needs to locate and decode the
+    // identity DIDs already exposed on EcuViewModel:
+    //   $90 VIN                         (17 ASCII bytes)
+    //   $92 Supplier HW number          (ASCII)
+    //   $98 Supplier HW version         (ASCII)
+    //   $C1 End-model part number       (ASCII)
+    //   $C2 Base-model part number      (ASCII)
+    //   $CC ECU diagnostic address      (one hex byte)
+    // Each one round-trips through EcuNode.SetIdentifier(did, bytes), so
+    // once the bin parser knows where to look the wiring at this end is
+    // a per-DID SetIdentifier call followed by OnPropertyChanged() raises
+    // for the bound fields. Until that lands, the picker just reports the
+    // file size in the status bar so the menu wiring is exercisable.
+    private void LoadEcuFromBin()
+    {
+        if (SelectedEcu == null) return;
+        var dlg = new OpenFileDialog
+        {
+            Title = $"Load BIN into {SelectedEcu.Name}",
+            Filter = "ECU flash dump (*.bin)|*.bin|All files|*.*",
+            CheckFileExists = true,
+        };
+        if (dlg.ShowDialog() != true) return;
+
+        try
+        {
+            var info = new FileInfo(dlg.FileName);
+
+            // TODO: replace with the real DID extractor. The shape it needs:
+            //   var dids = BinDidExtractor.Extract(dlg.FileName);
+            //   foreach (var (id, bytes) in dids)
+            //       SelectedEcu.Model.SetIdentifier(id, bytes);
+            //   then raise PropertyChanged for Vin/SupplierHardwareNumber/etc.
+            // so the inspector textboxes refresh.
+
+            StatusText =
+                $"BIN picker scaffold: would extract DIDs from {info.Name} ({info.Length:N0} bytes) into {SelectedEcu.Name}";
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show(ex.Message, "Load BIN", MessageBoxButton.OK, MessageBoxImage.Error);
+        }
+    }
+
     private void AddPid() => SelectedEcu?.AddPid();
     private void RemovePid() => SelectedEcu?.RemoveSelectedPid();
+    private void AddSetupPid() => SetupSelectedEcu?.AddPid();
+    private void RemoveSetupPid() => SetupSelectedEcu?.RemoveSelectedPid();
     private void ResetSecurity() => SelectedEcu?.ResetSecurityState();
+
+    // Opens (or re-focuses) the modeless setup window. Modeless so the user
+    // can keep the main window's Selected ECU inspector visible while editing
+    // PIDs / waveforms next to it. A single-instance check brings the existing
+    // window forward instead of stacking copies.
+    private void OpenSetupWindow()
+    {
+        if (setupWindow != null)
+        {
+            if (setupWindow.WindowState == WindowState.Minimized)
+                setupWindow.WindowState = WindowState.Normal;
+            setupWindow.Activate();
+            return;
+        }
+        setupWindow = new Views.SetupWindow
+        {
+            DataContext = this,
+            Owner = Application.Current?.MainWindow,
+        };
+        setupWindow.Closed += (_, _) => setupWindow = null;
+        setupWindow.Show();
+    }
 
     // ---------------- J2534 registry buttons ----------------
     //

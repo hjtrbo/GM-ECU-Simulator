@@ -59,7 +59,7 @@ public sealed class CaptureBootloaderViewModel : NotifyPropertyChangedBase
     private void OnCaptureWritten(string path)
     {
         // Marshal to the UI thread - the event fires from whatever thread
-        // EcuExitLogic ran on (TesterPresentTicker / IdleBusSupervisor / IPC).
+        // EcuExitLogic ran on (TesterPresentTicker P3C timeout / IPC).
         Application.Current?.Dispatcher.BeginInvoke(new Action(() =>
         {
             // Refresh wholesale - new file might also bump the timestamps of

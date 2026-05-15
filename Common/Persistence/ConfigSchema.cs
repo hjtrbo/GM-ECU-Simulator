@@ -9,7 +9,7 @@ namespace Common.Persistence;
 
 // JSON-serialised configuration. Hex-string CAN IDs follow the
 // Tester-Emu (https://github.com/jakka351/Tester-Emu) convention so a
-// human can hand-edit. PidDto and WaveformDto stay flat — easier to
+// human can hand-edit. PidDto and WaveformDto stay flat - easier to
 // diff in source control than a deeply-nested structure.
 //
 // Schema version is incremented when a change is non-additive; loaders
@@ -39,9 +39,16 @@ namespace Common.Persistence;
 // startingAddress field, 2..4). v1-v6 files load with the field absent ->
 // the loader defaults it to 4 to match GMW3110-2010-era ECUs like T43;
 // older 3-byte ECUs need an explicit override in the saved config.
+//
+// v8 dropped per-ECU AllowPeriodicTesterPresent. The setting hoisted to a
+// simulator-wide preference (AppSettings.AllowPeriodicTesterPresent, exposed
+// through the ECU menu). v1-v7 configs still load: STJ silently ignores the
+// now-unknown property. A per-ECU `false` in an old config is NOT migrated
+// into the global - users who had it disabled on any ECU need to toggle the
+// menu item off after upgrading.
 public sealed class SimulatorConfig
 {
-    public const int CurrentVersion = 7;
+    public const int CurrentVersion = 8;
     public const int MinSupportedVersion = 1;
 
     public int Version { get; set; } = CurrentVersion;
@@ -80,10 +87,6 @@ public sealed class EcuDto
 
     [JsonConverter(typeof(HexUShortConverter))]
     public required ushort UudtResponseCanId { get; set; }
-
-    // When true the simulator drives $3E keepalives via PassThruStartPeriodicMsg
-    // registrations. The host delegates and will not send $3E any other way.
-    public bool AllowPeriodicTesterPresent { get; set; } = true;
 
     // Per-ECU glitch-injection settings. Always serialised; defaults to
     // disabled with all probabilities at 0 so saved configs are unaffected
@@ -143,7 +146,7 @@ public sealed class IdentifierDto
     public required byte Did { get; set; }
 
     // Optional human-readable label ("VIN", "Calibration ID"). Not used by
-    // the protocol — it just makes the JSON self-documenting.
+    // the protocol - it just makes the JSON self-documenting.
     public string? Name { get; set; }
 
     /// <summary>Printable-ASCII shorthand. Mutually exclusive with Hex.</summary>

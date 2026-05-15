@@ -5,10 +5,18 @@ using Core.Transport;
 
 namespace Core.Services;
 
-// $10 InitiateDiagnosticOperation. GMW3110-2010 §8.4 lists sub $02
-// disableAllDTCs, $03 enableDTCsDuringDeviceControl, $04 wakeUpLinks.
-// We don't model DTC behaviour, so for those subs we just echo and
-// activate P3C.
+// $10 InitiateDiagnosticOperation. GMW3110-2010 §8.2 defines exactly three
+// sub-function values: $02 disableAllDTCs, $03 enableDTCsDuringDevCntrl,
+// $04 wakeUpLinks. Any other sub gets NRC $12 per §8.2.6.2 OTHERWISE branch
+// and the §8.2.4 Table 51 SFNS-IF row "ECU does not support the sub-function
+// parameter value". We don't model DTC behaviour, so for the three valid
+// subs we just echo $50 sub and activate P3C.
+//
+// Addressing: §8.2.5.1 (p. 79) shows the canonical disableAllDTCs flow
+// as a functional broadcast on $101/$FE with each node responding $50
+// on its USDT response ID. The §8.2.6.2 pseudo-code unconditionally
+// sends $50 on valid_request=YES, with no physical/functional branch.
+// VirtualBus dispatches both addressings into this handler.
 //
 // $10 $02 is also the UDS DiagnosticSessionControl "programmingSession"
 // entry, and real GM ECUs (T43 TCM in particular) accept it as a
@@ -32,6 +40,11 @@ public static class Service10Handler
             return false;
         }
         byte sub = usdtPayload[1];
+        if (sub != 0x02 && sub != 0x03 && sub != 0x04)
+        {
+            ServiceUtil.EnqueueNrc(node, ch, Service.InitiateDiagnosticOperation, Nrc.SubFunctionNotSupportedInvalidFormat);
+            return false;
+        }
 
         if (sub == 0x02)
         {

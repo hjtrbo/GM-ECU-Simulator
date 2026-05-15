@@ -27,9 +27,11 @@ public sealed class IpcSessionState : IDisposable
     public IpcSessionState(VirtualBus bus)
     {
         Bus = bus;
-        // When the bus supervisor flags an idle reset, cancel every periodic
-        // timer this session owns. The host is gone; the synthetic frames the
-        // timers would otherwise emit have nowhere to go.
+        // Subscription kept for the explicit force-idle path
+        // (IdleBusSupervisor.DoReset). The time-based supervisor that used
+        // to fire this on a schedule was stubbed 2026-05-15 - pipe drop
+        // (Dispose, below) is now the authoritative "host is gone" signal
+        // and runs the same periodic-timer teardown.
         Bus.IdleReset += OnBusIdleReset;
     }
 
@@ -40,12 +42,12 @@ public sealed class IpcSessionState : IDisposable
         foreach (var kv in periodicTimers.ToArray())
             RemovePeriodicTimer(kv.Key);
 
-        // Drain every channel's RxQueue. Anything still sitting unread after
-        // 10s of host silence is stale - most commonly the unsolicited $60
-        // emitted by the regular P3C ticker just before the host vanished.
-        // Leaving these in place causes them to be returned FIFO to the next
-        // ReadMsgs call when a new session starts, which the host interprets
-        // as "session terminated" and aborts the new session start.
+        // Drain every channel's RxQueue. Anything still sitting unread is
+        // stale - most commonly the unsolicited $60 emitted by the per-ECU
+        // P3C ticker just before the host vanished. Leaving these in place
+        // causes them to be returned FIFO to the next ReadMsgs call when a
+        // new session starts, which the host interprets as "session
+        // terminated" and aborts the new session start.
         int drainedTotal = 0;
         foreach (var ch in channels.Values)
         {

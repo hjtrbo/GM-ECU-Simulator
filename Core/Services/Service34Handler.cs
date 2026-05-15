@@ -28,10 +28,15 @@ namespace Core.Services;
 // dozens of $34s per programming session.
 //
 // Spec mode: each $34 reallocates the sink buffer at the new declared size.
-// Capture mode: the buffer PERSISTS across $34s in the same session - all
-// segments accumulate into one buffer, and EcuExitLogic writes ONE .bin
-// file when the session ends ($20 or P3C timeout). Otherwise a calibration-
-// only write would produce 60+ tiny files instead of one consolidated image.
+// Capture mode: each $34 marks a NEW logical transfer (per GMW3110 - one
+// $34 brackets one logical "download"). On the first $34 of a session we
+// just allocate a buffer. On every subsequent $34 we flush the current
+// buffer to a .bin file (via BootloaderCaptureWriter), bump the session
+// sequence counter, then allocate a fresh buffer for the new transfer.
+// EcuExitLogic flushes the FINAL bin at session end ($20 or P3C timeout).
+// Result: Pushspskernel ($34/$36, $34/$36) produces two .bin files, one
+// per kernel piece; Sendbin (one $34, many $36s) produces one .bin per
+// $34-bracketed segment - matching host intent in both cases.
 //
 // We accept dataFormatIdentifier $00 only. Encryption / compression are vendor-
 // specific and out of scope for the simulator; a tester that wants to round-trip
@@ -112,30 +117,25 @@ public static class Service34Handler
         bool hasPriorData = node.State.DownloadBuffer is not null
                             && node.State.DownloadBytesReceived > 0;
 
-        if (captureMode && hasPriorData)
-        {
-            // Subsequent $34 in a capture-mode session: keep the buffer and
-            // base address from the previous segment so all writes accumulate
-            // into one image. DownloadDeclaredSize is updated for any spec-
-            // facing reader, but Service36Handler ignores it in capture mode
-            // (it grows the buffer as needed up to MaxCaptureBufferBytes).
-            node.State.DownloadDeclaredSize = declaredSize;
-            node.State.DownloadActive = true;
-        }
-        else
-        {
-            // First $34 of a session (or spec mode): allocate a fresh sink
-            // buffer. The address-byte-count for subsequent $36s is fixed
-            // once $34 has been accepted; the spec (§8.13.2 Note 1) says all
-            // $36 to the same node use the same number of address bytes, so
-            // we freeze it here. Default 3 bytes (covers a 16 MiB address
-            // space).
-            node.State.DownloadDeclaredSize = declaredSize;
-            node.State.DownloadBuffer = new byte[declaredSize];
-            node.State.DownloadBytesReceived = 0;
-            node.State.DownloadCaptureBaseAddress = null;
-            node.State.DownloadActive = true;
-        }
+        // Per-$36 capture mode: no flush-on-$34 needed. Each $36 writes its
+        // own bin immediately as it lands, so $34 is purely a precondition
+        // gate. Session timestamp is pinned by BootloaderCaptureWriter on
+        // the first $36's WriteEachTransferData call.
+        _ = captureMode;
+        _ = hasPriorData;
+
+        // Allocate a fresh sink buffer for this $34. Same path is taken on
+        // the very first $34 of a session (no prior data), on every rotate
+        // in capture mode, and on every $34 in spec mode. The address-byte
+        // count for subsequent $36s is fixed once $34 has been accepted;
+        // the spec (§8.13.2 Note 1) says all $36 to the same node use the
+        // same number of address bytes.
+        node.State.DownloadDeclaredSize = declaredSize;
+        node.State.DownloadBuffer = new byte[declaredSize];
+        node.State.DownloadBytesReceived = 0;
+        node.State.DownloadCaptureBaseAddress = null;
+        node.State.DownloadCaptureHighWaterMark = 0;
+        node.State.DownloadActive = true;
 
         node.State.Fragmenter.EnqueueResponse(ch, node.UsdtResponseCanId,
             [Service.Positive(Service.RequestDownload)]);

@@ -48,7 +48,7 @@ public partial class App : Application
         // by the "Log frame traffic" checkbox so DPID Fast-band streams don't
         // flood the textbox when nobody's watching. Two formats are delivered:
         // pretty (space-delimited) for the textbox, csv for the file.
-        bus.LogFrame = (pretty, csv) => GmEcuSimulator.MainWindow.AppendBusFrame(pretty, csv);
+        bus.LogFrame = (pretty, csv, isTp) => GmEcuSimulator.MainWindow.AppendBusFrame(pretty, csv, isTp);
 
         // Always-on diagnostic sink — control-plane events (periodic
         // register/unregister, etc.). Low volume; never gated.

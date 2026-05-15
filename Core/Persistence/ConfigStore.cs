@@ -44,7 +44,7 @@ public static class ConfigStore
         => ConfigSerializer.Deserialize(File.ReadAllText(path));
 
     /// <summary>
-    /// Builds a SimulatorConfig snapshot of the current bus state — for
+    /// Builds a SimulatorConfig snapshot of the current bus state - for
     /// File > Save and File > Export. When <paramref name="replay"/> is
     /// supplied and has a loaded bin (or a path the user wants auto-loaded),
     /// the BinReplay section is populated from it.
@@ -66,7 +66,6 @@ public static class ConfigStore
                 PhysicalRequestCanId = node.PhysicalRequestCanId,
                 UsdtResponseCanId = node.UsdtResponseCanId,
                 UudtResponseCanId = node.UudtResponseCanId,
-                AllowPeriodicTesterPresent = node.AllowPeriodicTesterPresent,
                 Glitch = node.Glitch,
                 SecurityModuleId = node.SecurityModule?.Id,
                 SecurityModuleConfig = node.SecurityModuleConfig,
@@ -139,7 +138,6 @@ public static class ConfigStore
             PhysicalRequestCanId = dto.PhysicalRequestCanId,
             UsdtResponseCanId = dto.UsdtResponseCanId,
             UudtResponseCanId = dto.UudtResponseCanId,
-            AllowPeriodicTesterPresent = dto.AllowPeriodicTesterPresent,
             Glitch = dto.Glitch ?? Common.Glitch.GlitchConfig.CreateDefault(),
             SecurityModuleConfig = dto.SecurityModuleConfig,
             BypassSecurity = dto.BypassSecurity,

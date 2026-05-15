@@ -33,6 +33,13 @@ public partial class MainWindow : Window
     private static volatile bool includeJ2534FileLog = true;
     private static volatile bool includeBusFileLog = true;
 
+    // UI-only filter: when on, $3E TesterPresent requests and $7E positive
+    // responses are skipped at AppendBusFrame's textbox path so the bus log
+    // textbox isn't crowded with keepalives during long sessions. The file
+    // log path runs first and is intentionally untouched - captures stay
+    // complete and exactly reflect what hit the bus.
+    private static volatile bool suppressTesterPresentInWindow;
+
     // Worker threads (IPC pipe, DPID scheduler, etc.) enqueue formatted log
     // lines here; the UI-thread logDrainTimer drains the queue at ~30 Hz,
     // batches everything per-TextBox into one AppendText call, and ScrollToEnd
@@ -56,6 +63,18 @@ public partial class MainWindow : Window
     private static readonly FileLogSink fileLog = new();
     public static FileLogSink FileLog => fileLog;
 
+    // True between OnHostSessionStarted and OnHostSessionEnded. The "Log to
+    // file" menu toggle is purely a persisted preference; whether the sink
+    // is actually running depends on this flag, so toggling on with no host
+    // present just arms the preference (status reads "Armed").
+    private static volatile bool hostSessionActive;
+    public static bool IsHostSessionActive => hostSessionActive;
+
+    // Serializes the {hostSessionActive, fileLog.IsRunning} transition so the
+    // VM setter (UI thread) and the IPC-thread host-session callbacks can't
+    // race into a double-Start or a Start-on-the-tail-of-a-Stop.
+    private static readonly object fileLogLifecycleLock = new();
+
     public MainWindow()
     {
         InitializeComponent();
@@ -69,6 +88,8 @@ public partial class MainWindow : Window
             Command = new RelayCommand(() => vm?.SaveCommand.Execute(null)) });
         InputBindings.Add(new KeyBinding { Key = Key.S, Modifiers = ModifierKeys.Control | ModifierKeys.Shift,
             Command = new RelayCommand(() => vm?.SaveAsCommand.Execute(null)) });
+        InputBindings.Add(new KeyBinding { Key = Key.P, Modifiers = ModifierKeys.Control | ModifierKeys.Shift,
+            Command = new RelayCommand(() => vm?.OpenSetupWindowCommand.Execute(null)) });
 
         // Swap the maximize / restore glyph when WindowState flips.
         StateChanged += (_, _) => UpdateMaximizeIcon();
@@ -221,12 +242,18 @@ public partial class MainWindow : Window
     //            e.g. "[chan 1] Rx 7E2 02 10 02  ; StartDiagnosticSession"
     //   csv    - comma-separated for the file; we prefix timestamp + stream tag
     //            e.g. "[06:12:34.567],[CAN],[chan 1],Rx,7E2 02 10 02,..."
-    public static void AppendBusFrame(string pretty, string csv)
+    public static void AppendBusFrame(string pretty, string csv, bool isTesterPresent)
     {
+        // File-log path is unconditional - the suppress toggle is a UI-only
+        // filter so disk captures stay complete and reviewable.
         if (fileLog.IsRunning && includeBusFileLog)
             fileLog.Write($"[{DateTime.Now:HH:mm:ss.fff}],[CAN],{csv}");
 
         if (!logTraffic) return;
+        // UI suppression: when the user has "Hide $3E" on, drop $3E requests
+        // and $7E positive responses from the textboxes only. File capture
+        // above already ran, so the disk record still has every frame.
+        if (isTesterPresent && suppressTesterPresentInWindow) return;
         Append(instance?.LogBox, pretty);
         Append(instance?.DownloadLogBox, "[CAN]   " + pretty);
     }
@@ -239,6 +266,8 @@ public partial class MainWindow : Window
     // Forwarded from MainViewModel when the Log menu's two per-stream gates flip.
     public static void SetIncludeJ2534FileLog(bool enabled) => includeJ2534FileLog = enabled;
     public static void SetIncludeBusFileLog(bool enabled)   => includeBusFileLog = enabled;
+    public static void SetSuppressTesterPresentInWindow(bool enabled)
+        => suppressTesterPresentInWindow = enabled;
 
     // Same shape for the "Maximize" toggle - shared between Bus log and
     // Download tab toolbars via MainViewModel.IsMaximized. Forwards to the
@@ -419,10 +448,13 @@ public partial class MainWindow : Window
         // Per-session file-log lifecycle. The "Log to file" menu toggle is the
         // user's persisted PREFERENCE; the actual sink lifecycle is tied to
         // host sessions so each capture lands as one tidy bus_*.csv with a
-        // trailer. End-of-session covers both clean PassThruClose and the
-        // IdleBusSupervisor's host-vanish path (USB unplug / host crash).
-        // Begin-of-session (PassThruOpen) re-Starts the sink with a fresh
-        // timestamped path if the preference is still on.
+        // trailer. HostDisconnected covers both clean PassThruClose and the
+        // pipe-drop path in NamedPipeServer (USB unplug / host crash / host
+        // process killed) - the time-based IdleBusSupervisor that used to
+        // fire IdleReset was stubbed 2026-05-15, but the subscription is
+        // kept in case a future force-idle path calls DoReset. Begin-of-
+        // session (PassThruOpen) re-Starts the sink with a fresh timestamped
+        // path if the preference is still on.
         bus.HostDisconnected += OnHostSessionEnded;
         bus.IdleReset        += OnHostSessionEnded;
         bus.HostConnected    += OnHostSessionStarted;
@@ -461,37 +493,74 @@ public partial class MainWindow : Window
 
     public void AutoSave() => vm?.AutoSave();
 
-    // Fires off the IPC worker thread (PassThruClose) or the IdleBusSupervisor
-    // threadpool tick (host vanish). FileLogSink.Stop is thread-safe; the only
-    // UI-touching call is the status-bar refresh which we marshal explicitly.
+    // Fires off the IPC worker thread (PassThruClose) or the NamedPipeServer
+    // accept-loop thread (pipe-drop finally block on dirty disconnect).
+    // FileLogSink.Stop is thread-safe; the only UI-touching call is the
+    // status-bar refresh which we marshal explicitly.
     private void OnHostSessionEnded()
     {
-        if (!fileLog.IsRunning) return;
-        fileLog.Stop();
+        lock (fileLogLifecycleLock)
+        {
+            hostSessionActive = false;
+            if (!fileLog.IsRunning) return;
+            fileLog.Stop();
+        }
         Dispatcher.BeginInvoke(() => vm?.RefreshFileLogStatus());
     }
 
-    // Fires off the IPC worker thread on PassThruOpen. Only auto-Starts when
-    // the user has the menu toggle on; an unchecked toggle means "don't
-    // capture", regardless of host activity. The IsRunning check guards
-    // against the case where the menu was just toggled on while a host was
-    // already connected - the setter already started the file.
+    // Fires off the IPC worker thread on PassThruOpen, synchronously before
+    // the dispatcher returns STATUS_NOERROR to the host - so the file is open
+    // and the writer thread is live before the host can issue another J2534
+    // call. Only Starts when the user has the menu toggle armed; an unchecked
+    // toggle means "don't capture", regardless of host activity.
     private void OnHostSessionStarted()
     {
-        if (vm?.IsFileLoggingEnabled != true) return;
-        if (fileLog.IsRunning) return;
-        try
+        lock (fileLogLifecycleLock)
         {
-            fileLog.Start(Core.Bus.FileLogSink.DefaultPath());
-        }
-        catch (Exception ex)
-        {
-            // Disk full / path locked / etc. Swallow so we don't crash the
-            // IPC thread; surface to the diagnostic log so the user sees why
-            // the capture didn't start.
-            AppendLog($"[file-log] auto-start on host connect failed: {ex.Message}");
+            hostSessionActive = true;
+            if (vm?.IsFileLoggingEnabled != true) return;
+            if (fileLog.IsRunning) return;
+            try
+            {
+                fileLog.Start(Core.Bus.FileLogSink.DefaultPath());
+            }
+            catch (Exception ex)
+            {
+                // Disk full / path locked / etc. Swallow so we don't crash
+                // the IPC thread; surface to the diagnostic log so the user
+                // sees why the capture didn't start.
+                AppendLog($"[file-log] auto-start on host connect failed: {ex.Message}");
+            }
         }
         Dispatcher.BeginInvoke(() => vm?.RefreshFileLogStatus());
+    }
+
+    // Invoked by MainViewModel when the user flips the "Log to file" menu
+    // toggle. The toggle is the persisted preference; the sink itself is
+    // only running between host-session start and end. Turning the toggle
+    // on with no host present just arms the preference; turning it on mid-
+    // session opens a fresh capture now; turning it off mid-session closes
+    // the current capture immediately.
+    internal static void OnFileLoggingPreferenceChanged(bool enabled)
+    {
+        lock (fileLogLifecycleLock)
+        {
+            if (!enabled)
+            {
+                if (fileLog.IsRunning) fileLog.Stop();
+                return;
+            }
+            if (!hostSessionActive) return;
+            if (fileLog.IsRunning) return;
+            try
+            {
+                fileLog.Start(Core.Bus.FileLogSink.DefaultPath());
+            }
+            catch (Exception ex)
+            {
+                AppendLog($"[file-log] start on toggle failed: {ex.Message}");
+            }
+        }
     }
 
     private void OnExitClicked(object sender, RoutedEventArgs e) => Close();

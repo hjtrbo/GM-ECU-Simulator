@@ -4,43 +4,52 @@
         xmlns:conv="clr-namespace:GmEcuSimulator.Converters"
         xmlns:views="clr-namespace:GmEcuSimulator.Views"
         xmlns:sys="clr-namespace:System;assembly=mscorlib"
-        xmlns:proto="clr-namespace:Common.Protocol;assembly=EcuSim.Common"
-        xmlns:wave="clr-namespace:Common.Waveforms;assembly=EcuSim.Common"
         xmlns:glitch="clr-namespace:Common.Glitch;assembly=EcuSim.Common"
         xmlns:shell="clr-namespace:System.Windows.Shell;assembly=PresentationFramework"
         xmlns:av="http://schemas.microsoft.com/expression/blend/2008" xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" mc:Ignorable="av" x:Class="GmEcuSimulator.MainWindow"
         Title="{Binding WindowTitle, FallbackValue=GM ECU Simulator}"
         Icon="/Resources/app.ico"
-        Height="900" Width="1280"
-        MinHeight="720" MinWidth="760"
-        WindowStartupLocation="CenterScreen"
-        >
+        Height="900" Width="1360"
+        MinHeight="710" MinWidth="500"
+        WindowStartupLocation="CenterScreen">
 
     <Window.Resources>
         <conv:BoolToVisibilityConverter x:Key="BoolToVis"/>
         <conv:StatusToBrushConverter    x:Key="StatusToBrush"/>
 
-        <!-- User-selectable waveform shapes. FileStream is intentionally
-             omitted: it's an internal marker the bin-replay path sets on
-             bin-derived PIDs, not a manual choice. The Bin Replay tab is
-             the user-facing surface for bin-streamed values. -->
-        <x:Array x:Key="WaveformShapes" Type="{x:Type wave:WaveformShape}">
-            <wave:WaveformShape>Sin</wave:WaveformShape>
-            <wave:WaveformShape>Triangle</wave:WaveformShape>
-            <wave:WaveformShape>Square</wave:WaveformShape>
-            <wave:WaveformShape>Sawtooth</wave:WaveformShape>
-            <wave:WaveformShape>Constant</wave:WaveformShape>
-        </x:Array>
-        <ObjectDataProvider x:Key="PidSizes" MethodName="GetValues" ObjectType="{x:Type sys:Enum}">
-            <ObjectDataProvider.MethodParameters>
-                <x:Type TypeName="proto:PidSize"/>
-            </ObjectDataProvider.MethodParameters>
-        </ObjectDataProvider>
-        <ObjectDataProvider x:Key="PidDataTypes" MethodName="GetValues" ObjectType="{x:Type sys:Enum}">
-            <ObjectDataProvider.MethodParameters>
-                <x:Type TypeName="proto:PidDataType"/>
-            </ObjectDataProvider.MethodParameters>
-        </ObjectDataProvider>
+        <!--
+            Validation error template. Draws a 1px red border around the
+            adorned input and surfaces the first error message as a tooltip.
+            Applied to inspector textboxes via local Validation.ErrorTemplate.
+            The error binding goes through AdornedElement so it picks up the
+            validation message that INotifyDataErrorInfo raised.
+        -->
+        <ControlTemplate x:Key="ValidationErrorTemplate">
+            <StackPanel>
+                <AdornedElementPlaceholder x:Name="placeholder">
+                    <Border BorderBrush="#E04848" BorderThickness="1"/>
+                </AdornedElementPlaceholder>
+            </StackPanel>
+        </ControlTemplate>
+
+        <!--
+            Implicit TextBox augmentation: when the binding raises a
+            validation error, show the red border template above and copy
+            the first error message into the TextBox's ToolTip so hovering
+            the field explains what's wrong. BasedOn keeps the theme-supplied
+            base style intact (font, padding, brushes) so the only change is
+            the added validation behaviour.
+        -->
+        <Style TargetType="TextBox" BasedOn="{StaticResource {x:Type TextBox}}">
+            <Setter Property="Validation.ErrorTemplate" Value="{StaticResource ValidationErrorTemplate}"/>
+            <Style.Triggers>
+                <Trigger Property="Validation.HasError" Value="True">
+                    <Setter Property="ToolTip"
+                            Value="{Binding RelativeSource={RelativeSource Self}, Path=(Validation.Errors)[0].ErrorContent}"/>
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+
         <ObjectDataProvider x:Key="GlitchActions" MethodName="GetValues" ObjectType="{x:Type sys:Enum}">
             <ObjectDataProvider.MethodParameters>
                 <x:Type TypeName="glitch:GlitchAction"/>
@@ -169,7 +178,26 @@
                               Command="{Binding ShowRegisteredDevicesCommand}"
                               ToolTip="Lists every J2534 device on this machine in both registry views. Read-only - no UAC."/>
                 </MenuItem>
+                <MenuItem Header="_ECU">
+                    <MenuItem Header="_Add"     Command="{Binding AddEcuCommand}"/>
+                    <MenuItem Header="_Remove"  Command="{Binding RemoveEcuCommand}"/>
+                    <Separator/>
+                    <MenuItem Header="Load info from BIN..."
+                              Command="{Binding LoadEcuFromBinCommand}"
+                              ToolTip="Pick a .bin (full-flash dump) and populate the selected ECU's GMW3110 identity DIDs ($90 VIN, $92/$98 HW, $C1/$C2 P/N, $CC diag addr) from offsets located in the bin. Currently a scaffold - the extractor is not wired up yet."/>
+                    <Separator/>
+                    <MenuItem Header="Drive HW _$3E keepalives"
+                              IsCheckable="True"
+                              StaysOpenOnClick="True"
+                              IsChecked="{Binding AllowPeriodicTesterPresent, Mode=TwoWay}"
+                              ToolTip="When on, the simulator drives $3E TesterPresent on the host's behalf for any frame registered via PassThruStartPeriodicMsg. Off accepts the registration but skips the tick - delegating hosts have to keep their own P3C session alive."/>
+                </MenuItem>
                 <MenuItem Header="_View">
+                    <MenuItem Header="_Setup window…"
+                              Command="{Binding OpenSetupWindowCommand}"
+                              InputGestureText="Ctrl+Shift+P"
+                              ToolTip="Open the modeless setup window with PID parameters + waveform editor. The ECU selection there is independent of the main window's Selected ECU inspector."/>
+                    <Separator/>
                     <MenuItem Header="_Theme" x:Name="ThemeMenu"
                               ToolTip="Switch the colour palette. Drop your own .xaml palette into %APPDATA%\GmEcuSimulator\Palettes\ to see it listed here."/>
                 </MenuItem>
@@ -246,38 +274,31 @@
                 <!-- EditorRow MinHeight is the editor area's floor when the
                      user drags the horizontal splitter up. Maximize toggles
                      it to 0 from code-behind so the row can fully collapse. -->
-                <RowDefinition x:Name="EditorRow" Height="*" MinHeight="286"/>
+                <RowDefinition x:Name="EditorRow" Height="*" MinHeight="0"/>
                 <RowDefinition Height="Auto"/>
                 <RowDefinition x:Name="LogRow"    Height="320" MinHeight="80"/>
             </Grid.RowDefinitions>
 
-            <!-- THREE PANE EDITOR (Row 0) -->
+            <!-- TWO PANE EDITOR (Row 0).
+                 PIDs + Waveform moved to the modeless SetupWindow (see View
+                 menu). This row keeps the ECU list + Selected ECU inspector. -->
             <Grid Grid.Row="0">
                 <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="220" MinWidth="180"/>
-                    <ColumnDefinition Width="*"   MinWidth="280"/>
-                    <ColumnDefinition Width="240" MinWidth="200"/>
+                    <ColumnDefinition Width="120" MinWidth="0"/>
+                    <ColumnDefinition Width="*"   MinWidth="320"/>
                 </Grid.ColumnDefinitions>
 
                 <!-- ECU sidebar.
-                     Grid (not DockPanel) so the ListBox row gets a real
-                     height budget: Header + SELECTED + Buttons take their
-                     natural sizes, the ListBox row absorbs the rest, and
-                     the inner ScrollViewer kicks in when ECU count
-                     exceeds the visible area. -->
+                     Grid layout with Header (Auto) + ListBox (Star) so the
+                     ListBox absorbs all remaining vertical space and its
+                     inner ScrollViewer kicks in when ECU count exceeds the
+                     visible area. The Selected-ECU inspector lives below
+                     the PID grid now (middle column), not here. -->
                 <Border Grid.Column="0" Style="{StaticResource Card}" Margin="0,0,12,0">
                     <Grid>
                         <Grid.RowDefinitions>
-                            <!-- Header (Auto), ListBox (Star), SELECTED (Star
-                                 capped at 280), Buttons (Auto). Two Star rows
-                                 share the available middle space so the
-                                 SELECTED panel actively shrinks when the
-                                 window is short - that lets its ScrollViewer
-                                 engage AND keeps the Add/Remove row visible. -->
                             <RowDefinition Height="Auto"/>
-                            <RowDefinition Height="*" MinHeight="66"/>
-                            <RowDefinition Height="4*" MinHeight="80" MaxHeight="280"/>
-                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="*"/>
                         </Grid.RowDefinitions>
 
                         <!-- Header -->
@@ -288,10 +309,6 @@
                             </Grid.ColumnDefinitions>
                             <TextBlock Text="ECUs" Style="{StaticResource Text.SectionHeader}"
                                        Margin="0" VerticalAlignment="Center"/>
-                            <TextBlock Grid.Column="1"
-                                       Text="{Binding Ecus.Count, StringFormat=\{0\} configured}"
-                                       Style="{StaticResource Text.Caption}"
-                                       VerticalAlignment="Center"/>
                         </Grid>
 
                         <!-- Scrollable ECU list -->
@@ -302,245 +319,267 @@
                                  BorderThickness="0"
                                  Background="Transparent"
                                  Padding="0" av:ItemsSource="{av:SampleData ItemCount=5}"/>
+                    </Grid>
+                </Border>
 
-                        <!-- Selected-ECU inspector.
-                             Sits in a Star row capped by the RowDefinition's
-                             MaxHeight=280 above, so its height tracks the
-                             window. The inner ScrollViewer surfaces a
-                             vertical scrollbar whenever the row is shorter
-                             than the contained fields. -->
-                        <Border Grid.Row="2" Margin="0,8,0,0"
-                                Background="{DynamicResource Bg.ElevatedBrush}"
-                                BorderBrush="{DynamicResource Border.SubtleBrush}"
-                                BorderThickness="1"
-                                CornerRadius="3"
-                                Padding="10"
-                                DataContext="{Binding SelectedEcu}"
-                                Visibility="{Binding ConverterParameter=NotNull, Converter={StaticResource BoolToVis}, FallbackValue=Collapsed}">
-                            <DockPanel LastChildFill="True">
-                                <TextBlock DockPanel.Dock="Top"
-                                           Text="SELECTED"
-                                           Style="{StaticResource Text.SectionHeader}"
-                                           Margin="0,0,0,6"/>
-                                <ScrollViewer VerticalScrollBarVisibility="Auto"
-                                              HorizontalScrollBarVisibility="Disabled">
-                                    <Grid>
+                <!-- Selected-ECU inspector card. Sole occupant of column 1
+                     now that PIDs + Waveform live in the modeless setup
+                     window. WrapPanel inside the ScrollViewer lets each
+                     field cell (fixed 280px) flow into multiple columns
+                     when the column is wide and collapse to one when it
+                     shrinks. Load-from-bin button sits below the WrapPanel
+                     as a full-width footer so it never gets stranded next
+                     to a half-empty row. -->
+                <Border Grid.Column="1" Style="{StaticResource Card}"
+                        DataContext="{Binding SelectedEcu}"
+                        Visibility="{Binding ConverterParameter=NotNull, Converter={StaticResource BoolToVis}, FallbackValue=Collapsed}">
+                        <DockPanel LastChildFill="True">
+                            <Grid DockPanel.Dock="Top" Margin="0,0,0,8">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Text="Selected ECU"
+                                           Style="{StaticResource Text.Subtitle}"
+                                           VerticalAlignment="Center"/>
+                                <TextBlock Grid.Column="1"
+                                           Text="{Binding Name}"
+                                           Style="{StaticResource Text.Caption}"
+                                           VerticalAlignment="Center"
+                                           Margin="12,0,0,0"/>
+                            </Grid>
+
+                            <Button DockPanel.Dock="Bottom" Margin="0,10,0,0"
+                                    HorizontalAlignment="Left"
+                                    Content="Load Info From Bin..."
+                                    Command="{Binding LoadInfoFromBinCommand}"
+                                    ToolTip="Pick a T43/E38/E67 flash image and populate the DID fields by tracing the $1A handler. Walks the dispatcher to find each supported DID's source flash address - no per-family hardcoding."/>
+
+                            <ScrollViewer VerticalScrollBarVisibility="Auto"
+                                          HorizontalScrollBarVisibility="Disabled">
+                                <WrapPanel Orientation="Horizontal">
+                                    <WrapPanel.Resources>
+                                        <!-- Each form cell is a fixed-width Grid so the WrapPanel
+                                             can lay out 2 columns when room permits, 1 when narrow.
+                                             280px cell + 12px right gap = ~292px stride; two cells
+                                             fit once the middle column exceeds ~600px. -->
+                                        <Style x:Key="FormCell" TargetType="Grid">
+                                            <Setter Property="Width" Value="280"/>
+                                            <Setter Property="Margin" Value="0,0,12,4"/>
+                                        </Style>
+                                    </WrapPanel.Resources>
+
+                                    <Grid Style="{StaticResource FormCell}">
                                         <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="Auto" MinWidth="72"/>
+                                            <ColumnDefinition Width="96"/>
                                             <ColumnDefinition Width="*"/>
                                         </Grid.ColumnDefinitions>
-                                        <Grid.RowDefinitions>
-                                            <RowDefinition Height="Auto"/>
-                                            <RowDefinition Height="Auto"/>
-                                            <RowDefinition Height="Auto"/>
-                                            <RowDefinition Height="Auto"/>
-                                            <RowDefinition Height="Auto"/>
-                                            <RowDefinition Height="Auto"/>
-                                            <RowDefinition Height="Auto"/>
-                                            <RowDefinition Height="Auto"/>
-                                        </Grid.RowDefinitions>
-                                        <Label Style="{StaticResource Label.FormPair}"   Grid.Row="0" Grid.Column="0" Content="Name"/>
-                                        <TextBox Grid.Row="0" Grid.Column="1" Margin="0,2"
+                                        <Label Style="{StaticResource Label.FormPair}" Grid.Column="0" Content="Name"/>
+                                        <TextBox Grid.Column="1" Margin="0,2"
                                                  Text="{Binding Name, UpdateSourceTrigger=PropertyChanged}"/>
-                                        <Label Style="{StaticResource Label.FormPair}"   Grid.Row="1" Grid.Column="0" Content="Req CAN"/>
-                                        <TextBox Grid.Row="1" Grid.Column="1" Margin="0,2"
+                                    </Grid>
+
+                                    <Grid Style="{StaticResource FormCell}">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="96"/>
+                                            <ColumnDefinition Width="*"/>
+                                        </Grid.ColumnDefinitions>
+                                        <Label Style="{StaticResource Label.FormPair}" Grid.Column="0" Content="Req CAN"/>
+                                        <TextBox Grid.Column="1" Margin="0,2"
                                                  Text="{Binding PhysicalRequestCanIdHex, UpdateSourceTrigger=LostFocus}"
                                                  FontFamily="{StaticResource Font.Mono}"/>
-                                        <Label Style="{StaticResource Label.FormPair}"   Grid.Row="2" Grid.Column="0" Content="USDT resp"/>
-                                        <TextBox Grid.Row="2" Grid.Column="1" Margin="0,2"
+                                    </Grid>
+
+                                    <Grid Style="{StaticResource FormCell}">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="96"/>
+                                            <ColumnDefinition Width="*"/>
+                                        </Grid.ColumnDefinitions>
+                                        <Label Style="{StaticResource Label.FormPair}" Grid.Column="0" Content="USDT resp"/>
+                                        <TextBox Grid.Column="1" Margin="0,2"
                                                  Text="{Binding UsdtResponseCanIdHex, UpdateSourceTrigger=LostFocus}"
                                                  FontFamily="{StaticResource Font.Mono}"/>
-                                        <Label Style="{StaticResource Label.FormPair}"   Grid.Row="3" Grid.Column="0" Content="UUDT resp"/>
-                                        <TextBox Grid.Row="3" Grid.Column="1" Margin="0,2"
+                                    </Grid>
+
+                                    <Grid Style="{StaticResource FormCell}">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="96"/>
+                                            <ColumnDefinition Width="*"/>
+                                        </Grid.ColumnDefinitions>
+                                        <Label Style="{StaticResource Label.FormPair}" Grid.Column="0" Content="UUDT resp"/>
+                                        <TextBox Grid.Column="1" Margin="0,2"
                                                  Text="{Binding UudtResponseCanIdHex, UpdateSourceTrigger=LostFocus}"
                                                  FontFamily="{StaticResource Font.Mono}"/>
-                                        <Label Style="{StaticResource Label.FormPair}"   Grid.Row="4" Grid.Column="0" Content="FC.BS"/>
-                                        <TextBox Grid.Row="4" Grid.Column="1" Margin="0,2"
+                                    </Grid>
+
+                                    <Grid Style="{StaticResource FormCell}">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="96"/>
+                                            <ColumnDefinition Width="*"/>
+                                        </Grid.ColumnDefinitions>
+                                        <Label Style="{StaticResource Label.FormPair}" Grid.Column="0" Content="FC.BS"/>
+                                        <TextBox Grid.Column="1" Margin="0,2"
                                                  Text="{Binding FlowControlBlockSizeHex, UpdateSourceTrigger=LostFocus}"
                                                  FontFamily="{StaticResource Font.Mono}"
                                                  ToolTip="ISO 15765-2 FlowControl BlockSize byte (FC.BS). 0 = send all CFs without further FC. Set to 1 to match real T43 (FC = 30 01 00)."/>
-                                        <Label Style="{StaticResource Label.FormPair}"   Grid.Row="5" Grid.Column="0" Content="FC.STmin"/>
-                                        <TextBox Grid.Row="5" Grid.Column="1" Margin="0,2"
+                                    </Grid>
+
+                                    <Grid Style="{StaticResource FormCell}">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="96"/>
+                                            <ColumnDefinition Width="*"/>
+                                        </Grid.ColumnDefinitions>
+                                        <Label Style="{StaticResource Label.FormPair}" Grid.Column="0" Content="FC.STmin"/>
+                                        <TextBox Grid.Column="1" Margin="0,2"
                                                  Text="{Binding FlowControlSeparationTimeHex, UpdateSourceTrigger=LostFocus}"
                                                  FontFamily="{StaticResource Font.Mono}"
                                                  ToolTip="ISO 15765-2 FlowControl SeparationTime byte (FC.STmin). 0 = no inter-frame delay. Values 1..7F = N ms, F1..F9 = 100..900 us."/>
-                                        <Label Style="{StaticResource Label.FormPair}"   Grid.Row="6" Grid.Column="0" Content="$36 addr"/>
-                                        <ComboBox Grid.Row="6" Grid.Column="1" Margin="0,2"
+                                    </Grid>
+
+                                    <Grid Style="{StaticResource FormCell}">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="96"/>
+                                            <ColumnDefinition Width="*"/>
+                                        </Grid.ColumnDefinitions>
+                                        <Label Style="{StaticResource Label.FormPair}" Grid.Column="0" Content="$36 addr"/>
+                                        <ComboBox Grid.Column="1" Margin="0,2"
                                                   ItemsSource="{Binding DownloadAddressByteCountOptions}"
                                                   SelectedItem="{Binding DownloadAddressByteCount}"
                                                   FontFamily="{StaticResource Font.Mono}"
                                                   ToolTip="Number of bytes in the $36 TransferData startingAddress field. GMW3110 permits 2..4. T43-era ECUs use 4; 3 only fits up to 16 MiB and corrupts the captured image if the host sends a 4-byte address."/>
-                                        <CheckBox Grid.Row="7" Grid.Column="1" Margin="0,8,0,0"
-                                                  Content="HW $3E"
-                                                  IsChecked="{Binding AllowPeriodicTesterPresent}"
-                                                  ToolTip="Simulator drives $3E keepalives for hosts using PassThruStartPeriodicMsg"/>
                                     </Grid>
-                                </ScrollViewer>
-                            </DockPanel>
-                        </Border>
 
-                        <!-- Add / Remove -->
-                        <Grid Grid.Row="3" Margin="0,8,0,0">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="*"/>
-                                <ColumnDefinition Width="8"/>
-                                <ColumnDefinition Width="*"/>
-                            </Grid.ColumnDefinitions>
-                            <Button Grid.Column="0" Content="Add"
-                                    Style="{StaticResource Button.Primary}"
-                                    Command="{Binding AddEcuCommand}"/>
-                            <Button Grid.Column="2" Content="Remove"
-                                    Command="{Binding RemoveEcuCommand}"/>
-                        </Grid>
-                    </Grid>
-                </Border>
+                                    <Grid Style="{StaticResource FormCell}">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="96"/>
+                                            <ColumnDefinition Width="*"/>
+                                        </Grid.ColumnDefinitions>
+                                        <Label Style="{StaticResource Label.FormPair}" Grid.Column="0" Content="$90 VIN"/>
+                                        <TextBox Grid.Column="1" Margin="0,2"
+                                                 Text="{Binding Vin, UpdateSourceTrigger=PropertyChanged, ValidatesOnNotifyDataErrors=True}"
+                                                 FontFamily="{StaticResource Font.Mono}"
+                                                 MaxLength="17"
+                                                 ToolTip="GMW3110 §8.3.2 DID $90 - Vehicle Identification Number (17 ASCII bytes). Blank removes the DID so $1A returns NRC $31."/>
+                                    </Grid>
 
-                <!-- PIDs main pane -->
-                <Border Grid.Column="1" Style="{StaticResource Card}" Margin="0,0,12,0">
-                    <DockPanel DataContext="{Binding SelectedEcu}" LastChildFill="True">
-                        <Grid DockPanel.Dock="Top" Margin="0,0,0,10">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="Auto"/>
-                                <ColumnDefinition Width="*"/>
-                                <ColumnDefinition Width="Auto"/>
-                            </Grid.ColumnDefinitions>
-                            <TextBlock Text="PIDs"
-                                       Style="{StaticResource Text.Subtitle}"
-                                       VerticalAlignment="Center"/>
-                            <TextBlock Grid.Column="1"
-                                       Text="{Binding Pids.Count, FallbackValue=no ECU selected, StringFormat=\{0\} parameter(s)}"
-                                       Style="{StaticResource Text.Caption}"
-                                       VerticalAlignment="Center"
-                                       Margin="12,0,0,0"/>
-                            <StackPanel Grid.Column="2" Orientation="Horizontal">
-                                <Button Style="{StaticResource Button.Primary}"
-                                        Content="Add PID"
-                                        Margin="0,0,8,0"
-                                        Command="{Binding DataContext.AddPidCommand, RelativeSource={RelativeSource AncestorType={x:Type Window}}}"/>
-                                <Button Content="Remove PID"
-                                        Command="{Binding DataContext.RemovePidCommand, RelativeSource={RelativeSource AncestorType={x:Type Window}}}"/>
-                            </StackPanel>
-                        </Grid>
+                                    <Grid Style="{StaticResource FormCell}">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="96"/>
+                                            <ColumnDefinition Width="*"/>
+                                        </Grid.ColumnDefinitions>
+                                        <Label Style="{StaticResource Label.FormPair}" Grid.Column="0" Content="$92 HW#"/>
+                                        <TextBox Grid.Column="1" Margin="0,2"
+                                                 Text="{Binding SupplierHardwareNumber, UpdateSourceTrigger=PropertyChanged, ValidatesOnNotifyDataErrors=True}"
+                                                 ToolTip="GMW3110 §8.3.2 DID $92 - System Supplier ECU Hardware Number (ASCII). Blank removes the DID so $1A returns NRC $31."/>
+                                    </Grid>
 
-                        <DataGrid ItemsSource="{Binding Pids}"
-                                  SelectedItem="{Binding SelectedPid}"
-                                  AutoGenerateColumns="False"
-                                  CanUserAddRows="False"
-                                  CanUserDeleteRows="False">
-                            <DataGrid.RowStyle>
-                                <Style TargetType="{x:Type DataGridRow}" BasedOn="{StaticResource {x:Type DataGridRow}}">
-                                    <Style.Triggers>
-                                        <DataTrigger Binding="{Binding HasAliasWarning}" Value="True">
-                                            <Setter Property="BorderBrush" Value="{DynamicResource Status.ErrorBrush}"/>
-                                            <Setter Property="BorderThickness" Value="3,0,0,0"/>
-                                            <Setter Property="ToolTip" Value="{Binding AliasWarningTooltip}"/>
-                                        </DataTrigger>
-                                    </Style.Triggers>
-                                </Style>
-                            </DataGrid.RowStyle>
-                            <DataGrid.Columns>
-                                <DataGridTextColumn Header="Address" Binding="{Binding AddressHex, UpdateSourceTrigger=LostFocus}" Width="86"/>
-                                <DataGridTextColumn Header="Name"    Binding="{Binding Name, UpdateSourceTrigger=LostFocus}"       Width="*" MinWidth="120"/>
-                                <DataGridTemplateColumn Header="Size" Width="84">
-                                    <DataGridTemplateColumn.CellTemplate>
-                                        <DataTemplate>
-                                            <ComboBox Style="{StaticResource ComboBox.Cell}"
-                                                      ItemsSource="{Binding Source={StaticResource PidSizes}}"
-                                                      SelectedItem="{Binding Size, UpdateSourceTrigger=PropertyChanged}"/>
-                                        </DataTemplate>
-                                    </DataGridTemplateColumn.CellTemplate>
-                                </DataGridTemplateColumn>
-                                <DataGridTemplateColumn Header="Type" Width="96">
-                                    <DataGridTemplateColumn.CellTemplate>
-                                        <DataTemplate>
-                                            <ComboBox Style="{StaticResource ComboBox.Cell}"
-                                                      ItemsSource="{Binding Source={StaticResource PidDataTypes}}"
-                                                      SelectedItem="{Binding DataType, UpdateSourceTrigger=PropertyChanged}"/>
-                                        </DataTemplate>
-                                    </DataGridTemplateColumn.CellTemplate>
-                                </DataGridTemplateColumn>
-                                <DataGridTextColumn Header="Scalar" Binding="{Binding Scalar, StringFormat=G, UpdateSourceTrigger=LostFocus}" Width="78"/>
-                                <DataGridTextColumn Header="Offset" Binding="{Binding Offset, StringFormat=G, UpdateSourceTrigger=LostFocus}" Width="78"/>
-                                <DataGridTextColumn Header="Unit"   Binding="{Binding Unit, UpdateSourceTrigger=LostFocus}"   Width="72"/>
-                                <DataGridTextColumn Header="Live"   Binding="{Binding LiveValue}" IsReadOnly="True" Width="90"/>
-                            </DataGrid.Columns>
-                        </DataGrid>
-                    </DockPanel>
-                </Border>
+                                    <Grid Style="{StaticResource FormCell}">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="96"/>
+                                            <ColumnDefinition Width="*"/>
+                                        </Grid.ColumnDefinitions>
+                                        <Label Style="{StaticResource Label.FormPair}" Grid.Column="0" Content="$98 HW Ver"/>
+                                        <TextBox Grid.Column="1" Margin="0,2"
+                                                 Text="{Binding SupplierHardwareVersion, UpdateSourceTrigger=PropertyChanged, ValidatesOnNotifyDataErrors=True}"
+                                                 ToolTip="GMW3110 §8.3.2 DID $98 - System Supplier ECU Hardware Version Number (ASCII)."/>
+                                    </Grid>
 
-                <!-- Waveform inspector -->
-                <Border Grid.Column="2" Style="{StaticResource Card}"
-                        DataContext="{Binding SelectedEcu.SelectedPid.Waveform}">
-                    <DockPanel>
-                        <TextBlock DockPanel.Dock="Top"
-                                   Text="Waveform"
-                                   Style="{StaticResource Text.Subtitle}"
-                                   Margin="0,0,0,12"/>
-                        <TextBlock DockPanel.Dock="Top"
-                                   Text="Generator for the selected PID."
-                                   Style="{StaticResource Text.Hint}"
-                                   Margin="0,-4,0,12"/>
+                                    <Grid Style="{StaticResource FormCell}">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="96"/>
+                                            <ColumnDefinition Width="*"/>
+                                        </Grid.ColumnDefinitions>
+                                        <Label Style="{StaticResource Label.FormPair}" Grid.Column="0" Content="$C1 End P/N"/>
+                                        <TextBox Grid.Column="1" Margin="0,2"
+                                                 Text="{Binding EndModelPartNumber, UpdateSourceTrigger=PropertyChanged, ValidatesOnNotifyDataErrors=True}"
+                                                 FontFamily="{StaticResource Font.Mono}"
+                                                 MaxLength="10"
+                                                 ToolTip="GMW3110 §8.3.2 DID $C1 - End Model Part Number. Wire format is 4 raw bytes BE (e.g. 0x017240DB = decimal 24264923). Blank clears it."/>
+                                    </Grid>
 
-                        <!-- ScrollViewer surfaces a scrollbar when the
-                             editor row is too short for all six waveform
-                             fields (e.g., narrow window with tall bus log). -->
-                        <ScrollViewer VerticalScrollBarVisibility="Auto"
-                                      HorizontalScrollBarVisibility="Disabled">
-                            <Grid VerticalAlignment="Top">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="Auto" MinWidth="74"/>
-                                    <ColumnDefinition Width="*"/>
-                                </Grid.ColumnDefinitions>
-                                <Grid.RowDefinitions>
-                                    <RowDefinition Height="40"/>
-                                    <RowDefinition Height="Auto"/>
-                                    <RowDefinition Height="Auto"/>
-                                    <RowDefinition Height="Auto"/>
-                                    <RowDefinition Height="Auto"/>
-                                    <RowDefinition Height="Auto"/>
-                                </Grid.RowDefinitions>
-                                
-                                <Label Style="{StaticResource Label.FormPair}" Grid.Row="0" Grid.Column="0" Content="Shape"/>
-                                <ComboBox Grid.Row="0" Grid.Column="1" Margin="0,2"
-                                          ItemsSource="{Binding Source={StaticResource WaveformShapes}}"
-                                          SelectedItem="{Binding Shape, UpdateSourceTrigger=PropertyChanged}"/>
+                                    <Grid Style="{StaticResource FormCell}">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="96"/>
+                                            <ColumnDefinition Width="*"/>
+                                        </Grid.ColumnDefinitions>
+                                        <Label Style="{StaticResource Label.FormPair}" Grid.Column="0" Content="$C2 Base P/N"/>
+                                        <TextBox Grid.Column="1" Margin="0,2"
+                                                 Text="{Binding BaseModelPartNumber, UpdateSourceTrigger=PropertyChanged, ValidatesOnNotifyDataErrors=True}"
+                                                 ToolTip="GMW3110 §8.3.2 DID $C2 - Base Model Part Number Identification (ASCII)."/>
+                                    </Grid>
 
-                                <Label Style="{StaticResource Label.FormPair}" Grid.Row="1" Grid.Column="0" Content="Amplitude"
-                                       Visibility="{Binding SupportsAmplitude, Converter={StaticResource BoolToVis}}"/>
-                                <TextBox Grid.Row="1" Grid.Column="1" Margin="0,2"
-                                         Text="{Binding Amplitude, StringFormat=G, UpdateSourceTrigger=LostFocus}"
-                                         Visibility="{Binding SupportsAmplitude, Converter={StaticResource BoolToVis}}"
-                                         FontFamily="{StaticResource Font.Mono}"/>
+                                    <Grid Style="{StaticResource FormCell}">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="96"/>
+                                            <ColumnDefinition Width="*"/>
+                                        </Grid.ColumnDefinitions>
+                                        <Label Style="{StaticResource Label.FormPair}" Grid.Column="0" Content="$CC Diag Addr"/>
+                                        <TextBox Grid.Column="1" Margin="0,2"
+                                                 Text="{Binding EcuDiagnosticAddress4ByteHex, UpdateSourceTrigger=PropertyChanged, ValidatesOnNotifyDataErrors=True}"
+                                                 FontFamily="{StaticResource Font.Mono}"
+                                                 MaxLength="10"
+                                                 ToolTip="GMW3110 §8.3.2 DID $CC - ECU Diagnostic Address. Wire format is 4 raw bytes BE (e.g. 0x00000018). Blank clears it."/>
+                                    </Grid>
 
-                                <Label Style="{StaticResource Label.FormPair}" Grid.Row="2" Grid.Column="0" Content="Offset"/>
-                                <TextBox Grid.Row="2" Grid.Column="1" Margin="0,2"
-                                         Text="{Binding Offset, StringFormat=G, UpdateSourceTrigger=LostFocus}"
-                                         FontFamily="{StaticResource Font.Mono}"/>
+                                    <!-- EEPROM-block informational fields (Stage 2 SegmentReader).
+                                         These aren't $1A wire DIDs; they're the calibration-PN /
+                                         BCC / programming-date / supplier-trace stamps that GM
+                                         tools surface alongside the diagnostic identity. Populated
+                                         by "Load Info From Bin..."; manually editable; not
+                                         currently persisted across simulator restarts. -->
+                                    <Grid Style="{StaticResource FormCell}">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="96"/>
+                                            <ColumnDefinition Width="*"/>
+                                        </Grid.ColumnDefinitions>
+                                        <Label Style="{StaticResource Label.FormPair}" Grid.Column="0" Content="Cal P/N"/>
+                                        <TextBox Grid.Column="1" Margin="0,2"
+                                                 Text="{Binding CalibrationPartNumber, UpdateSourceTrigger=PropertyChanged, ValidatesOnNotifyDataErrors=True}"
+                                                 FontFamily="{StaticResource Font.Mono}"
+                                                 ToolTip="Calibration broadcast PN from the EEPROM block (PCM field). Different from $C1 - this is the cal-ID tuners refer to as 'the OS'."/>
+                                    </Grid>
 
-                                <Label Style="{StaticResource Label.FormPair}" Grid.Row="3" Grid.Column="0" Content="Freq (Hz)"
-                                       Visibility="{Binding SupportsFrequency, Converter={StaticResource BoolToVis}}"/>
-                                <TextBox Grid.Row="3" Grid.Column="1" Margin="0,2"
-                                         Text="{Binding FrequencyHz, StringFormat=G, UpdateSourceTrigger=LostFocus}"
-                                         Visibility="{Binding SupportsFrequency, Converter={StaticResource BoolToVis}}"
-                                         FontFamily="{StaticResource Font.Mono}"/>
+                                    <Grid Style="{StaticResource FormCell}">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="96"/>
+                                            <ColumnDefinition Width="*"/>
+                                        </Grid.ColumnDefinitions>
+                                        <Label Style="{StaticResource Label.FormPair}" Grid.Column="0" Content="BCC"/>
+                                        <TextBox Grid.Column="1" Margin="0,2"
+                                                 Text="{Binding BroadcastCode, UpdateSourceTrigger=PropertyChanged, ValidatesOnNotifyDataErrors=True}"
+                                                 FontFamily="{StaticResource Font.Mono}"
+                                                 MaxLength="4"
+                                                 ToolTip="Broadcast Code - 4-char alphanumeric. Last 4 digits of the calibration PN by GM convention."/>
+                                    </Grid>
 
-                                <Label Style="{StaticResource Label.FormPair}" Grid.Row="4" Grid.Column="0" Content="Phase (°)"
-                                       Visibility="{Binding SupportsFrequency, Converter={StaticResource BoolToVis}}"/>
-                                <TextBox Grid.Row="4" Grid.Column="1" Margin="0,2"
-                                         Text="{Binding PhaseDeg, StringFormat=G, UpdateSourceTrigger=LostFocus}"
-                                         Visibility="{Binding SupportsFrequency, Converter={StaticResource BoolToVis}}"
-                                         FontFamily="{StaticResource Font.Mono}"/>
+                                    <Grid Style="{StaticResource FormCell}">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="96"/>
+                                            <ColumnDefinition Width="*"/>
+                                        </Grid.ColumnDefinitions>
+                                        <Label Style="{StaticResource Label.FormPair}" Grid.Column="0" Content="Prog Date"/>
+                                        <TextBox Grid.Column="1" Margin="0,2"
+                                                 Text="{Binding ProgrammingDate, UpdateSourceTrigger=PropertyChanged, ValidatesOnNotifyDataErrors=True}"
+                                                 FontFamily="{StaticResource Font.Mono}"
+                                                 MaxLength="8"
+                                                 ToolTip="Programming date stamp from the EEPROM block, decoded YYYYMMDD (e.g. 20220326). Stored as 4 BCD bytes in flash."/>
+                                    </Grid>
 
-                                <Label Style="{StaticResource Label.FormPair}" Grid.Row="5" Grid.Column="0" Content="Duty (0..1)"
-                                       Visibility="{Binding SupportsDuty, Converter={StaticResource BoolToVis}}"/>
-                                <TextBox Grid.Row="5" Grid.Column="1" Margin="0,2"
-                                         Text="{Binding DutyCycle, StringFormat=G, UpdateSourceTrigger=LostFocus}"
-                                         Visibility="{Binding SupportsDuty, Converter={StaticResource BoolToVis}}"
-                                         FontFamily="{StaticResource Font.Mono}"/>
-                            </Grid>
-                        </ScrollViewer>
-                    </DockPanel>
-                </Border>
+                                    <Grid Style="{StaticResource FormCell}">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="96"/>
+                                            <ColumnDefinition Width="*"/>
+                                        </Grid.ColumnDefinitions>
+                                        <Label Style="{StaticResource Label.FormPair}" Grid.Column="0" Content="Trace"/>
+                                        <TextBox Grid.Column="1" Margin="0,2"
+                                                 Text="{Binding TraceCode, UpdateSourceTrigger=PropertyChanged, ValidatesOnNotifyDataErrors=True}"
+                                                 FontFamily="{StaticResource Font.Mono}"
+                                                 ToolTip="Bosch/Delphi supplier trace stamp (e.g. DV5053Q103619515) - 16 chars. Identifies the physical ECU hardware variant."/>
+                                    </Grid>
+                                </WrapPanel>
+                            </ScrollViewer>
+                        </DockPanel>
+                    </Border>
             </Grid>
 
             <!-- Horizontal splitter (Row 1) -->
@@ -596,6 +635,12 @@
                                               VerticalAlignment="Center"
                                               IsChecked="{Binding IsMaximized, Mode=TwoWay}"
                                               ToolTip="Collapse the ECU/PID editor and fill the window with the workspace tabs. Shared with the Download tab's Maximize toggle."/>
+                                    <CheckBox x:Name="HideTesterPresentCheck"
+                                              Content="Hide $3E"
+                                              Margin="12,0,0,0"
+                                              VerticalAlignment="Center"
+                                              IsChecked="{Binding SuppressTesterPresentInWindow, Mode=TwoWay}"
+                                              ToolTip="Hide TesterPresent keepalives ($3E requests and $7E positive responses) from this log window only. The file-log capture is not affected."/>
                                 </StackPanel>
                             </Border>
                             <Grid>
