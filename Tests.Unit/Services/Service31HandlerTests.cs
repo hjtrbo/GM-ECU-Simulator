@@ -36,10 +36,13 @@ public sealed class Service31HandlerTests
     }
 
     [Fact]
-    public void Start_CheckRoutine_Unlocked_ReturnsPositiveEchoWithStatus00()
+    public void Start_CheckRoutine_NoRegionCaptured_ReturnsKernelShapeWithCrcZero()
     {
         // powerpcm "validating download": $31 $01 $04 $01 + addr(4) + size(4).
-        // Wire bytes from bus_20260515_155328.csv:2653 / CF#1:2655.
+        // Wire bytes from bus_20260515_155328.csv:2653 / CF#1:2655. With no
+        // captured flash region in scope, the handler falls back to CRC=$0000
+        // so the tester prints "NOT valid!" and exits its 30-poll loop instead
+        // of hanging the UI. Capture mode is off here.
         var node = NodeFactory.CreateNode();
         node.State.SecurityUnlockedLevel = 1;
         var ch = NodeFactory.CreateChannel();
@@ -49,7 +52,53 @@ public sealed class Service31HandlerTests
             ch);
 
         Assert.True(ok);
-        Assert.Equal(new byte[] { PosSid, 0x01, 0x04, 0x01, 0x00 },
+        Assert.Equal(new byte[] { PosSid, 0x04, 0x00, 0x00 },
+                     TestFrame.DequeueSingleFrameUsdt(ch));
+    }
+
+    [Fact]
+    public void Start_CheckRoutine_RegionContainsRange_ReturnsCrcOfMirrorBytes()
+    {
+        // Region declared by an earlier $31 $FF00 erase mirrors $36 writes.
+        // CheckMemory must compute CRC-16/CCITT-FALSE over the requested slice
+        // of the region buffer - the actual bytes the tester wrote, not the
+        // simulator's loaded bin image.
+        var node = NodeFactory.CreateNode();
+        node.State.SecurityUnlockedLevel = 1;
+        var region = new Core.Ecu.FlashEraseRegion(0x001C0000u, 0x100u);
+        node.State.CapturedFlashRegions.Add(region);
+        for (int i = 0; i < region.Buffer.Length; i++)
+            region.Buffer[i] = (byte)i;
+        ushort expected = Common.Protocol.Crc16Ccitt.Compute(region.Buffer);
+
+        var ch = ChannelWithCaptureOn();
+        bool ok = Service31Handler.Handle(node,
+            new byte[] { Sid, 0x01, 0x04, 0x01, 0x00, 0x1C, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00 },
+            ch);
+
+        Assert.True(ok);
+        Assert.Equal(new byte[] { PosSid, 0x04, (byte)(expected >> 8), (byte)(expected & 0xFF) },
+                     TestFrame.DequeueSingleFrameUsdt(ch));
+    }
+
+    [Fact]
+    public void Start_CheckRoutine_RangePartiallyOutsideRegion_ReturnsCrcZero()
+    {
+        // A range that spills past the declared region must NOT silently
+        // fabricate $FF bytes for the uncovered tail - that would emit a
+        // confident-looking CRC for memory the kernel never erased.
+        var node = NodeFactory.CreateNode();
+        node.State.SecurityUnlockedLevel = 1;
+        node.State.CapturedFlashRegions.Add(new Core.Ecu.FlashEraseRegion(0x001C0000u, 0x80u));
+        var ch = ChannelWithCaptureOn();
+
+        // Request length 0x100 = 256B, region is only 0x80 = 128B.
+        bool ok = Service31Handler.Handle(node,
+            new byte[] { Sid, 0x01, 0x04, 0x01, 0x00, 0x1C, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00 },
+            ch);
+
+        Assert.True(ok);
+        Assert.Equal(new byte[] { PosSid, 0x04, 0x00, 0x00 },
                      TestFrame.DequeueSingleFrameUsdt(ch));
     }
 

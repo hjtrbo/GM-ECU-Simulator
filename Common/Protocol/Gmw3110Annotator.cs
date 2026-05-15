@@ -179,7 +179,17 @@ public static class Gmw3110Annotator
                 return head;
             case Iso14229.Service.RoutineControl:
                 // Request: [$31][sub][routineId hi][routineId lo][optionRecord...]
-                // Positive: [$71][sub][routineId hi][routineId lo][statusRecord...]
+                // Positive (spec shape): [$71][sub][routineId hi][routineId lo][statusRecord...]
+                // Positive (kernel CheckMemory shape): [$71][$04][crc_hi][crc_lo]
+                //   - SPS programming kernels reply to $31 $01 $0401 with a
+                //     fixed $04 opcode + 16-bit CRC, not the spec sub/id echo.
+                //     Detect by the 4-byte length and the $04 second byte to
+                //     avoid mistaking it for a spec response.
+                if (isPositive && usdt.Length == 4 && usdt[1] == 0x04)
+                {
+                    ushort crc = (ushort)((usdt[2] << 8) | usdt[3]);
+                    return $"{head} CheckMemoryByAddress (kernel) CRC=${crc:X4}";
+                }
                 if (usdt.Length >= 4)
                 {
                     ushort routineId = (ushort)((usdt[2] << 8) | usdt[3]);
