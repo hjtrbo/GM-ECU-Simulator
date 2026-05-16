@@ -58,3 +58,7 @@ packages/
 
 # Icon-generation preview PNGs (the .ico is the source of truth)
 GmEcuSimulator/Resources/app-*-preview.png
+
+# Python bytecode caches (tools/dps_utility_builder scripts)
+__pycache__/
+*.pyc
