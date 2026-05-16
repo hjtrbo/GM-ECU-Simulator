@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Common.Glitch;
+using Common.Protocol;
 using Core.Ecu.Personas;
 using Core.Security;
 
@@ -61,6 +62,29 @@ public sealed class EcuNode
     //   0x55 EEMF EEPROM memory failure
     public byte ProgrammedState { get; set; }
 
+    /// <summary>
+    /// GMW3110 §8.16 SPS classification. Default <see cref="SpsType.A"/> matches a
+    /// fully-programmed running ECU. SPS_TYPE_C activates the blank-ECU
+    /// state machine: silent until $A2 received while $28 active, then
+    /// responses go on SPS_PrimeRsp ($300 | <see cref="DiagnosticAddress"/>) and
+    /// the ECU accepts SPS_PrimeReq ($000 | DiagnosticAddress). To use type C,
+    /// set <see cref="PhysicalRequestCanId"/> = SPS_PrimeReq and
+    /// <see cref="UsdtResponseCanId"/> = SPS_PrimeRsp so the normal bus
+    /// routing reaches the ECU once it activates. GM SPS / DPS drives this
+    /// flow during "Get Controller Info" to enumerate programmable ECUs.
+    /// </summary>
+    public SpsType SpsType { get; set; } = SpsType.A;
+
+    /// <summary>
+    /// GMW3110 8-bit diagnostic address used to derive SPS_PrimeReq/Rsp when
+    /// <see cref="SpsType"/> is <see cref="SpsType.C"/>. Informational for
+    /// SPS_TYPE_A/B (their request/response IDs are already permanent). For
+    /// type C this should equal the low byte of PhysicalRequestCanId, e.g.
+    /// $11 → request $011, response $311. The UI keeps both fields editable
+    /// so users can verify the derivation rather than only see the CAN IDs.
+    /// </summary>
+    public byte DiagnosticAddress { get; set; }
+
     // Per-ECU glitch-injection configuration. The data model exists so the
     // UI/persistence layers can edit and round-trip these settings; the actual
     // injection logic in Core/Services is NOT yet implemented.
@@ -75,6 +99,14 @@ public sealed class EcuNode
     // calibration ID $92, etc.) without the simulator interpreting the value.
     // Mutable through Set/RemoveIdentifier so the editor UI can hot-edit.
     private readonly Dictionary<byte, byte[]> identifiers = new();
+    // Per-DID provenance tag (User / Bin / Auto). STICKY across RemoveIdentifier:
+    // a user who blanks a value still owns that row, so a subsequent auto-
+    // populate or merge-mode bin load won't overwrite the deliberate blank.
+    // Cleared explicitly via ClearAllIdentifierSources during a Replace-all
+    // bin load, which then re-marks every well-known DID as Bin even when
+    // blank (the user explicitly opted into "this ECU is the bin's view now").
+    // Guarded by the same identifiersLock for atomic value+source updates.
+    private readonly Dictionary<byte, DidSource> identifierSources = new();
     private readonly Lock identifiersLock = new();
 
     /// <summary>Raised after a PID is added, removed, or the list is cleared.</summary>
@@ -173,24 +205,90 @@ public sealed class EcuNode
         get { lock (identifiersLock) return identifiers.ToDictionary(kv => kv.Key, kv => (byte[])kv.Value.Clone()); }
     }
 
+    /// <summary>
+    /// Snapshot copy of the per-DID source map - safe to enumerate cross-thread.
+    /// Includes entries that have no bytes (sticky blanks: source=User with
+    /// the value cleared) so ConfigStore can preserve the sticky tag on save.
+    /// </summary>
+    public IReadOnlyDictionary<byte, DidSource> IdentifierSources
+    {
+        get { lock (identifiersLock) return new Dictionary<byte, DidSource>(identifierSources); }
+    }
+
     /// <summary>Looks up a $1A identifier. Returns null if the DID is not configured.</summary>
     public byte[]? GetIdentifier(byte did)
     {
         lock (identifiersLock) return identifiers.TryGetValue(did, out var data) ? (byte[])data.Clone() : null;
     }
 
-    /// <summary>Sets (or replaces) the data for a $1A identifier. The bytes are copied.</summary>
-    public void SetIdentifier(byte did, ReadOnlySpan<byte> data)
+    /// <summary>
+    /// Sets (or replaces) the data for a $1A identifier with an explicit
+    /// provenance tag. The bytes are copied. Callers that don't track
+    /// provenance use the single-arg overload, which defaults the source
+    /// to <see cref="DidSource.User"/>.
+    /// </summary>
+    public void SetIdentifier(byte did, ReadOnlySpan<byte> data, DidSource source)
     {
-        lock (identifiersLock) identifiers[did] = data.ToArray();
+        lock (identifiersLock)
+        {
+            identifiers[did] = data.ToArray();
+            identifierSources[did] = source;
+        }
         IdentifiersChanged?.Invoke(this, EventArgs.Empty);
     }
 
+    /// <summary>
+    /// Backwards-compatible overload that records the value as user-typed.
+    /// New code that knows the provenance should call the three-arg overload
+    /// with an explicit <see cref="DidSource"/>.
+    /// </summary>
+    public void SetIdentifier(byte did, ReadOnlySpan<byte> data)
+        => SetIdentifier(did, data, DidSource.User);
+
+    /// <summary>
+    /// Removes the bytes for a DID but keeps its source tag. This is what
+    /// makes "user typed then deleted" stay <see cref="DidSource.User"/>
+    /// across subsequent auto-populate / merge-mode bin loads. Call
+    /// <see cref="ClearAllIdentifierSources"/> to wipe the tags too.
+    /// </summary>
     public bool RemoveIdentifier(byte did)
     {
         bool removed;
         lock (identifiersLock) removed = identifiers.Remove(did);
         if (removed) IdentifiersChanged?.Invoke(this, EventArgs.Empty);
         return removed;
+    }
+
+    /// <summary>
+    /// Sets only the provenance tag for a DID without touching the bytes.
+    /// Used by Replace-all bin loads to mark every well-known DID as Bin
+    /// source even when the bin didn't surface a value for it.
+    /// </summary>
+    public void SetIdentifierSource(byte did, DidSource source)
+    {
+        lock (identifiersLock) identifierSources[did] = source;
+        IdentifiersChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    /// <summary>
+    /// Returns the recorded provenance for a DID, or <see cref="DidSource.Blank"/>
+    /// if none has ever been set (the default for a fresh ECU).
+    /// </summary>
+    public DidSource GetIdentifierSource(byte did)
+    {
+        lock (identifiersLock)
+            return identifierSources.TryGetValue(did, out var s) ? s : DidSource.Blank;
+    }
+
+    /// <summary>
+    /// Drops every recorded provenance tag. Used by Replace-all bin loads
+    /// to reset the source state before re-marking. Does NOT touch the
+    /// identifier byte map - callers that want to wipe values too must
+    /// loop <see cref="RemoveIdentifier"/> separately.
+    /// </summary>
+    public void ClearAllIdentifierSources()
+    {
+        lock (identifiersLock) identifierSources.Clear();
+        IdentifiersChanged?.Invoke(this, EventArgs.Empty);
     }
 }

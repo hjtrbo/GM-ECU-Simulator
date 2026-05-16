@@ -2,9 +2,8 @@ namespace Core.Replay;
 
 // Development-only IBinSource that generates a deterministic in-memory log
 // without touching disk or referencing the sibling BinaryWorker. Lets the
-// UI and the start/stop plumbing be exercised end-to-end before the real
-// LogReader-backed adapter is wired in (which is gated on the standalone
-// CsvParser work in the sibling DataLogger session).
+// UI and the start/stop plumbing be exercised end-to-end alongside the
+// LogReader-backed adapter that handles real .bin files.
 //
 // Channel layout (channelIndex -> ECU NodeType, Address, waveform):
 //   0  ECM 0x000C (RPM)        sin sweep   500..3500 RPM,  0.5 Hz

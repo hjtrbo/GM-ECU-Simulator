@@ -9,7 +9,7 @@
         xmlns:av="http://schemas.microsoft.com/expression/blend/2008" xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" mc:Ignorable="av" x:Class="GmEcuSimulator.MainWindow"
         Title="{Binding WindowTitle, FallbackValue=GM ECU Simulator}"
         Icon="/Resources/app.ico"
-        Height="900" Width="1360"
+        Height="900" Width="1130"
         MinHeight="710" MinWidth="500"
         WindowStartupLocation="CenterScreen">
 
@@ -177,6 +177,10 @@
                     <MenuItem Header="_Show registered devices…"
                               Command="{Binding ShowRegisteredDevicesCommand}"
                               ToolTip="Lists every J2534 device on this machine in both registry views. Read-only - no UAC."/>
+                    <Separator/>
+                    <MenuItem Header="Reset _IPC pipe"
+                              Command="{Binding ResetIpcPipeCommand}"
+                              ToolTip="Stop and restart the \\.\pipe\GmEcuSim.PassThru server. Any connected host sees a broken pipe on its next call; new PassThruOpen calls succeed again. No UAC."/>
                 </MenuItem>
                 <MenuItem Header="_ECU">
                     <MenuItem Header="_Add"     Command="{Binding AddEcuCommand}"/>
@@ -191,15 +195,6 @@
                               StaysOpenOnClick="True"
                               IsChecked="{Binding AllowPeriodicTesterPresent, Mode=TwoWay}"
                               ToolTip="When on, the simulator drives $3E TesterPresent on the host's behalf for any frame registered via PassThruStartPeriodicMsg. Off accepts the registration but skips the tick - delegating hosts have to keep their own P3C session alive."/>
-                </MenuItem>
-                <MenuItem Header="_View">
-                    <MenuItem Header="_Setup window…"
-                              Command="{Binding OpenSetupWindowCommand}"
-                              InputGestureText="Ctrl+Shift+P"
-                              ToolTip="Open the modeless setup window with PID parameters + waveform editor. The ECU selection there is independent of the main window's Selected ECU inspector."/>
-                    <Separator/>
-                    <MenuItem Header="_Theme" x:Name="ThemeMenu"
-                              ToolTip="Switch the colour palette. Drop your own .xaml palette into %APPDATA%\GmEcuSimulator\Palettes\ to see it listed here."/>
                 </MenuItem>
                 <MenuItem Header="_Log">
                     <!-- Master gate. When unchecked, the four items below grey
@@ -243,6 +238,15 @@
                               IsEnabled="{Binding IsFileLoggingEnabled}"
                               ToolTip="Condense long ISO-TP transfers in the bus log: first 3 + last 3 CFs visible, middle replaced with a single '-- bulk transfer collapsed: N frames hidden --' marker. FC/TesterPresent noise inside the collapsed window is suppressed too. Threshold is 10 CFs - shorter transfers log normally."/>
                 </MenuItem>
+                <MenuItem Header="_View">
+                    <MenuItem Header="_Setup window…"
+                              Command="{Binding OpenSetupWindowCommand}"
+                              InputGestureText="Ctrl+Shift+P"
+                              ToolTip="Open the modeless setup window with PID parameters + waveform editor. The ECU selection there is independent of the main window's Selected ECU inspector."/>
+                    <Separator/>
+                    <MenuItem Header="_Theme" x:Name="ThemeMenu"
+                              ToolTip="Switch the colour palette. Drop your own .xaml palette into %APPDATA%\GmEcuSimulator\Palettes\ to see it listed here."/>
+                </MenuItem>
             </Menu>
         </Border>
 
@@ -272,9 +276,13 @@
         <Grid x:Name="MainContentGrid" Margin="14">
             <Grid.RowDefinitions>
                 <!-- EditorRow MinHeight is the editor area's floor when the
-                     user drags the horizontal splitter up. Maximize toggles
-                     it to 0 from code-behind so the row can fully collapse. -->
-                <RowDefinition x:Name="EditorRow" Height="*" MinHeight="0"/>
+                     user drags the horizontal splitter up. Floor budget:
+                     card chrome + Selected-ECU title + 1 form row + $1A
+                     DataGrid MinHeight + buttons. Maximize toggles it to 0
+                     from code-behind so the row can fully collapse - the
+                     constant in MainWindow.xaml.cs (EditorMinHeightNormal)
+                     restores it and must stay in sync with this value. -->
+                <RowDefinition x:Name="EditorRow" Height="*" MinHeight="240"/>
                 <RowDefinition Height="Auto"/>
                 <RowDefinition x:Name="LogRow"    Height="320" MinHeight="80"/>
             </Grid.RowDefinitions>
@@ -284,7 +292,7 @@
                  menu). This row keeps the ECU list + Selected ECU inspector. -->
             <Grid Grid.Row="0">
                 <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="120" MinWidth="0"/>
+                    <ColumnDefinition Width="180" MinWidth="0"/>
                     <ColumnDefinition Width="*"   MinWidth="320"/>
                 </Grid.ColumnDefinitions>
 
@@ -349,15 +357,35 @@
                                            Margin="12,0,0,0"/>
                             </Grid>
 
-                            <Button DockPanel.Dock="Bottom" Margin="0,10,0,0"
-                                    HorizontalAlignment="Left"
-                                    Content="Load Info From Bin..."
-                                    Command="{Binding LoadInfoFromBinCommand}"
-                                    ToolTip="Pick a T43/E38/E67 flash image and populate the DID fields by tracing the $1A handler. Walks the dispatcher to find each supported DID's source flash address - no per-family hardcoding."/>
+                            <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" Margin="0,10,0,0">
+                                <Button Content="Load Info From Bin..."
+                                        Command="{Binding LoadInfoFromBinCommand}"
+                                        ToolTip="Pick a T43/E38/E67 flash image and populate the DID fields by tracing the $1A handler. Walks the dispatcher to find each supported DID's source flash address - no per-family hardcoding. Precedence-aware: DIDs already set by the user or a prior auto-populate are kept."/>
+                                <Button Content="Auto-populate DIDs"
+                                        Command="{Binding AutoPopulateDidsCommand}"
+                                        Margin="8,0,0,0"
+                                        ToolTip="Fill every well-known $1A DID that is currently unset with a placeholder byte sequence (DefaultDidValues). Gets a fresh ECU 'plausible enough' for a tester in one click. DIDs already populated by the user or a prior bin load are left alone."/>
+                            </StackPanel>
 
-                            <ScrollViewer VerticalScrollBarVisibility="Auto"
-                                          HorizontalScrollBarVisibility="Disabled">
-                                <WrapPanel Orientation="Horizontal">
+                            <Grid>
+                                <Grid.RowDefinitions>
+                                    <!-- Both rows Star so Row 1's MinHeight is honoured
+                                         (Star MinHeight wins against another Star, but loses
+                                         to an Auto row, which would clip the DataGrid).
+                                         Row 0 MaxHeight=120 is sized to the form's natural
+                                         4-column height (3 rows of cells) so the form fits
+                                         without much empty space at wide window widths;
+                                         narrower windows where the form wraps to fewer
+                                         columns and asks for more height fall back to the
+                                         ScrollViewer. Row 1 absorbs all space above the cap. -->
+                                    <RowDefinition Height="*" MaxHeight="140"/>
+                                    <RowDefinition Height="*" MinHeight="100"/>
+                                </Grid.RowDefinitions>
+
+                                <ScrollViewer Grid.Row="0"
+                                              VerticalScrollBarVisibility="Auto"
+                                              HorizontalScrollBarVisibility="Disabled">
+                                    <WrapPanel Orientation="Horizontal">
                                     <WrapPanel.Resources>
                                         <!-- Each form cell is a fixed-width Grid so the WrapPanel
                                              can lay out 2 columns when room permits, 1 when narrow.
@@ -454,12 +482,12 @@
                                             <ColumnDefinition Width="96"/>
                                             <ColumnDefinition Width="*"/>
                                         </Grid.ColumnDefinitions>
-                                        <Label Style="{StaticResource Label.FormPair}" Grid.Column="0" Content="$90 VIN"/>
-                                        <TextBox Grid.Column="1" Margin="0,2"
-                                                 Text="{Binding Vin, UpdateSourceTrigger=PropertyChanged, ValidatesOnNotifyDataErrors=True}"
-                                                 FontFamily="{StaticResource Font.Mono}"
-                                                 MaxLength="17"
-                                                 ToolTip="GMW3110 §8.3.2 DID $90 - Vehicle Identification Number (17 ASCII bytes). Blank removes the DID so $1A returns NRC $31."/>
+                                        <Label Style="{StaticResource Label.FormPair}" Grid.Column="0" Content="SPS type"/>
+                                        <ComboBox Grid.Column="1" Margin="0,2"
+                                                  ItemsSource="{Binding SpsTypeOptions}"
+                                                  SelectedItem="{Binding SpsType}"
+                                                  FontFamily="{StaticResource Font.Mono}"
+                                                  ToolTip="GMW3110 §8.16 SPS classification. A = fully programmed (default, responds on the configured USDT response ID). B = missing op-sw/cal but permanent CAN IDs in flash (same wire behaviour as A). C = blank/unprogrammed; silent until $A2 received while $28 active, then responds on SPS_PrimeRsp ($300|Diag addr). For type C, also set Req CAN = $000|addr and USDT resp = $300|addr."/>
                                     </Grid>
 
                                     <Grid Style="{StaticResource FormCell}">
@@ -467,89 +495,12 @@
                                             <ColumnDefinition Width="96"/>
                                             <ColumnDefinition Width="*"/>
                                         </Grid.ColumnDefinitions>
-                                        <Label Style="{StaticResource Label.FormPair}" Grid.Column="0" Content="$92 HW#"/>
+                                        <Label Style="{StaticResource Label.FormPair}" Grid.Column="0" Content="Diag addr"/>
                                         <TextBox Grid.Column="1" Margin="0,2"
-                                                 Text="{Binding SupplierHardwareNumber, UpdateSourceTrigger=PropertyChanged, ValidatesOnNotifyDataErrors=True}"
-                                                 ToolTip="GMW3110 §8.3.2 DID $92 - System Supplier ECU Hardware Number (ASCII). Blank removes the DID so $1A returns NRC $31."/>
-                                    </Grid>
-
-                                    <Grid Style="{StaticResource FormCell}">
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="96"/>
-                                            <ColumnDefinition Width="*"/>
-                                        </Grid.ColumnDefinitions>
-                                        <Label Style="{StaticResource Label.FormPair}" Grid.Column="0" Content="$98 HW Ver"/>
-                                        <TextBox Grid.Column="1" Margin="0,2"
-                                                 Text="{Binding SupplierHardwareVersion, UpdateSourceTrigger=PropertyChanged, ValidatesOnNotifyDataErrors=True}"
-                                                 ToolTip="GMW3110 §8.3.2 DID $98 - System Supplier ECU Hardware Version Number (ASCII)."/>
-                                    </Grid>
-
-                                    <Grid Style="{StaticResource FormCell}">
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="96"/>
-                                            <ColumnDefinition Width="*"/>
-                                        </Grid.ColumnDefinitions>
-                                        <Label Style="{StaticResource Label.FormPair}" Grid.Column="0" Content="$C1 End P/N"/>
-                                        <TextBox Grid.Column="1" Margin="0,2"
-                                                 Text="{Binding EndModelPartNumber, UpdateSourceTrigger=PropertyChanged, ValidatesOnNotifyDataErrors=True}"
-                                                 FontFamily="{StaticResource Font.Mono}"
-                                                 MaxLength="10"
-                                                 ToolTip="GMW3110 §8.3.2 DID $C1 - End Model Part Number. Wire format is 4 raw bytes BE (e.g. 0x017240DB = decimal 24264923). Blank clears it."/>
-                                    </Grid>
-
-                                    <Grid Style="{StaticResource FormCell}">
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="96"/>
-                                            <ColumnDefinition Width="*"/>
-                                        </Grid.ColumnDefinitions>
-                                        <Label Style="{StaticResource Label.FormPair}" Grid.Column="0" Content="$C2 Base P/N"/>
-                                        <TextBox Grid.Column="1" Margin="0,2"
-                                                 Text="{Binding BaseModelPartNumber, UpdateSourceTrigger=PropertyChanged, ValidatesOnNotifyDataErrors=True}"
-                                                 ToolTip="GMW3110 §8.3.2 DID $C2 - Base Model Part Number Identification (ASCII)."/>
-                                    </Grid>
-
-                                    <Grid Style="{StaticResource FormCell}">
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="96"/>
-                                            <ColumnDefinition Width="*"/>
-                                        </Grid.ColumnDefinitions>
-                                        <Label Style="{StaticResource Label.FormPair}" Grid.Column="0" Content="$CC Diag Addr"/>
-                                        <TextBox Grid.Column="1" Margin="0,2"
-                                                 Text="{Binding EcuDiagnosticAddress4ByteHex, UpdateSourceTrigger=PropertyChanged, ValidatesOnNotifyDataErrors=True}"
-                                                 FontFamily="{StaticResource Font.Mono}"
-                                                 MaxLength="10"
-                                                 ToolTip="GMW3110 §8.3.2 DID $CC - ECU Diagnostic Address. Wire format is 4 raw bytes BE (e.g. 0x00000018). Blank clears it."/>
-                                    </Grid>
-
-                                    <!-- EEPROM-block informational fields (Stage 2 SegmentReader).
-                                         These aren't $1A wire DIDs; they're the calibration-PN /
-                                         BCC / programming-date / supplier-trace stamps that GM
-                                         tools surface alongside the diagnostic identity. Populated
-                                         by "Load Info From Bin..."; manually editable; not
-                                         currently persisted across simulator restarts. -->
-                                    <Grid Style="{StaticResource FormCell}">
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="96"/>
-                                            <ColumnDefinition Width="*"/>
-                                        </Grid.ColumnDefinitions>
-                                        <Label Style="{StaticResource Label.FormPair}" Grid.Column="0" Content="Cal P/N"/>
-                                        <TextBox Grid.Column="1" Margin="0,2"
-                                                 Text="{Binding CalibrationPartNumber, UpdateSourceTrigger=PropertyChanged, ValidatesOnNotifyDataErrors=True}"
-                                                 FontFamily="{StaticResource Font.Mono}"
-                                                 ToolTip="Calibration broadcast PN from the EEPROM block (PCM field). Different from $C1 - this is the cal-ID tuners refer to as 'the OS'."/>
-                                    </Grid>
-
-                                    <Grid Style="{StaticResource FormCell}">
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="96"/>
-                                            <ColumnDefinition Width="*"/>
-                                        </Grid.ColumnDefinitions>
-                                        <Label Style="{StaticResource Label.FormPair}" Grid.Column="0" Content="BCC"/>
-                                        <TextBox Grid.Column="1" Margin="0,2"
-                                                 Text="{Binding BroadcastCode, UpdateSourceTrigger=PropertyChanged, ValidatesOnNotifyDataErrors=True}"
+                                                 Text="{Binding DiagnosticAddressHex, UpdateSourceTrigger=LostFocus}"
                                                  FontFamily="{StaticResource Font.Mono}"
                                                  MaxLength="4"
-                                                 ToolTip="Broadcast Code - 4-char alphanumeric. Last 4 digits of the calibration PN by GM convention."/>
+                                                 ToolTip="GMW3110 8-bit diagnostic address. For SPS type C this is the byte that derives SPS_PrimeReq ($000|addr) and SPS_PrimeRsp ($300|addr). e.g. $11 -> req $011, resp $311. Informational for type A/B (their CAN IDs are explicit)."/>
                                     </Grid>
 
                                     <Grid Style="{StaticResource FormCell}">
@@ -557,27 +508,51 @@
                                             <ColumnDefinition Width="96"/>
                                             <ColumnDefinition Width="*"/>
                                         </Grid.ColumnDefinitions>
-                                        <Label Style="{StaticResource Label.FormPair}" Grid.Column="0" Content="Prog Date"/>
-                                        <TextBox Grid.Column="1" Margin="0,2"
-                                                 Text="{Binding ProgrammingDate, UpdateSourceTrigger=PropertyChanged, ValidatesOnNotifyDataErrors=True}"
-                                                 FontFamily="{StaticResource Font.Mono}"
-                                                 MaxLength="8"
-                                                 ToolTip="Programming date stamp from the EEPROM block, decoded YYYYMMDD (e.g. 20220326). Stored as 4 BCD bytes in flash."/>
+                                        <Label Style="{StaticResource Label.FormPair}" Grid.Column="0" Content="Sec module"/>
+                                        <ComboBox Grid.Column="1" Margin="0,2"
+                                                  ItemsSource="{Binding AvailableSecurityModuleIds}"
+                                                  SelectedItem="{Binding SelectedSecurityModuleId}"
+                                                  FontFamily="{StaticResource Font.Mono}"
+                                                  ToolTip="Seed/key algorithm for this ECU. (none) makes $27 return NRC $11. Runtime state (lock status, attempts, pending seed) lives on the Security tab."/>
                                     </Grid>
 
-                                    <Grid Style="{StaticResource FormCell}">
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="96"/>
-                                            <ColumnDefinition Width="*"/>
-                                        </Grid.ColumnDefinitions>
-                                        <Label Style="{StaticResource Label.FormPair}" Grid.Column="0" Content="Trace"/>
-                                        <TextBox Grid.Column="1" Margin="0,2"
-                                                 Text="{Binding TraceCode, UpdateSourceTrigger=PropertyChanged, ValidatesOnNotifyDataErrors=True}"
-                                                 FontFamily="{StaticResource Font.Mono}"
-                                                 ToolTip="Bosch/Delphi supplier trace stamp (e.g. DV5053Q103619515) - 16 chars. Identifies the physical ECU hardware variant."/>
-                                    </Grid>
                                 </WrapPanel>
-                            </ScrollViewer>
+                                </ScrollViewer>
+
+                                <!-- Generic $1A Identifiers grid. Lifted out of the form
+                                     WrapPanel so it can fill remaining vertical space in
+                                     the card (Row 1 = *). All well-known DIDs are
+                                     pre-populated as rows; leave Value blank to keep a
+                                     DID unconfigured ($1A returns NRC $31 for it). -->
+                                <DockPanel Grid.Row="1" LastChildFill="True" Margin="0,12,0,4">
+                                    <TextBlock DockPanel.Dock="Top"
+                                               Text="$1A Identifiers"
+                                               Style="{StaticResource Text.Caption}"
+                                               Margin="0,0,0,4"/>
+                                    <DataGrid ItemsSource="{Binding Identifiers}"
+                                              AutoGenerateColumns="False"
+                                              CanUserAddRows="False"
+                                              CanUserDeleteRows="False"
+                                              HeadersVisibility="Column"
+                                              GridLinesVisibility="Horizontal"
+                                              MinHeight="75"
+                                              FontFamily="{StaticResource Font.Mono}">
+                                        <DataGrid.Columns>
+                                            <DataGridTextColumn Header="DID" Width="60" IsReadOnly="True"
+                                                                Binding="{Binding DidHex}"/>
+                                            <DataGridTextColumn Header="Name" Width="200" IsReadOnly="True"
+                                                                Binding="{Binding Name}"/>
+                                            <DataGridTextColumn Header="Source" Width="60" IsReadOnly="True"
+                                                                Binding="{Binding SourceLabel}"
+                                                                ToolTipService.ToolTip="Where this DID's current value came from. user = typed in the grid (sticky even after blanking). bin = Load Info From Bin. auto = Auto-populate. - = never touched. In Replace-all bin load, every well-known DID is tagged bin even if the bin had nothing for it."/>
+                                            <DataGridCheckBoxColumn Header="Hex" Width="40"
+                                                                    Binding="{Binding IsHex, UpdateSourceTrigger=PropertyChanged}"/>
+                                            <DataGridTextColumn Header="Value" Width="*"
+                                                                Binding="{Binding Value, UpdateSourceTrigger=LostFocus}"/>
+                                        </DataGrid.Columns>
+                                    </DataGrid>
+                                </DockPanel>
+                            </Grid>
                         </DockPanel>
                     </Border>
             </Grid>
@@ -981,37 +956,21 @@
                             <Border DockPanel.Dock="Top" Style="{StaticResource Toolbar}">
                                 <StackPanel>
                                     <StackPanel Orientation="Horizontal">
-                                        <TextBlock Text="ECU"
-                                                   Style="{StaticResource Text.Caption}"
-                                                   VerticalAlignment="Center"
-                                                   Margin="0,0,8,0"/>
-                                        <TextBlock Text="{Binding Name, FallbackValue=(none selected)}"
-                                                   Style="{StaticResource Text.Body}"
-                                                   FontWeight="SemiBold"
-                                                   VerticalAlignment="Center"/>
-                                        <Rectangle Width="1" Margin="16,3" Fill="{DynamicResource Border.SubtleBrush}"/>
-                                        <TextBlock Text="Module"
-                                                   Style="{StaticResource Text.Caption}"
-                                                   VerticalAlignment="Center"
-                                                   Margin="0,0,8,0"/>
-                                        <ComboBox ItemsSource="{Binding AvailableSecurityModuleIds}"
-                                                  SelectedItem="{Binding SelectedSecurityModuleId}"
-                                                  Width="340" VerticalAlignment="Center"
-                                                  ToolTip="Seed/key algorithm for this ECU. (none) makes $27 return NRC $11."/>
                                         <Button Content="Reset state"
-                                                Margin="12,0,0,0"
                                                 Style="{StaticResource Button.Ghost}"
                                                 Command="{Binding DataContext.ResetSecurityCommand, RelativeSource={RelativeSource AncestorType={x:Type Window}}}"
-                                                ToolTip="Re-lock this ECU and clear the attempt counter, pending seed, and lockout deadline. Equivalent to a power-cycle for $27 only."/>
-                                        <CheckBox Content="Bypass security"
+                                                ToolTip="Re-lock every ECU and clear its $27 attempt counter, pending seed, and lockout deadline. Global operator - equivalent to a power-cycle for $27 only, applied to all ECUs at once."/>
+                                        <CheckBox Content="Bypass all $27 (dev override)"
                                                   Margin="16,0,0,0"
                                                   VerticalAlignment="Center"
-                                                  IsChecked="{Binding BypassSecurity}"
-                                                  ToolTip="Short-circuit $27. The ECU emits seed=00 00 on requestSeed and transitions to unlocked on sendKey regardless of the key value. Models stub-security levels seen on real hardware (e.g. T43 TCM at level 1, per HP Tuners' &quot;no unlock service required&quot;)."/>
+                                                  IsChecked="{Binding DataContext.BypassAllSecurity, RelativeSource={RelativeSource AncestorType={x:Type Window}}}"
+                                                  ToolTip="Manual dev/test override applied to EVERY ECU at once: short-circuits every $27 request regardless of level, lockout, or programming-session state. Each ECU emits seed=00 00 on requestSeed and transitions to unlocked on sendKey regardless of the key value. Use this when you're developing a non-$27 flow (e.g. $34/$36/$3B) and don't want to compute keys. For realistic boot-block behaviour (real T43 math operationally), leave this OFF and select the gmw3110-programming-bypass module on the ECU properties card instead."/>
                                     </StackPanel>
-                                    <TextBlock Text="Module-specific config below. Values are passed to the module as JSON strings."
-                                               Style="{StaticResource Text.Hint}"
-                                               Margin="0,6,0,0"/>
+                                    <TextBlock Style="{StaticResource Text.Hint}" Margin="0,6,0,0" TextWrapping="Wrap">
+                                        <Run Text="Module-specific config below. Values are passed to the module as JSON strings."/>
+                                        <LineBreak/>
+                                        <Run Text="Tip: for realistic boot-block bypass (active only during a programming session, with real T43 seed/key math operationally) select the gmw3110-programming-bypass module on the ECU card instead of toggling the checkbox above."/>
+                                    </TextBlock>
                                 </StackPanel>
                             </Border>
 

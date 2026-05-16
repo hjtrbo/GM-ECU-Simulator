@@ -53,6 +53,17 @@ public sealed class ChannelSession
     public ConcurrentQueue<PassThruMsg> RxQueue { get; } = new();
     public List<ChannelFilter> Filters { get; } = new();
 
+    /// <summary>
+    /// J2534 v04.04 LOOPBACK config (ConfigParameter 0x03). When true, every
+    /// host-side TX is echoed back through ReadMsgs with <see cref="RxStatus.TX_MSG_TYPE"/>
+    /// set. GM SPS / DPS uses this as a "subnet alive" probe: it transmits a
+    /// functional ping with LOOPBACK on and expects to see its own frame come
+    /// back through ReadMsgs to prove the bus is healthy. Loopback echoes
+    /// BYPASS the channel filter table - the host always needs to observe its
+    /// own writes, regardless of which response IDs it's filtering for.
+    /// </summary>
+    public bool Loopback { get; set; }
+
     // Released once per EnqueueRx so a parked ReadMsgs caller wakes up at
     // most one extra time. Initial count 0; max int.MaxValue (queue grows
     // freely under load — readers will drain whatever is queued).

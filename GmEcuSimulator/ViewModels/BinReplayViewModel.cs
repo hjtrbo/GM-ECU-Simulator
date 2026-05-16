@@ -15,13 +15,13 @@ namespace GmEcuSimulator.ViewModels;
 // the bus's ECU set is delegated to MainViewModel via the OnLoad / OnUnload
 // callbacks so the prior-config snapshot / restore lives in one place.
 //
-// "Load…" picks a .bin produced by the sibling DataLogger or its CsvParser
-// tool; the bin's channel headers carry every field we need (Name, Unit,
-// Address, NodeType, Size, DataType, Scalar, Offset). "Load synthetic
-// demo" wires up an in-memory 4-channel source for offline testing.
+// "Load…" picks a .bin produced by the sibling DataLogger; the bin's channel
+// headers carry every field we need (Name, Unit, Address, NodeType, Size,
+// DataType, Scalar, Offset). "Load synthetic demo" wires up an in-memory
+// 4-channel source for offline testing.
 public sealed class BinReplayViewModel : NotifyPropertyChangedBase
 {
-    // BinaryWorkerFactory enforces process-wide singleton in its ctor —
+    // BinaryWorkerFactory enforces process-wide singleton in its ctor -
     // we construct it once at VM construction. Used only by LoadFile.
     private readonly BinaryWorkerFactory binWorker = new();
     private readonly BinReplayCoordinator coord;

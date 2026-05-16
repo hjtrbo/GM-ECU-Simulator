@@ -36,6 +36,21 @@ public static class EcuExitLogic
         // is not active." Both rules share the same gate.
         bool wasProgrammingActive = node.State.ProgrammingModeActive;
 
+        // GMW3110 §8.16: "An SPS_TYPE_C ECU shall not send a mode $20 response
+        // if it receives a mode $20 request message or when a TesterPresent
+        // timeout occurs during the phase when the SPS_PrimeReq and
+        // SPS_PrimeRsp CAN identifiers are enabled." The "phase enabled" is
+        // exactly what DiagnosticResponsesEnabled tracks, so a type-C ECU
+        // currently in prime phase suppresses $60 regardless of programming
+        // session state.
+        bool suppressForSpsTypeC = node.SpsType == Common.Protocol.SpsType.C
+                                && node.State.DiagnosticResponsesEnabled;
+
+        // Drop the prime phase before we wipe NormalCommunicationDisabled in
+        // ClearProgrammingState - the next $A2 has to re-traverse the $28
+        // gate to re-enable responses.
+        node.State.DiagnosticResponsesEnabled = false;
+
         // 1. Reset P3C state.
         node.State.TesterPresent.Deactivate();
 
@@ -79,8 +94,10 @@ public static class EcuExitLogic
 
         // 4. Send $60 positive response only when the spec demands it: caller
         //    provided a channel AND a programming session was NOT being torn
-        //    down. Concluding a programming event is silent on the wire.
-        if (respondOn != null && !wasProgrammingActive)
+        //    down AND the ECU isn't a SPS_TYPE_C in prime phase. Concluding
+        //    a programming event is silent on the wire; SPS_TYPE_C in prime
+        //    phase is silent per §8.16.
+        if (respondOn != null && !wasProgrammingActive && !suppressForSpsTypeC)
         {
             node.State.Fragmenter.EnqueueResponse(respondOn, node.UsdtResponseCanId,
                 [Service.Positive(Service.ReturnToNormalMode)]);

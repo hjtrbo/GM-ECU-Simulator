@@ -116,6 +116,15 @@ public sealed class NodeState
     public bool NormalCommunicationDisabled { get; set; }
 
     /// <summary>
+    /// GMW3110 §8.16 SPS_TYPE_C runtime gate. Stays false from power-on
+    /// until the ECU receives $A2 while <see cref="NormalCommunicationDisabled"/>
+    /// is true; then becomes true so subsequent requests get normal responses on
+    /// SPS_PrimeRsp. Cleared by EcuExitLogic on $20 / P3C timeout, dropping the
+    /// ECU back to silent. Irrelevant (always false) for SPS_TYPE_A/B ECUs.
+    /// </summary>
+    public bool DiagnosticResponsesEnabled { get; set; }
+
+    /// <summary>
     /// True after a $A5 sub $01 (requestProgrammingMode) or sub $02
     /// (requestProgrammingMode_HighSpeed) positive response - the prerequisite
     /// for the $A5 sub $03 enableProgrammingMode that actually enters the session.

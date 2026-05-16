@@ -374,10 +374,12 @@ public partial class MainWindow : Window
     // goes edge-to-edge against the menu bar and side walls. Without
     // hiding those, a ~28-px gap remained at the top even with
     // EditorRow.Height=0.
-    // EditorRow.MinHeight=270 in XAML so the user can't drag the splitter
-    // up and squash the editor cards. Maximize bypasses that floor by
-    // zeroing MinHeight here; the Unchecked path restores both.
-    private const double EditorMinHeightNormal = 290;
+    // EditorRow.MinHeight=240 in XAML so the user can't drag the splitter
+    // up and squash the editor cards (1 form row + DataGrid 1-row floor +
+    // buttons + chrome). Maximize bypasses that floor by zeroing MinHeight
+    // here; the Unchecked path restores both. Keep this in sync with the
+    // XAML value.
+    private const double EditorMinHeightNormal = 240;
 
     private void OnMaximizeBusLogChecked(object sender, RoutedEventArgs e)
     {

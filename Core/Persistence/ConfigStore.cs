@@ -73,11 +73,11 @@ public static class ConfigStore
                 FlowControlBlockSize = node.FlowControlBlockSize,
                 FlowControlSeparationTime = node.FlowControlSeparationTime,
                 ProgrammedState = node.ProgrammedState,
+                SpsType = node.SpsType,
+                DiagnosticAddress = node.DiagnosticAddress,
                 DownloadAddressByteCount = node.DownloadAddressByteCount,
                 Pids = node.Pids.Select(PidDtoFrom).ToList(),
-                Identifiers = idMap.Count == 0
-                    ? null
-                    : idMap.OrderBy(kv => kv.Key).Select(kv => IdentifierDtoFrom(kv.Key, kv.Value)).ToList(),
+                Identifiers = IdentifierDtosFrom(node),
             });
         }
         if (replay?.FilePath != null)
@@ -144,6 +144,8 @@ public static class ConfigStore
             FlowControlBlockSize = dto.FlowControlBlockSize,
             FlowControlSeparationTime = dto.FlowControlSeparationTime,
             ProgrammedState = dto.ProgrammedState,
+            SpsType = dto.SpsType,
+            DiagnosticAddress = dto.DiagnosticAddress,
             // v1-v6 configs lack the field and deserialise it as 0; clamp to
             // the GMW3110-permitted 2..4 range and fall back to the 4-byte
             // default for any out-of-range value (including 0).
@@ -157,7 +159,21 @@ public static class ConfigStore
         if (dto.Identifiers != null)
         {
             foreach (var idDto in dto.Identifiers)
-                node.SetIdentifier(idDto.Did, IdentifierBytesFrom(idDto));
+            {
+                var bytes = IdentifierBytesFrom(idDto);
+                if (bytes.Length > 0)
+                {
+                    node.SetIdentifier(idDto.Did, bytes, idDto.Source);
+                }
+                else if (idDto.Source != Common.Protocol.DidSource.Blank)
+                {
+                    // Sticky blank: row was persisted with a source but no
+                    // bytes (e.g. user typed then deleted, or Replace-all
+                    // bin load left this row empty). Carry the source over
+                    // even though there's nothing to write to the byte map.
+                    node.SetIdentifierSource(idDto.Did, idDto.Source);
+                }
+            }
         }
         return node;
     }
@@ -171,12 +187,39 @@ public static class ConfigStore
         return Array.Empty<byte>();
     }
 
-    internal static IdentifierDto IdentifierDtoFrom(byte did, byte[] data)
+    /// <summary>
+    /// Builds the IdentifierDto list for an ECU, including DIDs that have a
+    /// non-Blank source even when their byte payload is empty (sticky
+    /// "user blanked this row" rows survive save / reload). Returns null when
+    /// the resulting list is empty so v1-v9 configs round-trip cleanly.
+    /// </summary>
+    internal static List<IdentifierDto>? IdentifierDtosFrom(EcuNode node)
     {
-        var dto = new IdentifierDto { Did = did };
+        var idMap = node.Identifiers;
+        var sourceMap = node.IdentifierSources;
+        var allDids = new SortedSet<byte>(idMap.Keys);
+        foreach (var kv in sourceMap)
+        {
+            if (kv.Value != Common.Protocol.DidSource.Blank)
+                allDids.Add(kv.Key);
+        }
+        if (allDids.Count == 0) return null;
+        var list = new List<IdentifierDto>(allDids.Count);
+        foreach (var did in allDids)
+        {
+            idMap.TryGetValue(did, out var bytes);
+            var source = sourceMap.TryGetValue(did, out var s) ? s : Common.Protocol.DidSource.User;
+            list.Add(IdentifierDtoFrom(did, bytes ?? Array.Empty<byte>(), source));
+        }
+        return list;
+    }
+
+    internal static IdentifierDto IdentifierDtoFrom(byte did, byte[] data, Common.Protocol.DidSource source)
+    {
+        var dto = new IdentifierDto { Did = did, Source = source };
         if (data.Length > 0 && data.All(IsPrintableAscii))
             dto.Ascii = Encoding.ASCII.GetString(data);
-        else
+        else if (data.Length > 0)
             dto.Hex = FormatHexBytes(data);
         return dto;
     }
@@ -221,6 +264,8 @@ public static class ConfigStore
         Offset = dto.Offset,
         Unit = dto.Unit,
         WaveformConfig = dto.Waveform.ToWaveformConfig(),
+        LengthBytes = dto.LengthBytes,
+        StaticBytes = HexStringToBytes(dto.StaticBytes),
     };
 
     private static PidDto PidDtoFrom(Pid pid) => new()
@@ -233,5 +278,30 @@ public static class ConfigStore
         Offset = pid.Offset,
         Unit = pid.Unit,
         Waveform = WaveformDto.From(pid.WaveformConfig),
+        LengthBytes = pid.LengthBytes,
+        StaticBytes = BytesToHexString(pid.StaticBytes),
     };
+
+    private static byte[]? HexStringToBytes(string? hex)
+    {
+        if (string.IsNullOrEmpty(hex)) return null;
+        var s = hex.Trim();
+        if (s.StartsWith("0x", StringComparison.OrdinalIgnoreCase)) s = s[2..];
+        if ((s.Length & 1) != 0)
+            throw new FormatException($"PID staticBytes hex length must be even, got {s.Length}: {hex}");
+        var bytes = new byte[s.Length / 2];
+        for (int i = 0; i < bytes.Length; i++)
+            bytes[i] = byte.Parse(s.AsSpan(i * 2, 2),
+                System.Globalization.NumberStyles.HexNumber,
+                System.Globalization.CultureInfo.InvariantCulture);
+        return bytes;
+    }
+
+    private static string? BytesToHexString(byte[]? bytes)
+    {
+        if (bytes is null) return null;
+        var sb = new System.Text.StringBuilder(bytes.Length * 2);
+        foreach (var b in bytes) sb.Append(b.ToString("x2", System.Globalization.CultureInfo.InvariantCulture));
+        return sb.ToString();
+    }
 }

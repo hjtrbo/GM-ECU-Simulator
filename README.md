@@ -38,7 +38,7 @@ Ships with three algorithms registered out of the box, selectable per-ECU in the
 
 * `gmw3110-2010-not-implemented` - deterministic seed `[0x12, 0x34]`, refuses every key. Exercises every NRC path against any J2534 host without committing real algorithm math.
 * `gm-e38-test` - the GM E38 ECM algorithm (GMLAN algorithm `0x92`, also used by E67). 2-byte seed, 2-byte key. Optional `fixedSeed` JSON config for deterministic exchanges.
-* `gm-t43-test` - the GM T43 (Aisin AF40) TCM algorithm, ported from the FOSS 6Speed.T43 download tester. 2-byte seed, 2-byte key.
+* `gm-t43-test` - the GM T43 (Aisin AF40) TCM algorithm. 2-byte seed, 2-byte key.
 
 Each ECU also has a **Bypass security** checkbox that short-circuits `$27` entirely (seed `00 00`, any key accepted) for modelling stub-security levels seen on real hardware (e.g. T43 TCM at level 1).
 

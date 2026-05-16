@@ -27,7 +27,7 @@
                             Style="{StaticResource Button.Primary}"
                             Command="{Binding LoadFileCommand}"
                             Margin="0,0,8,0"
-                            ToolTip="Open a .bin or .csv. CSVs are converted on-the-fly via CsvParser (HP Tuners / PCMTEC / GMLAN formats)."/>
+                            ToolTip="Open a .bin produced by the sibling GM DataLogger. Channel headers carry Name, Unit, Address, NodeType, Size, DataType, Scalar, Offset."/>
                     <Button Grid.Column="1" Content="Load synthetic demo"
                             Command="{Binding LoadDemoCommand}"
                             Margin="0,0,8,0"

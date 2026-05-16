@@ -18,14 +18,23 @@ namespace Core.Services;
 //   $78 RCR-RP         - cannot process within P2C (we never need this)
 //   $99 ReadyForDownload-DTCStored - flash/EEPROM checksum DTC set (we never set this)
 //
-// "Download in progress" is interpreted strictly per the spec intent: a $34
-// is rejected only while a previous $36 transfer is mid-flight (bytes
-// received < declared size). Once the previous section's bytes have all
-// arrived, a follow-up $34 is accepted - this is the normal pattern for
-// multi-section programming flows. 6Speed.T43's Pushspskernel issues two
-// $34s (one per kernel section); the subsequent Sendbin loop then issues
-// one $34 per ~4080-byte segment of the flash payload, often producing
-// dozens of $34s per programming session.
+// "Download in progress" is NOT used as a gate. A new $34 is always accepted
+// as long as the GMW3110 session preconditions ($28 / $A5 / $27 unlock) hold:
+// the host has decided to start a new transfer, so any prior bracketed
+// transfer is treated as naturally complete. This matches every real GM
+// dealer-tool flow we've observed:
+//   * 6Speed.T43's Pushspskernel issues two $34s (one per kernel section)
+//     with declared size matching the actual section size - either rule
+//     would accept the second $34 fine.
+//   * Real DPS / TIS2WEB utility files declare `dataBytesPerMessage` (often
+//     $0FFE = 4094) in every $34 as a *buffer hint*, then $36 transfers the
+//     actual cal-file payload which is usually much smaller than $0FFE
+//     (cal files run 100 B .. 200 KB). The simulator must not interpret
+//     "declared > actual" as "still in progress" - DPS will fire the next
+//     $34 to start the next cal as soon as it finishes the previous $36.
+//   * The next $34 reallocates the sink buffer at the new declared size
+//     (line ~130 below), discarding any partial state from the prior
+//     section - so there's no risk of cross-section contamination.
 //
 // Spec mode: each $34 reallocates the sink buffer at the new declared size.
 // Capture mode: each $34 marks a NEW logical transfer (per GMW3110 - one
@@ -98,16 +107,13 @@ public static class Service34Handler
             return false;
         }
 
-        // §8.12.4 NRC $22 CNCRSE preconditions. "Download in progress" means
-        // an active transfer that hasn't yet received all declared bytes -
-        // a previous $34 whose data has all landed is treated as complete and
-        // doesn't block this one.
-        bool downloadInProgress = node.State.DownloadActive
-                                  && node.State.DownloadBytesReceived < node.State.DownloadDeclaredSize;
+        // §8.12.4 NRC $22 CNCRSE preconditions: $28 active, $A5 active, $27
+        // unlocked. "Download in progress" is NOT checked here - see the
+        // file-header comment for why; the buffer realloc below naturally
+        // discards any partial prior-section state.
         if (!node.State.NormalCommunicationDisabled
             || !node.State.ProgrammingModeActive
-            || node.State.SecurityUnlockedLevel == 0
-            || downloadInProgress)
+            || node.State.SecurityUnlockedLevel == 0)
         {
             ServiceUtil.EnqueueNrc(node, ch, Service.RequestDownload, Nrc.ConditionsNotCorrectOrSequenceError);
             return false;

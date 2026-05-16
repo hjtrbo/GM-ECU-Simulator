@@ -65,6 +65,7 @@ public sealed class MainViewModel : NotifyPropertyChangedBase
     public RelayCommand RegisterJ2534Command { get; }
     public RelayCommand UnregisterJ2534Command { get; }
     public RelayCommand ShowRegisteredDevicesCommand { get; }
+    public RelayCommand ResetIpcPipeCommand { get; }
 
     public MainViewModel(VirtualBus bus, BinReplayCoordinator replay, NamedPipeServer pipeServer)
     {
@@ -110,10 +111,11 @@ public sealed class MainViewModel : NotifyPropertyChangedBase
         AddSetupPidCommand           = new RelayCommand(AddSetupPid,    () => SetupSelectedEcu != null);
         RemoveSetupPidCommand        = new RelayCommand(RemoveSetupPid, () => SetupSelectedEcu?.SelectedPid != null);
         OpenSetupWindowCommand       = new RelayCommand(OpenSetupWindow);
-        ResetSecurityCommand         = new RelayCommand(ResetSecurity, () => SelectedEcu != null);
+        ResetSecurityCommand         = new RelayCommand(ResetSecurity, () => Ecus.Count > 0);
         RegisterJ2534Command         = new RelayCommand(RegisterJ2534,         () => !j2534Busy);
         UnregisterJ2534Command       = new RelayCommand(UnregisterJ2534,       () => !j2534Busy);
         ShowRegisteredDevicesCommand = new RelayCommand(ShowRegisteredDevices, () => !j2534Busy);
+        ResetIpcPipeCommand           = new RelayCommand(ResetIpcPipe,          () => !j2534Busy);
 
         RefreshJ2534Status();
     }
@@ -361,6 +363,8 @@ public sealed class MainViewModel : NotifyPropertyChangedBase
         foreach (var node in bus.Nodes) Ecus.Add(new EcuViewModel(node));
         SelectedEcu = Ecus.FirstOrDefault();
         SetupSelectedEcu = Ecus.FirstOrDefault();
+        bypassAllSecurity = Ecus.Count > 0 && Ecus.All(e => e.BypassSecurity);
+        OnPropertyChanged(nameof(BypassAllSecurity));
     }
 
     private void New()
@@ -463,6 +467,7 @@ public sealed class MainViewModel : NotifyPropertyChangedBase
         };
         bus.AddNode(node);
         var vm = new EcuViewModel(node);
+        vm.BypassSecurity = bypassAllSecurity;
         Ecus.Add(vm);
         SelectedEcu = vm;
         StatusText = $"Added {node.Name}";
@@ -528,7 +533,30 @@ public sealed class MainViewModel : NotifyPropertyChangedBase
     private void RemovePid() => SelectedEcu?.RemoveSelectedPid();
     private void AddSetupPid() => SetupSelectedEcu?.AddPid();
     private void RemoveSetupPid() => SetupSelectedEcu?.RemoveSelectedPid();
-    private void ResetSecurity() => SelectedEcu?.ResetSecurityState();
+    private void ResetSecurity()
+    {
+        foreach (var ecu in Ecus)
+            ecu.ResetSecurityState();
+    }
+
+    // Global $27 bypass toggle. The Security tab exposes this as a single
+    // checkbox that applies to every ECU at once - per-ECU bypass UI is gone
+    // (the user develops one ECU at a time and asked for global semantics).
+    // Setter pushes the value to every ECU's BypassSecurity; Rebuild() and
+    // AddEcu() keep the backing field and per-ECU state aligned.
+    private bool bypassAllSecurity;
+    public bool BypassAllSecurity
+    {
+        get => bypassAllSecurity;
+        set
+        {
+            if (SetField(ref bypassAllSecurity, value))
+            {
+                foreach (var ecu in Ecus)
+                    ecu.BypassSecurity = value;
+            }
+        }
+    }
 
     // Opens (or re-focuses) the modeless setup window. Modeless so the user
     // can keep the main window's Selected ECU inspector visible while editing
@@ -661,6 +689,31 @@ public sealed class MainViewModel : NotifyPropertyChangedBase
             Owner = Application.Current?.MainWindow,
         };
         win.ShowDialog();
+    }
+
+    // Force-cycle the named-pipe server without touching the registry.
+    // Useful when a host left the pipe in a weird state (crashed mid-call,
+    // detached without PassThruClose, etc.) and the simulator needs to drop
+    // the stale connection so a fresh PassThruOpen can land.
+    private async void ResetIpcPipe()
+    {
+        SetJ2534Busy(true);
+        try
+        {
+            StatusText = "Resetting IPC pipe…";
+            try { await pipeServer.StopAsync(); }
+            catch (Exception ex) { bus.LogDiagnostic?.Invoke($"Pipe server Stop during reset failed: {ex.Message}"); }
+            try { pipeServer.Start(); StatusText = "IPC pipe reset. Reconnect from your J2534 host."; }
+            catch (Exception ex)
+            {
+                StatusText = $"IPC pipe restart failed: {ex.Message}";
+                bus.LogDiagnostic?.Invoke($"Pipe server Start during reset failed: {ex.Message}");
+            }
+        }
+        finally
+        {
+            SetJ2534Busy(false);
+        }
     }
 
     private void SetJ2534Busy(bool busy)

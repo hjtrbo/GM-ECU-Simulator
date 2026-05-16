@@ -234,6 +234,7 @@ public static class Gmw3110Annotator
         Service.DefinePidByAddress                => "DefinePIDByAddress",
         Service.RequestDownload                   => "RequestDownload",
         Service.TransferData                      => "TransferData",
+        Service.WriteDataByIdentifier             => "WriteDataByIdentifier",
         Service.TesterPresent                     => "TesterPresent",
         Service.ReportProgrammedState             => "ReportProgrammedState",
         Service.ProgrammingMode                   => "ProgrammingMode",

@@ -196,6 +196,223 @@ public sealed class BinIdentificationReaderTests
         Assert.Contains($"0x{fetcherFn:X6}", cb.DecodedValue);
     }
 
+    [Fact]
+    public void Parse_DidDispatcherWithBgtSplit_RecoversAllDids()
+    {
+        // GM dispatchers use a binary-search shape on the DID chain:
+        //   cmpwi r11, $CA
+        //   bgt   <upper-half>     ; bc BO=12, BI=1
+        //   beq   <handler>        ; bc BO=12, BI=2
+        // The walker has to skip the bgt and pick up the beq one slot
+        // further on. This test verifies $CA is recovered alongside the
+        // surrounding $C9/$CB DIDs - matches the layout observed in the
+        // E67 12647991 bin's DID dispatcher at 0x6460.
+        var bin = new byte[0x200000];
+
+        const int dispatcher = 0x2BB90;
+        const int handler1A  = 0x2BD28;
+        const int didDisp    = 0x2B904;
+        const int handlerCA  = 0x2BA40;
+        const int handlerCB  = 0x2BA60;
+        const int handlerC9  = 0x2BA80;
+        const int upperHalf  = didDisp + 0x80;
+
+        WriteInstr(bin, dispatcher - 4, 0x89FF0002);
+        EmitCmpBeq(bin, dispatcher,      0x1A, handler1A);
+        EmitCmpBeq(bin, dispatcher + 8,  0x20, dispatcher + 0x40);
+        EmitCmpBeq(bin, dispatcher + 16, 0x27, dispatcher + 0x44);
+        EmitCmpBeq(bin, dispatcher + 24, 0x28, dispatcher + 0x48);
+        EmitCmpBeq(bin, dispatcher + 32, 0x34, dispatcher + 0x4C);
+
+        WriteInstr(bin, handler1A,     0x3D800030);
+        WriteInstr(bin, handler1A + 4, 0x887F0003);
+        WriteInstr(bin, handler1A + 8, EncodeBl(handler1A + 8, didDisp));
+
+        // Binary-search split at $CA: cmpwi $CA, bgt -> upperHalf, beq -> handlerCA
+        WriteInstr(bin, didDisp,      EncodeCmpwi(11, 0xCA));
+        WriteInstr(bin, didDisp + 4,  EncodeBgt(didDisp + 4, upperHalf));
+        WriteInstr(bin, didDisp + 8,  EncodeBeq(didDisp + 8, handlerCA));
+        // Falls through to lower-value compares.
+        EmitCmpBeq(bin, didDisp + 12, 0xC9, handlerC9);
+        // Upper half: another flat cmpwi/beq pair.
+        EmitCmpBeq(bin, upperHalf,    0xCB, handlerCB);
+
+        // Plant minimal handler bodies so TraceDidHandler doesn't crash.
+        // Inline-constant handlers (no lis/lwz pattern) just blr immediately.
+        WriteInstr(bin, handlerCA, 0x4E800020);
+        WriteInstr(bin, handlerCB, 0x4E800020);
+        WriteInstr(bin, handlerC9, 0x4E800020);
+
+        var result = BinIdentificationReader.Parse(bin);
+        Assert.NotNull(result);
+        Assert.NotNull(result!.FindDid(0xCA));
+        Assert.NotNull(result.FindDid(0xC9));
+        Assert.NotNull(result.FindDid(0xCB));
+    }
+
+    [Fact]
+    public void Parse_PromotesSegmentDerivedFieldsToDids()
+    {
+        // When the parser finds a VIN via the flash-metadata sweep, it must
+        // also promote it into the Dids list as a SegmentDerived $90 entry
+        // so the Applier can write it through the uniform Dids walk. Same
+        // for $28 partial-VIN (last 6 chars).
+        // Synthesise just enough bin for Parse to succeed: a dispatcher
+        // window plus a fake VIN descriptor at 0xE0AC (E38 layout).
+        var bin = new byte[0x200000];
+
+        const int dispatcher = 0x2BB90;
+        const int handler1A  = 0x2BD28;
+        const int didDisp    = 0x2B904;
+
+        WriteInstr(bin, dispatcher - 4, 0x89FF0002);
+        EmitCmpBeq(bin, dispatcher,      0x1A, handler1A);
+        EmitCmpBeq(bin, dispatcher + 8,  0x20, dispatcher + 0x40);
+        EmitCmpBeq(bin, dispatcher + 16, 0x27, dispatcher + 0x44);
+        EmitCmpBeq(bin, dispatcher + 24, 0x28, dispatcher + 0x48);
+        EmitCmpBeq(bin, dispatcher + 32, 0x34, dispatcher + 0x4C);
+
+        WriteInstr(bin, handler1A,     0x3D800030);
+        WriteInstr(bin, handler1A + 4, 0x887F0003);
+        WriteInstr(bin, handler1A + 8, EncodeBl(handler1A + 8, didDisp));
+        WriteInstr(bin, didDisp,       0x4E800020);  // dispatcher just blr's
+
+        // Plant a VIN descriptor: 8-char tail + 17-char VIN where the last
+        // 8 chars of the VIN equal the tail. "GL206970" tail; VIN
+        // "6G1FK5EP6GL206970" ends in "GL206970".
+        var vinDesc = System.Text.Encoding.ASCII.GetBytes("GL2069706G1FK5EP6GL206970");
+        Array.Copy(vinDesc, 0, bin, 0xE0AC, vinDesc.Length);
+
+        var result = BinIdentificationReader.Parse(bin);
+        Assert.NotNull(result);
+        Assert.Equal("6G1FK5EP6GL206970", result!.Vin);
+
+        // $90 VIN should be promoted as SegmentDerived with the ASCII bytes.
+        var d90 = result.FindDid(0x90);
+        Assert.NotNull(d90);
+        Assert.Equal(BinIdentificationReader.DidSourceKind.SegmentDerived, d90!.Kind);
+        Assert.Equal("6G1FK5EP6GL206970", System.Text.Encoding.ASCII.GetString(d90.WireBytes));
+
+        // $28 partial VIN should be the last 6 chars.
+        var d28 = result.FindDid(0x28);
+        Assert.NotNull(d28);
+        Assert.Equal("206970", System.Text.Encoding.ASCII.GetString(d28!.WireBytes));
+    }
+
+    [Fact]
+    public void Parse_ExtractsAlphaCodeAdjacentToFlashUInt32BeDid()
+    {
+        // GMW3110-2010 §8.3.2: $D1 is the 2-char Alpha Code that pairs with
+        // the SWMI returned by $C1. In every T43/E38/E67 bin we've inspected
+        // the alpha sits as 2 ASCII bytes immediately after the 4-byte BE
+        // part number (e.g. "AA" or "AB"), so the parser pairs them up.
+        var bin = new byte[0x200000];
+
+        const int dispatcher = 0x2BB90;
+        const int handler1A  = 0x2BD28;
+        const int didDisp    = 0x2B904;
+        const int handlerC1  = 0x2B96C;
+        const int fetcherFn  = 0x0BA3CC;
+        const int tableAddr  = 0x60208;
+        const int dataAddr   = 0x60005;
+        const uint expectedValue = 24264923u;
+
+        WriteInstr(bin, dispatcher - 4, 0x89FF0002);
+        EmitCmpBeq(bin, dispatcher,      0x1A, handler1A);
+        EmitCmpBeq(bin, dispatcher + 8,  0x20, dispatcher + 0x40);
+        EmitCmpBeq(bin, dispatcher + 16, 0x27, dispatcher + 0x44);
+        EmitCmpBeq(bin, dispatcher + 24, 0x28, dispatcher + 0x48);
+        EmitCmpBeq(bin, dispatcher + 32, 0x34, dispatcher + 0x4C);
+
+        WriteInstr(bin, handler1A,     0x3D800030);
+        WriteInstr(bin, handler1A + 4, 0x887F0003);
+        WriteInstr(bin, handler1A + 8, EncodeBl(handler1A + 8, didDisp));
+
+        EmitCmpBeq(bin, didDisp,     0xC1, handlerC1);
+        EmitCmpBeq(bin, didDisp + 8, 0x20, didDisp + 0x30);
+        EmitCmpBeq(bin, didDisp + 16, 0x27, didDisp + 0x34);
+        EmitCmpBeq(bin, didDisp + 24, 0x28, didDisp + 0x38);
+
+        WriteInstr(bin, handlerC1,      EncodeLis(12, 0x6));
+        WriteInstr(bin, handlerC1 + 4,  EncodeLwz(12, 12, 0x208));
+        WriteInstr(bin, handlerC1 + 8,  0x7D8903A6);
+        WriteInstr(bin, handlerC1 + 12, 0x4E800420);
+
+        System.Buffers.Binary.BinaryPrimitives.WriteInt32BigEndian(bin.AsSpan(tableAddr, 4), fetcherFn);
+
+        WriteInstr(bin, fetcherFn,     EncodeLis(3, dataAddr >> 16));
+        WriteInstr(bin, fetcherFn + 4, EncodeAddi(3, 3, dataAddr & 0xFFFF));
+        WriteInstr(bin, fetcherFn + 8, 0x4E800020);
+
+        // 4-byte BE PN, then 2-byte ASCII alpha "AB" at dataAddr + 4.
+        System.Buffers.Binary.BinaryPrimitives.WriteUInt32BigEndian(bin.AsSpan(dataAddr, 4), expectedValue);
+        bin[dataAddr + 4] = (byte)'A';
+        bin[dataAddr + 5] = (byte)'B';
+
+        var result = BinIdentificationReader.Parse(bin);
+        Assert.NotNull(result);
+        var c1 = result!.FindDid(0xC1);
+        Assert.NotNull(c1);
+        Assert.Equal(BinIdentificationReader.DidSourceKind.FlashUInt32BE, c1!.Kind);
+
+        // Partner $D1 should be synthesised with kind=SegmentDerived and the
+        // ASCII Alpha Code as wire bytes.
+        var d1 = result.FindDid(0xD1);
+        Assert.NotNull(d1);
+        Assert.Equal(BinIdentificationReader.DidSourceKind.SegmentDerived, d1!.Kind);
+        Assert.Equal(dataAddr + 4, d1.FlashAddress);
+        Assert.Equal(new byte[] { (byte)'A', (byte)'B' }, d1.WireBytes);
+        Assert.Equal("AB", d1.DecodedValue);
+    }
+
+    [Fact]
+    public void Parse_SkipsAlphaCodeWhenAdjacentBytesAreNotPrintableAscii()
+    {
+        // 0xFF / 0x00 padding right after the PN shouldn't surface a $D1
+        // entry - that's empty erased flash, not a real alpha code.
+        var bin = new byte[0x200000];
+
+        const int dispatcher = 0x2BB90;
+        const int handler1A  = 0x2BD28;
+        const int didDisp    = 0x2B904;
+        const int handlerC1  = 0x2B96C;
+        const int fetcherFn  = 0x0BA3CC;
+        const int tableAddr  = 0x60208;
+        const int dataAddr   = 0x60005;
+
+        WriteInstr(bin, dispatcher - 4, 0x89FF0002);
+        EmitCmpBeq(bin, dispatcher,      0x1A, handler1A);
+        EmitCmpBeq(bin, dispatcher + 8,  0x20, dispatcher + 0x40);
+        EmitCmpBeq(bin, dispatcher + 16, 0x27, dispatcher + 0x44);
+        EmitCmpBeq(bin, dispatcher + 24, 0x28, dispatcher + 0x48);
+        EmitCmpBeq(bin, dispatcher + 32, 0x34, dispatcher + 0x4C);
+
+        WriteInstr(bin, handler1A,     0x3D800030);
+        WriteInstr(bin, handler1A + 4, 0x887F0003);
+        WriteInstr(bin, handler1A + 8, EncodeBl(handler1A + 8, didDisp));
+
+        EmitCmpBeq(bin, didDisp, 0xC1, handlerC1);
+
+        WriteInstr(bin, handlerC1,      EncodeLis(12, 0x6));
+        WriteInstr(bin, handlerC1 + 4,  EncodeLwz(12, 12, 0x208));
+        WriteInstr(bin, handlerC1 + 8,  0x7D8903A6);
+        WriteInstr(bin, handlerC1 + 12, 0x4E800420);
+
+        System.Buffers.Binary.BinaryPrimitives.WriteInt32BigEndian(bin.AsSpan(tableAddr, 4), fetcherFn);
+        WriteInstr(bin, fetcherFn,     EncodeLis(3, dataAddr >> 16));
+        WriteInstr(bin, fetcherFn + 4, EncodeAddi(3, 3, dataAddr & 0xFFFF));
+        WriteInstr(bin, fetcherFn + 8, 0x4E800020);
+
+        System.Buffers.Binary.BinaryPrimitives.WriteUInt32BigEndian(bin.AsSpan(dataAddr, 4), 12345678u);
+        bin[dataAddr + 4] = 0xFF;
+        bin[dataAddr + 5] = 0xFF;
+
+        var result = BinIdentificationReader.Parse(bin);
+        Assert.NotNull(result);
+        Assert.NotNull(result!.FindDid(0xC1));
+        Assert.Null(result.FindDid(0xD1));
+    }
+
     // ---------------------------- PPC encoder helpers ----------------------------
 
     private static void WriteInstr(byte[] d, int off, uint w)
@@ -231,6 +448,182 @@ public sealed class BinIdentificationReaderTests
 
     private static uint EncodeLwz(int rt, int ra, int simm16)
         => (32u << 26) | ((uint)rt << 21) | ((uint)ra << 16) | ((uint)simm16 & 0xFFFF);
+
+    private static uint EncodeCmpwi(int ra, int simm)
+        => (11u << 26) | (0u << 23) | (0u << 22) | (0u << 21) | ((uint)ra << 16) | ((uint)simm & 0xFFFF);
+
+    // Family-detection tests
+    //
+    // The agent-survey on `BINARY READ.bin` (a 2011 6.0L Silverado E38)
+    // surfaced a bug in `DetectFamily`: the old `LooksLikeE67` claimed any
+    // VIN-descriptor at 0xC0AC was E67, and `LooksLikeE38` required no
+    // BOSCH ASCII marker AND VIN at 0xE0AC. The 2011 Silverado is
+    // Continental-supplied E38 with VIN at 0xC0AC and no supplier markers
+    // at all - it was being mis-detected as Unknown. Fix moved the supplier-
+    // marker check to E67-positive (E67 == Bosch ME9 must carry a BOSCH
+    // marker) and relaxed E38 to accept either VIN offset. These tests pin
+    // each detection path that's now possible.
+
+    [Fact]
+    public void DetectFamily_VinAtC0AC_NoSupplierMarker_IsE38()
+    {
+        // The exact shape of the user's 2011 Silverado bin: VIN descriptor
+        // lives at 0xC0AC, no `BOSCH`/`DELPHI` ASCII anywhere (Continental
+        // supplier doesn't stamp a marker on these bins).
+        var bin = BuildMinimumViableImage();
+        PlantVinDescriptor(bin, 0xC0AC, "1GCRKSE36BZ158034");
+
+        var r = BinIdentificationReader.Parse(bin);
+
+        Assert.NotNull(r);
+        Assert.Equal("E38", r!.Family);
+    }
+
+    [Fact]
+    public void DetectFamily_VinAtE0AC_NoSupplierMarker_IsE38()
+    {
+        // Older 2008-ish Delphi E38 keeps the VIN descriptor at 0xE0AC.
+        // Same supplier-marker-absence policy applies.
+        var bin = BuildMinimumViableImage();
+        PlantVinDescriptor(bin, 0xE0AC, "1G1FK1RS2D0107722");
+
+        var r = BinIdentificationReader.Parse(bin);
+
+        Assert.NotNull(r);
+        Assert.Equal("E38", r!.Family);
+    }
+
+    [Fact]
+    public void DetectFamily_VinAtC0AC_WithBoschMarker_IsE67()
+    {
+        // E67 / Bosch ME9 lives at 0xC0AC on the 2010+ memory map AND ships
+        // a BOSCH ASCII stamp (the agent confirmed "BOSCH" appears in every
+        // E67 sample we have). That combination must still detect as E67,
+        // not E38.
+        var bin = BuildMinimumViableImage();
+        PlantVinDescriptor(bin, 0xC0AC, "1G6DT57V690112233");
+        PlantAscii(bin, 0x1000, "BOSCH ME9");
+
+        var r = BinIdentificationReader.Parse(bin);
+
+        Assert.NotNull(r);
+        Assert.Equal("E67", r!.Family);
+    }
+
+    [Fact]
+    public void DetectFamily_VinAtE0AC_WithBoschMarkerAndNoDelphi_IsE67()
+    {
+        // The other E67 layout (2009-era variants).
+        var bin = BuildMinimumViableImage();
+        PlantVinDescriptor(bin, 0xE0AC, "1G6DT57V490112233");
+        PlantAscii(bin, 0x1000, "BOSCH ME9");
+
+        var r = BinIdentificationReader.Parse(bin);
+
+        Assert.NotNull(r);
+        Assert.Equal("E67", r!.Family);
+    }
+
+    [Fact]
+    public void DetectFamily_TC1912Marker_StillWinsAsT43()
+    {
+        // Regression: even if a synthetic bin somehow has a VIN descriptor
+        // at the E38 offsets AND a Bosch marker (which could otherwise look
+        // like E67), the T43 "BOSCH TC19.12" string takes precedence.
+        var bin = BuildMinimumViableImage();
+        PlantVinDescriptor(bin, 0xC0AC, "1G1FK1RS2D0107722");
+        PlantAscii(bin, 0x1FFA0, "BOSCH TC19.12");
+
+        var r = BinIdentificationReader.Parse(bin);
+
+        Assert.NotNull(r);
+        Assert.Equal("T43", r!.Family);
+    }
+
+    [Fact]
+    public void DetectFamily_NoVinDescriptorAnywhere_IsUnknown()
+    {
+        // No VIN descriptor at either anchor - DetectFamily should fall
+        // through to "Unknown" instead of mis-detecting on something else.
+        var bin = BuildMinimumViableImage();
+
+        var r = BinIdentificationReader.Parse(bin);
+
+        Assert.NotNull(r);
+        Assert.Equal("Unknown", r!.Family);
+    }
+
+    // ---- helpers for family-detection tests ----
+
+    /// <summary>
+    /// Build the smallest possible bin that Parse() will accept: a service
+    /// dispatcher with the SID cluster, a $1A trampoline, and a (possibly
+    /// empty) DID dispatcher. No DID handlers wired in - DID extraction
+    /// isn't what these tests are about; they only need Parse() to reach
+    /// DetectFamily() without bailing early.
+    /// </summary>
+    private static byte[] BuildMinimumViableImage()
+    {
+        var bin = new byte[0x200000];
+
+        const int dispatcher = 0x2BB90;
+        const int handler1A  = 0x2BD28;
+        const int didDisp    = 0x2B904;
+
+        WriteInstr(bin, dispatcher - 4, 0x89FF0002);   // lbz r15, 2(r31) - anchor for back-walk
+        EmitCmpBeq(bin, dispatcher,      0x1A, handler1A);
+        EmitCmpBeq(bin, dispatcher + 8,  0x20, dispatcher + 0x40);
+        EmitCmpBeq(bin, dispatcher + 16, 0x27, dispatcher + 0x44);
+        EmitCmpBeq(bin, dispatcher + 24, 0x28, dispatcher + 0x48);
+        EmitCmpBeq(bin, dispatcher + 32, 0x34, dispatcher + 0x4C);
+
+        WriteInstr(bin, handler1A,     0x3D800030);                       // lis r12, 0x30 (filler)
+        WriteInstr(bin, handler1A + 4, 0x887F0003);                       // lbz r3, 3(r31)
+        WriteInstr(bin, handler1A + 8, EncodeBl(handler1A + 8, didDisp)); // bl didDisp
+
+        // DID dispatcher is intentionally empty - no SID compares wired
+        // in. WalkChain returns an empty map, Parse iterates zero DIDs,
+        // and we land on DetectFamily with the body of the bin defaulting
+        // to all-zero.
+        WriteInstr(bin, didDisp, 0x4E800020);   // blr (closes the chain)
+
+        return bin;
+    }
+
+    private static void PlantVinDescriptor(byte[] bin, int offset, string vin)
+    {
+        Assert.Equal(17, vin.Length);
+        // Descriptor format is 8-char tail (last 8 chars of VIN) followed
+        // by the full 17-char VIN - HasAsciiVinDescriptor only checks
+        // that 25 printable ASCII bytes land at the offset, but planting
+        // the structurally-correct shape keeps the integration with the
+        // VinDescriptorRx regex consistent if the test ever evolves.
+        var tail = vin[^8..];
+        var bytes = System.Text.Encoding.ASCII.GetBytes(tail + vin);
+        Assert.Equal(25, bytes.Length);
+        bytes.CopyTo(bin.AsSpan(offset, 25));
+    }
+
+    private static void PlantAscii(byte[] bin, int offset, string s)
+    {
+        var bytes = System.Text.Encoding.ASCII.GetBytes(s);
+        bytes.CopyTo(bin.AsSpan(offset, bytes.Length));
+    }
+
+    private static uint EncodeBeq(int insAddr, int target)
+    {
+        int disp = target - insAddr;
+        Assert.InRange(disp, -0x8000, 0x7FFF);
+        return (16u << 26) | (12u << 21) | (2u << 16) | ((uint)(disp & 0xFFFC));
+    }
+
+    private static uint EncodeBgt(int insAddr, int target)
+    {
+        int disp = target - insAddr;
+        Assert.InRange(disp, -0x8000, 0x7FFF);
+        // bc BO=12 (branch if true), BI=1 (gt bit of cr0)
+        return (16u << 26) | (12u << 21) | (1u << 16) | ((uint)(disp & 0xFFFC));
+    }
 }
 
 // Integration tests against the user's real bins. Tests return early

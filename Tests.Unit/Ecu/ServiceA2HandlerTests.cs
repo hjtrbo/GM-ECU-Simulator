@@ -49,4 +49,33 @@ public sealed class ServiceA2HandlerTests
         Assert.Equal(new byte[] { Service.NegativeResponse, Service.ReportProgrammedState, Nrc.SubFunctionNotSupportedInvalidFormat },
                      TestFrame.DequeueSingleFrameUsdt(ch));
     }
+
+    [Fact]
+    public void FunctionalRequest_RespondsWithE2()
+    {
+        // §8.16: $A2 functional is the enumeration mechanism - every programmable
+        // ECU answers on its USDT response ID. GM SPS / DPS counts these to
+        // populate its mapping matrix during "Determine subnet configuration".
+        var node = NodeFactory.CreateNode();
+        var ch = NodeFactory.CreateChannel();
+
+        var ok = ServiceA2Handler.Handle(node, new byte[] { 0xA2 }, ch, isFunctional: true);
+
+        Assert.True(ok);
+        Assert.Equal(new byte[] { 0xE2, 0x00 }, TestFrame.DequeueSingleFrameUsdt(ch));
+    }
+
+    [Fact]
+    public void FunctionalMalformedRequest_IsSilent()
+    {
+        // Functional broadcast with extra bytes: stay silent so a malformed
+        // tester request doesn't carpet-bomb the bus with NRCs from every ECU.
+        var node = NodeFactory.CreateNode();
+        var ch = NodeFactory.CreateChannel();
+
+        var ok = ServiceA2Handler.Handle(node, new byte[] { 0xA2, 0x00 }, ch, isFunctional: true);
+
+        Assert.False(ok);
+        TestFrame.AssertEmpty(ch);
+    }
 }

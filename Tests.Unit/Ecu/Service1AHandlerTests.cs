@@ -80,6 +80,77 @@ public sealed class Service1AHandlerTests
         Assert.Equal(new byte[] { Service.NegativeResponse, Service.ReadDataByIdentifier, Nrc.SubFunctionNotSupportedInvalidFormat }, resp);
     }
 
+    // ---------- DID $B0 "Return ECU Diagnostic Address" + functional broadcast ----------
+    //
+    // DPS Programmers Reference Manual p.241: `$101 $FE ... $1A $B0` is the
+    // functional "All nodes - Return ECU Diagnostic Address" broadcast DPS uses
+    // to rebuild its mapping matrix after a flash. DID $B0 is canonically the
+    // ECU's own diagnostic address, so the response is always `5A B0 <addr>`
+    // regardless of what JSON config has in slot $B0. Other DIDs must stay
+    // silent on functional addressing (same NRC-suppression policy as $A2/$A5)
+    // to avoid bus storms when DPS broadcasts.
+
+    [Fact]
+    public void FunctionalB0_ReturnsDiagAddressRegardlessOfConfiguredValue()
+    {
+        // Spec override: $1A $B0 always returns the node's DiagnosticAddress,
+        // even if the JSON config populated DID $B0 with some other bytes.
+        var node = NodeFactory.CreateNode();
+        node.DiagnosticAddress = 0x11;
+        node.SetIdentifier(0xB0, new byte[] { 0xAA, 0xBB, 0xCC, 0xDD });
+        var ch = NodeFactory.CreateChannel();
+
+        Service1AHandler.Handle(node, new byte[] { 0x1A, 0xB0 }, ch, isFunctional: true);
+
+        var resp = TestFrame.DequeueSingleFrameUsdt(ch);
+        Assert.Equal(new byte[] { 0x5A, 0xB0, 0x11 }, resp);
+        TestFrame.AssertEmpty(ch);
+    }
+
+    [Fact]
+    public void PhysicalB0_AlsoReturnsDiagAddress()
+    {
+        // The $B0 override is not addressing-mode-gated: real ECUs answer the
+        // same on physical, and p.241 doesn't restrict it to functional only.
+        var node = NodeFactory.CreateNode();
+        node.DiagnosticAddress = 0x11;
+        node.SetIdentifier(0xB0, new byte[] { 0xAA, 0xBB, 0xCC, 0xDD });
+        var ch = NodeFactory.CreateChannel();
+
+        Service1AHandler.Handle(node, new byte[] { 0x1A, 0xB0 }, ch, isFunctional: false);
+
+        var resp = TestFrame.DequeueSingleFrameUsdt(ch);
+        Assert.Equal(new byte[] { 0x5A, 0xB0, 0x11 }, resp);
+        TestFrame.AssertEmpty(ch);
+    }
+
+    [Fact]
+    public void FunctionalOtherDid_IsSilent()
+    {
+        // Functional $1A for a non-$B0 DID must produce no response (positive
+        // or negative), matching the $A2/$A5 broadcast-silence policy.
+        var node = NodeFactory.CreateNode();
+        node.SetIdentifier(0x90, Encoding.ASCII.GetBytes("1GCRKSE36BZ158034"));
+        var ch = NodeFactory.CreateChannel();
+
+        Service1AHandler.Handle(node, new byte[] { 0x1A, 0x90 }, ch, isFunctional: true);
+
+        TestFrame.AssertEmpty(ch);
+    }
+
+    [Fact]
+    public void FunctionalUnknownDid_IsSilent()
+    {
+        // Same suppression rule for an unknown DID: no NRC on functional
+        // broadcast (mirrors ServiceA2HandlerTests.FunctionalMalformedRequest_IsSilent).
+        var node = NodeFactory.CreateNode();
+        var ch = NodeFactory.CreateChannel();
+
+        Service1AHandler.Handle(node, new byte[] { 0x1A, 0xFE }, ch, isFunctional: true);
+
+        TestFrame.AssertEmpty(ch);
+    }
+
     // ---------- end-to-end VIN through Iso15765Channel ----------
 
     [Fact]

@@ -23,6 +23,50 @@ public sealed class Pid
     public double Offset { get; set; } = 0.0;
     public string Unit { get; set; } = "";
 
+    /// <summary>
+    /// Optional override for <see cref="Size"/> to express PIDs longer than
+    /// 4 bytes. The legacy <see cref="PidSize"/> enum caps at <c>DWord</c>
+    /// (4 bytes) because synthetic-waveform PIDs are scalar values; real GM
+    /// ECUs expose PIDs of arbitrary byte length via $22 (e.g. PID 0x155B is
+    /// 17 bytes on the E38 family). When non-null, the $22 handler responds
+    /// with exactly this many bytes regardless of <see cref="Size"/>.
+    /// </summary>
+    public int? LengthBytes { get; set; }
+
+    /// <summary>
+    /// Optional verbatim response payload. When set, the $22 handler returns
+    /// these bytes directly (truncated/padded to <see cref="ResponseLength"/>)
+    /// and ignores the waveform-encoding pipeline. Used by bin-extracted
+    /// PID placeholders that have a known correct size but no live data
+    /// source - zero-filled is the default. Existing synthetic-waveform PIDs
+    /// (Engine RPM etc.) leave this null and go through the waveform path.
+    /// </summary>
+    public byte[]? StaticBytes { get; set; }
+
+    /// <summary>Effective wire response length in bytes: <see cref="LengthBytes"/>
+    /// when explicit, otherwise the value of the legacy <see cref="Size"/> enum.</summary>
+    public int ResponseLength => LengthBytes ?? (int)Size;
+
+    /// <summary>
+    /// Fill <paramref name="dest"/> with this PID's response payload bytes.
+    /// Uses <see cref="StaticBytes"/> verbatim (padded with zeros if shorter
+    /// than the destination) when present; otherwise samples the waveform and
+    /// encodes through <see cref="ValueCodec.Encode"/> like the legacy path.
+    /// </summary>
+    public void WriteResponseBytes(double timeMs, Span<byte> dest)
+    {
+        if (StaticBytes is not null)
+        {
+            int n = Math.Min(StaticBytes.Length, dest.Length);
+            StaticBytes.AsSpan(0, n).CopyTo(dest);
+            if (n < dest.Length) dest.Slice(n).Clear();
+            return;
+        }
+        ValueCodec.Encode(
+            waveform.Sample(timeMs),
+            Scalar, Offset, DataType, dest.Length, dest);
+    }
+
     private WaveformConfig waveformConfig = new();
     private IWaveformGenerator waveform;
 

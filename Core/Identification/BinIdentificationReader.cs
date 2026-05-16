@@ -65,6 +65,10 @@ public static class BinIdentificationReader
         FlashUInt32BE,    // handler reads 4 BE bytes from a fixed flash address
         InlineConstant,   // handler returns a hardcoded value (e.g. $B0 -> 0x18)
         RuntimeComputed,  // fetcher returns a RAM address - value is built at boot
+        SegmentDerived,   // synthesised by the segment reader from EEPROM/flash
+                          // markers; not present in the $1A dispatcher chain but
+                          // the value the real ECU would return on $1A is known
+                          // because it lives at a structurally-fixed offset
         Unknown,
     }
 
@@ -145,6 +149,19 @@ public static class BinIdentificationReader
             if (extracted != null) dids.Add(extracted);
         }
 
+        // 5b. Pair each $C0..$CA part-number DID with its $D0..$DA Alpha
+        // Code. GMW3110-2010 §8.3.2 defines $D0 as the boot SW alpha code
+        // and $D1..$DA as the 2-char design-level suffix for the $C1..$CA
+        // SWMIs. In every T43/E38/E67 bin we've inspected the alpha is
+        // stored as 2 ASCII bytes immediately after the 4-byte BE part
+        // number ("AA" placeholder unmodified-from-factory; "AB"/"AC" on
+        // re-released cals). The $1A dispatcher chain on these bins doesn't
+        // route the $D-range so we synthesise them as SegmentDerived; an
+        // ECU paired with the right tester would still NRC them, but the
+        // simulator now exposes the data so the user can hand-edit if they
+        // need to mimic a newer Global B ECU that does dispatch them.
+        SynthesiseAlphaCodeDids(bytes, dids);
+
         // 6. Family detection.
         var family = DetectFamily(bytes);
 
@@ -196,6 +213,26 @@ public static class BinIdentificationReader
         if (c1Extracted != null && c1Extracted.Kind == DidSourceKind.FlashUInt32BE)
             endPn = c1Extracted.DecodedValue;
 
+        // 8. Synthesise segment-derived DIDs. The $1A dispatcher in the bins
+        // we observed only routes 5-7 DIDs (B0, C1, C9, CA, CB, CC), but the
+        // EEPROM/flash-metadata sweep recovers values for several other DIDs
+        // that a real ECU would return on the $1A wire path - they're not in
+        // the program-flash dispatcher because the data lives in EEPROM /
+        // calibration blocks, not in a code-pointer table. Surfacing them as
+        // DidExtractions lets the BinIdentificationApplier walk one uniform
+        // list instead of carrying a parallel field-by-field hardcoding.
+        // Any DID that's already on the wire path (FlashUInt32BE) wins; we
+        // never overwrite a $1A-traced value with a structurally-derived one.
+        // GMW3110-2010 §8.3.2 Table 25 anchors the DID-to-meaning mapping.
+        SynthesiseSegmentDerivedDids(dids,
+            vin: vin,
+            programmingDate: programDate,
+            broadcastCode: bcc,
+            traceCode: traceCode,
+            calibrationPartNumber: calPn,
+            endModelPartNumber: endPn,
+            baseModelPartNumber: basePn);
+
         return new BinIdentification(
             Family: family,
             ServiceDispatcherOffset: dispatcherAnchor,
@@ -214,6 +251,92 @@ public static class BinIdentificationReader
             ProgrammingTool: programTool,
             TraceCode: traceCode,
             Warnings: warnings);
+    }
+
+    // Map of DIDs the SegmentReader can populate. Each entry says how to
+    // turn a string field value into the wire bytes a real ECU returns on
+    // $1A for that DID. GMW3110-2010 §8.3.2 Table 25 specifies $90 VIN as
+    // 17 ASCII chars, $B5 BCC as 4 ASCII chars, $99 ProgrammingDate as 4
+    // BCD bytes (we keep the YYYYMMDD ASCII rendering for the editor and
+    // let the dispatcher re-encode if needed - matches what the existing
+    // applier path was doing). Entries that produce null at runtime get
+    // skipped silently.
+    private static void SynthesiseSegmentDerivedDids(
+        List<DidExtraction> dids,
+        string? vin,
+        string? programmingDate,
+        string? broadcastCode,
+        string? traceCode,
+        string? calibrationPartNumber,
+        string? endModelPartNumber,
+        string? baseModelPartNumber)
+    {
+        AddIfMissing(dids, 0x90, vin);                 // VIN (17 ASCII)
+        AddIfMissing(dids, 0x99, programmingDate);     // YYYYMMDD ASCII
+        AddIfMissing(dids, 0xB5, broadcastCode);       // 4-char BCC
+        AddIfMissing(dids, 0xB4, traceCode);           // Mfg Traceability Chars
+        AddIfMissing(dids, 0xC0, calibrationPartNumber); // Operating SW ID / cal PN
+        AddIfMissing(dids, 0xC2, baseModelPartNumber);   // Base model P/N
+
+        // $C1 End Model is the canonical $1A wire DID; only synthesise it if
+        // the dispatcher didn't already trace it. The dispatcher gives us
+        // raw 4-byte BE bytes (matches the real ECU response); the metadata
+        // sweep only gives the decimal string, so we promote it as ASCII.
+        if (endModelPartNumber != null && !dids.Any(x => x.Did == 0xC1))
+            AddIfMissing(dids, 0xC1, endModelPartNumber);
+
+        // Partial VIN ($28) is the last 6 chars of the full VIN per GMW3110
+        // §8.3.2. Derive when we have the full VIN; the real ECU returns
+        // ASCII for this DID.
+        if (!string.IsNullOrEmpty(vin) && vin!.Length >= 6)
+            AddIfMissing(dids, 0x28, vin[^6..]);
+    }
+
+    // Walk every $C0..$CA DID we just traced and try to recover the matching
+    // $D0..$DA Alpha Code from the 2 bytes immediately after the 4-byte PN.
+    // Only emit a $D-side entry when:
+    //   * the partner $Cn DID was traced as FlashUInt32BE (we have a real
+    //     flash address - RAM-cached fetchers don't give us a place to look)
+    //   * the 2 candidate bytes are printable ASCII (rules out 00/FF padding
+    //     and CRC-style binary suffix bytes)
+    private static void SynthesiseAlphaCodeDids(byte[] bytes, List<DidExtraction> dids)
+    {
+        // Snapshot - we mutate `dids` inside the loop.
+        var partnerDids = dids
+            .Where(x => x.Kind == DidSourceKind.FlashUInt32BE
+                        && x.FlashAddress is int a && a + 6 <= bytes.Length
+                        && x.Did >= 0xC0 && x.Did <= 0xCA)
+            .ToArray();
+
+        foreach (var partner in partnerDids)
+        {
+            byte alphaDid = (byte)(0xD0 + (partner.Did - 0xC0));
+            if (dids.Any(x => x.Did == alphaDid)) continue;
+            int addr = partner.FlashAddress!.Value + 4;
+            byte b0 = bytes[addr];
+            byte b1 = bytes[addr + 1];
+            if (!IsPrintableAscii(b0) || !IsPrintableAscii(b1)) continue;
+            var wire = new[] { b0, b1 };
+            dids.Add(new DidExtraction(
+                Did: alphaDid,
+                Kind: DidSourceKind.SegmentDerived,
+                FlashAddress: addr,
+                WireBytes: wire,
+                DecodedValue: Encoding.ASCII.GetString(wire)));
+        }
+    }
+
+    private static bool IsPrintableAscii(byte b) => b >= 0x20 && b <= 0x7E;
+
+    private static void AddIfMissing(List<DidExtraction> dids, byte did, string? asciiValue)
+    {
+        if (string.IsNullOrEmpty(asciiValue)) return;
+        // Don't overwrite a $1A-traced value (FlashUInt32BE / RuntimeComputed
+        // / InlineConstant from the dispatcher) - those are wire-authentic.
+        if (dids.Any(x => x.Did == did)) return;
+        var bytes = Encoding.ASCII.GetBytes(asciiValue);
+        dids.Add(new DidExtraction(did, DidSourceKind.SegmentDerived,
+            FlashAddress: null, WireBytes: bytes, DecodedValue: asciiValue));
     }
 
     /// <summary>
@@ -315,20 +438,35 @@ public static class BinIdentificationReader
             {
                 int imm = (short)(w & 0xFFFF);
                 if (imm < 0 || imm > 0xFF) continue;
-                // Next instruction should be a conditional branch (op 16) that
-                // is the dispatch arm for this immediate.
-                uint w2 = BinaryPrimitives.ReadUInt32BigEndian(d.AsSpan(i + 4, 4));
-                uint op2 = w2 >> 26;
-                if (op2 == 16)
+                // The next conditional branch (op 16) is the dispatch arm for
+                // this immediate. Most chains are flat `cmpwi ; beq` pairs,
+                // but GM also generates a binary-search shape:
+                //   cmpwi rA, $CA
+                //   bgt   <upper-half>     ; bc BO=12, BI=1
+                //   beq   <handler>        ; bc BO=12, BI=2
+                // so we accept either pair-position. Anything else (bge, bne,
+                // bdnz, ...) just isn't the dispatch arm for this immediate
+                // and gets skipped.
+                for (int k = 1; k <= 2; k++)
                 {
+                    int j = i + 4 * k;
+                    if (j + 4 > d.Length) break;
+                    uint w2 = BinaryPrimitives.ReadUInt32BigEndian(d.AsSpan(j, 4));
+                    uint op2 = w2 >> 26;
+                    if (op2 != 16) break;
                     int bd = (short)(w2 & 0xFFFC);
-                    int tgt = (i + 4 + bd) & 0x7FFFFFFF;
-                    // Only record beq forms (BO=12, BI bit 2 -> eq). Other forms
-                    // (bgt) split the chain and don't map a SID -> handler.
+                    int tgt = (j + bd) & 0x7FFFFFFF;
                     uint bo = (w2 >> 21) & 0x1F;
                     uint bi = (w2 >> 16) & 0x1F;
                     if (bo == 12 && (bi & 3) == 2)
+                    {
                         map.TryAdd((byte)imm, tgt);
+                        break;
+                    }
+                    // bgt (BO=12, BI bit 1 - gt) is the binary-search split;
+                    // keep scanning for the matching beq one slot further on.
+                    if (bo == 12 && (bi & 3) == 1) continue;
+                    break;
                 }
             }
             else if (op == 18)
@@ -510,24 +648,30 @@ public static class BinIdentificationReader
 
     private static bool LooksLikeE67(byte[] d)
     {
-        // E67 (Bosch ME9): calibration PN at 0x1000E; check both common VIN
-        // block offsets.
-        if (HasAsciiVinDescriptor(d, 0xC0AC)) return true;
-        // Some 2009-era E67 bins keep the VIN descriptor at 0xE0AC too -
-        // disambiguate by looking for absence of the Delphi marker.
-        if (HasAsciiVinDescriptor(d, 0xE0AC) && FindAscii(d, "DELPHI") < 0)
-        {
-            // E67 typically has Bosch markers too even though it's a
-            // different platform than the T43 TC19.12.
-            return FindAscii(d, "BOSCH") >= 0;
-        }
-        return false;
+        // E67 (Bosch ME9-based): VIN descriptor at either 0xC0AC (2010+) or
+        // 0xE0AC (some 2009-era bins). Require a Bosch ASCII marker to
+        // confirm - the previous "VIN@0xC0AC unconditionally = E67" rule
+        // mis-detected Continental-supplied E38 bins (e.g. 2011 Silverado
+        // 6.0L LY6) that also live at 0xC0AC but aren't Bosch ME9.
+        bool hasVin = HasAsciiVinDescriptor(d, 0xC0AC)
+                      || HasAsciiVinDescriptor(d, 0xE0AC);
+        if (!hasVin) return false;
+        if (FindAscii(d, "DELPHI") >= 0) return false;
+        return FindAscii(d, "BOSCH") >= 0;
     }
 
     private static bool LooksLikeE38(byte[] d)
     {
-        // E38 (Delphi): VIN block at 0xE0AC, no Bosch markers.
-        return HasAsciiVinDescriptor(d, 0xE0AC) && FindAscii(d, "BOSCH") < 0;
+        // E38 (Delphi-supplied 2008-ish era, Continental on 2010+ trucks):
+        // VIN block lives at 0xE0AC on older Delphi bins and 0xC0AC on the
+        // 2010+ memory map. No supplier ASCII marker required - Continental-
+        // supplied 6.0L Silverado bins carry no `BOSCH`/`DELPHI` string at all,
+        // so the prior "BOSCH must be absent" check was redundant with E67's
+        // positive Bosch-marker requirement: if no Bosch marker is present
+        // AND a VIN descriptor lands at one of the two known offsets, this
+        // is E38.
+        return HasAsciiVinDescriptor(d, 0xC0AC)
+               || HasAsciiVinDescriptor(d, 0xE0AC);
     }
 
     private static bool HasAsciiVinDescriptor(byte[] d, int off)

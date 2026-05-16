@@ -22,6 +22,9 @@ public static class SecurityModuleRegistry
         Register("gm-t43-test",
             () => new Gmw3110_2010_Generic(new T43Algorithm(),
                                            id: "gm-t43-test"));
+        Register("gmw3110-programming-bypass",
+            () => new Gmw3110_2010_Generic(new Gmw3110ProgrammingBypassAlgorithm(),
+                                           id: "gmw3110-programming-bypass"));
     }
 
     public static void Register(string id, Func<ISecurityAccessModule> factory)

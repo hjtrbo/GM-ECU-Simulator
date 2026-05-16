@@ -44,16 +44,24 @@ public sealed class EcuViewModel : NotifyPropertyChangedBase
         foreach (var e in SecurityModuleConfigEntries) e.PropertyChanged += OnSecurityEntryPropertyChanged;
 
         LoadInfoFromBinCommand = new RelayCommand(LoadInfoFromBin);
+        AutoPopulateDidsCommand = new RelayCommand(AutoPopulateMissingDids);
 
-        // Validate any pre-loaded DID values so the red border appears on
-        // open if the persisted config has invalid input (e.g. a 16-char
-        // VIN from before the constraint existed).
-        Validate(nameof(Vin), Vin, EcuFieldValidators.ValidateVin);
-        Validate(nameof(SupplierHardwareNumber), SupplierHardwareNumber, EcuFieldValidators.ValidateSupplierAscii);
-        Validate(nameof(SupplierHardwareVersion), SupplierHardwareVersion, EcuFieldValidators.ValidateSupplierAscii);
-        Validate(nameof(EndModelPartNumber), EndModelPartNumber, EcuFieldValidators.Validate4ByteHexBE);
-        Validate(nameof(BaseModelPartNumber), BaseModelPartNumber, EcuFieldValidators.ValidatePartNumber);
-        Validate(nameof(EcuDiagnosticAddress4ByteHex), EcuDiagnosticAddress4ByteHex, EcuFieldValidators.Validate4ByteHexBE);
+        // Identifiers grid: every well-known $1A DID gets a pre-populated row
+        // so the user can fill in values without "add" clicks. Leave Value
+        // blank to keep a DID unconfigured ($1A returns NRC $31 for it). Any
+        // non-standard DIDs already on the model (e.g. from a loaded bin or
+        // a hand-edited JSON) are appended after the well-known set so nothing
+        // is hidden. We DON'T subscribe to Model.IdentifiersChanged - the
+        // existing well-known-DID textboxes ($90/$92/$98/$C1/$C2/$CC) call
+        // SetIdentifier on every keystroke and re-running RebuildGrid would
+        // tear the user's open DataGrid edit out from under them. External
+        // mutations (LoadInfoFromBin) call RefreshIdentifiersGrid explicitly.
+        Identifiers = new ObservableCollection<IdentifierRowViewModel>();
+        RebuildIdentifierRows();
+
+        // Pre-grid identity-field validators dropped with the dedicated
+        // textboxes. The Identifiers grid does its own value-format handling
+        // (ASCII vs hex toggle) and doesn't surface a red-border indicator.
     }
 
     public string Name
@@ -98,162 +106,16 @@ public sealed class EcuViewModel : NotifyPropertyChangedBase
         set { if (TryParseHexU16(value, out var v)) UudtResponseCanId = v; }
     }
 
-    // ---------------- GMW3110 §8.3.2 ECU identity DIDs ----------------
+    // ---------------- $1A ECU identity DIDs ----------------
     //
-    // Five well-known ReadDataByIdentifier ($1A) values surfaced as first-
-    // class textboxes in the inspector. All values round-trip through the
-    // generic Identifiers map on EcuNode, so persistence is handled by the
-    // existing IdentifierDto round-trip in ConfigStore - no schema change
-    // required, and these DIDs also serve $1A on the wire automatically.
+    // Editing happens through the Identifiers grid further down the ECU
+    // panel - every well-known DID gets a pre-populated row. The grid pushes
+    // each value straight to EcuNode.SetIdentifier, which is the same storage
+    // the $1A handler reads from at runtime. Persisted by the existing
+    // IdentifierDto round-trip in ConfigStore.
     //
-    // Display semantics:
-    //   $90 / $92 / $98 / $C2  - ASCII strings (printable).
-    //   $C1 / $CC              - 4-byte BE hex ("0x017240DB"); the on-the-
-    //                            wire response for these DIDs is 4 raw bytes
-    //                            (the real ECU reads them straight from flash
-    //                            or a RAM cache), so the editor surfaces them
-    //                            as hex rather than ASCII.
-    //
-    // Empty/whitespace input removes the DID from the map so $1A goes back
-    // to its spec-correct NRC $31 RequestOutOfRange rather than echoing an
-    // empty value.
-
-    // Validation note: each setter writes the user's value into the model
-    // *before* validating, then runs the validator and stashes the result
-    // via SetError(). This lets the user type partial input ("3 chars and
-    // counting...") without the value being silently dropped - the red
-    // border just appears until the value is complete and correct. Empty
-    // input is treated as "clear the DID" and is always valid, matching
-    // the existing setters' behaviour and the simulator's $1A NRC $31
-    // response for unknown DIDs.
-
-    /// <summary>DID $90 - Vehicle Identification Number (17 ASCII bytes per spec).</summary>
-    public string Vin
-    {
-        get => GetAsciiDid(0x90);
-        set
-        {
-            if (SetAsciiDid(0x90, value)) OnPropertyChanged();
-            Validate(nameof(Vin), value, EcuFieldValidators.ValidateVin);
-        }
-    }
-
-    /// <summary>DID $92 - System Supplier ECU Hardware Number (ASCII).</summary>
-    public string SupplierHardwareNumber
-    {
-        get => GetAsciiDid(0x92);
-        set
-        {
-            if (SetAsciiDid(0x92, value)) OnPropertyChanged();
-            Validate(nameof(SupplierHardwareNumber), value, EcuFieldValidators.ValidateSupplierAscii);
-        }
-    }
-
-    /// <summary>DID $98 - System Supplier ECU Hardware Version Number (ASCII).</summary>
-    public string SupplierHardwareVersion
-    {
-        get => GetAsciiDid(0x98);
-        set
-        {
-            if (SetAsciiDid(0x98, value)) OnPropertyChanged();
-            Validate(nameof(SupplierHardwareVersion), value, EcuFieldValidators.ValidateSupplierAscii);
-        }
-    }
-
-    /// <summary>DID $C1 - End Model Part Number Identification (4 bytes BE hex, e.g. "0x017240DB").</summary>
-    public string EndModelPartNumber
-    {
-        get => Get4ByteHexDid(0xC1);
-        set
-        {
-            if (Set4ByteHexDid(0xC1, value)) OnPropertyChanged();
-            Validate(nameof(EndModelPartNumber), value, EcuFieldValidators.Validate4ByteHexBE);
-        }
-    }
-
-    /// <summary>DID $C2 - Base Model Part Number Identification (ASCII).</summary>
-    public string BaseModelPartNumber
-    {
-        get => GetAsciiDid(0xC2);
-        set
-        {
-            if (SetAsciiDid(0xC2, value)) OnPropertyChanged();
-            Validate(nameof(BaseModelPartNumber), value, EcuFieldValidators.ValidatePartNumber);
-        }
-    }
-
-    /// <summary>DID $CC - ECU Diagnostic Address (4 bytes BE hex, e.g. "0x00000018").</summary>
-    public string EcuDiagnosticAddress4ByteHex
-    {
-        get => Get4ByteHexDid(0xCC);
-        set
-        {
-            if (Set4ByteHexDid(0xCC, value)) OnPropertyChanged();
-            Validate(nameof(EcuDiagnosticAddress4ByteHex), value, EcuFieldValidators.Validate4ByteHexBE);
-        }
-    }
-
-    // -------- EEPROM-block informational fields (Stage 2 segment reader) --------
-    //
-    // The fields below come out of the bin's EEPROM_DATA segment via the
-    // SegmentReader. They aren't on the GMW3110 $1A wire path, so they
-    // don't round-trip through EcuNode.Identifiers - they're display-only
-    // ViewModel state that the "Load Info From Bin..." button populates.
-    // (They don't survive simulator restarts; persistence wiring can come
-    // later when there's a use case for it.)
-
-    private string broadcastCode = "";
-    /// <summary>EEPROM "BCC" field - the 4-char broadcast code (last 4 chars of the calibration PN).</summary>
-    public string BroadcastCode
-    {
-        get => broadcastCode;
-        set
-        {
-            if (SetField(ref broadcastCode, value ?? ""))
-                Validate(nameof(BroadcastCode), value, EcuFieldValidators.ValidateBroadcastCode);
-        }
-    }
-
-    private string programmingDate = "";
-    /// <summary>EEPROM programming-date stamp, decoded from 4 BCD bytes to YYYYMMDD.</summary>
-    public string ProgrammingDate
-    {
-        get => programmingDate;
-        set
-        {
-            if (SetField(ref programmingDate, value ?? ""))
-                Validate(nameof(ProgrammingDate), value, EcuFieldValidators.ValidateProgrammingDate);
-        }
-    }
-
-    private string traceCode = "";
-    /// <summary>Bosch/Delphi supplier trace stamp - 16 chars on T43, 16 chars on E38/E67.</summary>
-    public string TraceCode
-    {
-        get => traceCode;
-        set
-        {
-            if (SetField(ref traceCode, value ?? ""))
-                Validate(nameof(TraceCode), value, EcuFieldValidators.ValidateSupplierAscii);
-        }
-    }
-
-    private string calibrationPartNumber = "";
-    /// <summary>
-    /// EEPROM "PCM" field - calibration broadcast part number as decimal.
-    /// Different from $C1 (the service end-model PN) - this is the cal-ID
-    /// that GM tuners refer to when they talk about "the OS" or "the
-    /// PCM number" of a flash.
-    /// </summary>
-    public string CalibrationPartNumber
-    {
-        get => calibrationPartNumber;
-        set
-        {
-            if (SetField(ref calibrationPartNumber, value ?? ""))
-                Validate(nameof(CalibrationPartNumber), value, EcuFieldValidators.ValidatePartNumber);
-        }
-    }
+    // "Load Info From Bin..." (LoadInfoFromBinCommand below) writes extracted
+    // values directly into EcuNode.Identifiers and then refreshes the grid.
 
     /// <summary>
     /// "Load Info From Bin" button command. Pops a file picker, parses the
@@ -273,6 +135,26 @@ public sealed class EcuViewModel : NotifyPropertyChangedBase
             Filter = "ECU bin (*.bin)|*.bin|All files|*.*",
         };
         if (picker.ShowDialog() != true) return;
+
+        // Ask the user which load mode to use BEFORE touching the file - if
+        // they cancel, no work is done. Yes = replace-all (destructive but
+        // explicit), No = merge (keeps user-edited / auto-populated values),
+        // Cancel = bail.
+        var modeChoice = MessageBox.Show(
+            "Replace all existing $1A DIDs on this ECU with what the bin contains?\n\n" +
+            "[Yes] Replace all - clear every DID on this ECU first, then write only " +
+            "what the bin surfaces. DIDs the bin can't extract end up unconfigured.\n\n" +
+            "[No] Add only if blank - keep existing DIDs; only fill ones currently empty. " +
+            "User edits and prior auto-populate values are preserved.\n\n" +
+            "[Cancel] Don't load.",
+            "Load Info From Bin",
+            MessageBoxButton.YesNoCancel,
+            MessageBoxImage.Question);
+
+        if (modeChoice == MessageBoxResult.Cancel) return;
+        var mode = modeChoice == MessageBoxResult.Yes
+            ? BinIdentificationApplier.LoadMode.ReplaceAll
+            : BinIdentificationApplier.LoadMode.Merge;
 
         byte[] bytes;
         try
@@ -297,45 +179,22 @@ public sealed class EcuViewModel : NotifyPropertyChangedBase
             return;
         }
 
-        // Apply extracted fields. Empty/null values fall through to no-op
-        // setters (the property setters already handle "no change" / "blank
-        // clears" semantics), so we don't need conditional logic per field.
-        var applied = new List<string>();
-        if (!string.IsNullOrEmpty(result.Vin)) { Vin = result.Vin!; applied.Add("$90 VIN"); }
-        if (!string.IsNullOrEmpty(result.SupplierHardwareNumber))
-            { SupplierHardwareNumber = result.SupplierHardwareNumber!; applied.Add("$92 HW#"); }
-        if (!string.IsNullOrEmpty(result.SupplierHardwareVersion))
-            { SupplierHardwareVersion = result.SupplierHardwareVersion!; applied.Add("$98 HW Ver"); }
-        // $C1 is a 4-byte BE field on the wire. When the parser traced it
-        // through the $1A handler (FlashUInt32BE), prefer the raw WireBytes
-        // over the decimal-ASCII fallback so what we show matches what the
-        // real ECU would return on the bus.
-        var c1 = result.FindDid(0xC1);
-        if (c1 != null && c1.Kind == BinIdentificationReader.DidSourceKind.FlashUInt32BE
-                       && c1.WireBytes.Length == 4)
-        {
-            EndModelPartNumber = "0x" + Convert.ToHexString(c1.WireBytes);
-            applied.Add("$C1 End P/N");
-        }
-        if (!string.IsNullOrEmpty(result.BaseModelPartNumber))
-            { BaseModelPartNumber = result.BaseModelPartNumber!; applied.Add("$C2 Base P/N"); }
-
-        // Stage 2: EEPROM-block informational fields. Display-only state;
-        // not pushed to Model.Identifiers because these aren't on the $1A
-        // wire path of any family we've inspected.
+        // Delegate to the testable Core helper. It clears + writes the model
+        // per the chosen mode and returns the lists for the summary dialog.
+        var outcome = BinIdentificationApplier.Apply(Model, result, mode);
+        var applied = outcome.Applied.ToList();
+        var skipped = outcome.Skipped.ToList();
         if (!string.IsNullOrEmpty(result.CalibrationPartNumber))
-            { CalibrationPartNumber = result.CalibrationPartNumber!; applied.Add("Cal P/N"); }
-        if (!string.IsNullOrEmpty(result.BroadcastCode))
-            { BroadcastCode = result.BroadcastCode!; applied.Add("BCC"); }
-        if (!string.IsNullOrEmpty(result.ProgrammingDate))
-            { ProgrammingDate = result.ProgrammingDate!; applied.Add("ProgDate"); }
-        if (!string.IsNullOrEmpty(result.TraceCode))
-            { TraceCode = result.TraceCode!; applied.Add("Trace"); }
+            applied.Add($"Cal P/N ({result.CalibrationPartNumber} - not stored, no fixed DID)");
 
         // Compose a summary message - shows which fields were populated and
         // surfaces any parser warnings (e.g. "no trampoline pattern detected").
+        string modeLabel = mode == BinIdentificationApplier.LoadMode.ReplaceAll
+            ? "Replace all (existing DIDs cleared first)"
+            : "Add only if blank (existing DIDs preserved)";
         var lines = new List<string>
         {
+            $"Mode: {modeLabel}",
             $"Family: {result.Family}",
             $"Service dispatcher: 0x{result.ServiceDispatcherOffset:X6}",
             $"$1A handler: 0x{result.Service1AHandlerOffset:X6}",
@@ -347,64 +206,107 @@ public sealed class EcuViewModel : NotifyPropertyChangedBase
                 ? $"Populated: {string.Join(", ", applied)}"
                 : "No fields populated (no extractable values found).",
         };
+        if (skipped.Count > 0)
+        {
+            lines.Add("");
+            lines.Add($"Kept existing (precedence: user/auto-populate wins): {string.Join(", ", skipped)}");
+        }
         if (result.Warnings.Count > 0)
         {
             lines.Add("");
             lines.Add("Warnings:");
             foreach (var w in result.Warnings) lines.Add("  - " + w);
         }
+
+        // Sync the Identifiers grid with the model since we just wrote five
+        // well-known DIDs through their dedicated property setters.
+        RefreshIdentifiersGrid();
+
         MessageBox.Show(string.Join(Environment.NewLine, lines),
             "Load Info From Bin", MessageBoxButton.OK, MessageBoxImage.Information);
     }
 
-    private string GetAsciiDid(byte did)
+    /// <summary>
+    /// True iff the model has a non-empty byte array stored for this DID.
+    /// Used by the precedence guard in <see cref="AutoPopulateMissingDids"/>
+    /// so the auto-populate pass doesn't clobber a higher-precedence value
+    /// (user hand-edit and bin-load both take precedence over defaults).
+    /// </summary>
+    private bool HasIdentifier(byte did)
     {
         var bytes = Model.GetIdentifier(did);
-        return bytes is { Length: > 0 } ? System.Text.Encoding.ASCII.GetString(bytes) : "";
+        return bytes != null && bytes.Length > 0;
     }
 
-    private bool SetAsciiDid(byte did, string? value)
-    {
-        var s = value ?? "";
-        if (s.Length == 0) return Model.RemoveIdentifier(did);
-        var bytes = System.Text.Encoding.ASCII.GetBytes(s);
-        var current = Model.GetIdentifier(did);
-        if (current != null && current.AsSpan().SequenceEqual(bytes)) return false;
-        Model.SetIdentifier(did, bytes);
-        return true;
-    }
+    /// <summary>
+    /// "Auto-populate missing $1A DIDs" command. Prompts the user for one of
+    /// three modes, then fills well-known DIDs (<see cref="Gmw3110DidNames.KnownDids"/>)
+    /// with placeholder values from <see cref="DefaultDidValues"/>. DIDs that
+    /// already have a non-empty value are NEVER overwritten - they stay even
+    /// in the aggressive mode. The two modes differ in how they treat
+    /// sticky-user blanks (source=User with no bytes - the user explicitly
+    /// cleared a row).
+    /// </summary>
+    public RelayCommand AutoPopulateDidsCommand { get; }
 
-    // Shared getter/setter for DIDs whose wire format is 4 raw bytes BE (the
-    // real ECU reads a uint32 from flash or RAM). Display is uppercase
-    // "0x" + 8 hex digits; blank clears the DID. Storage that isn't exactly
-    // 4 bytes (e.g. an older config that stashed $C1 as ASCII digits) reads
-    // back as empty so the inspector doesn't crash or show garbage - the
-    // user can re-enter or re-run Load Info From Bin to repopulate.
-    private string Get4ByteHexDid(byte did)
+    private void AutoPopulateMissingDids()
     {
-        var bytes = Model.GetIdentifier(did);
-        return bytes is { Length: 4 } ? "0x" + Convert.ToHexString(bytes) : "";
-    }
+        // Three-way prompt: Yes = aggressive (fill all blanks including ones
+        // the user deliberately cleared), No = conservative (default - keep
+        // sticky-user blanks), Cancel = bail with no model change.
+        var choice = MessageBox.Show(
+            "How should Auto-populate handle DIDs the user previously cleared?\n\n" +
+            "[Yes] Overwrite user-blank fields - fill every well-known DID that is " +
+            "currently empty, including ones the user explicitly cleared (the sticky-User " +
+            "rule is ignored for this run; rows already containing a value still aren't " +
+            "touched).\n\n" +
+            "[No] Populate blanks - only fill DIDs that are blank AND not tagged " +
+            "source=user. Rows the user deliberately cleared stay empty.\n\n" +
+            "[Cancel] Don't change anything.",
+            "Auto-populate DIDs",
+            MessageBoxButton.YesNoCancel,
+            MessageBoxImage.Question);
 
-    private bool Set4ByteHexDid(byte did, string? value)
-    {
-        var s = (value ?? "").Trim();
-        if (s.Length == 0) return Model.RemoveIdentifier(did);
-        if (s.StartsWith("0x", StringComparison.OrdinalIgnoreCase)) s = s[2..];
-        if (s.Length != 8) return false;
-        var bytes = new byte[4];
-        for (int i = 0; i < 4; i++)
+        if (choice == MessageBoxResult.Cancel) return;
+        bool overwriteUserBlanks = choice == MessageBoxResult.Yes;
+
+        int populated = 0;
+        int respectedUserBlanks = 0;
+        foreach (var did in Common.Protocol.Gmw3110DidNames.KnownDids)
         {
-            if (!byte.TryParse(s.AsSpan(i * 2, 2),
-                               System.Globalization.NumberStyles.HexNumber,
-                               System.Globalization.CultureInfo.InvariantCulture,
-                               out bytes[i]))
-                return false;
+            // Existing values are never overwritten by Auto-populate - the
+            // user owns rows with content regardless of mode.
+            if (HasIdentifier(did)) continue;
+
+            // Sticky-User blanks: skip in conservative mode; fill in aggressive.
+            // Auto / Bin / Blank sources always get the default.
+            if (!overwriteUserBlanks &&
+                Model.GetIdentifierSource(did) == Common.Protocol.DidSource.User)
+            {
+                respectedUserBlanks++;
+                continue;
+            }
+
+            var bytes = Common.Protocol.DefaultDidValues.Get(did);
+            if (bytes == null || bytes.Length == 0) continue;
+            Model.SetIdentifier(did, bytes, Common.Protocol.DidSource.Auto);
+            populated++;
         }
-        var current = Model.GetIdentifier(did);
-        if (current != null && current.AsSpan().SequenceEqual(bytes)) return false;
-        Model.SetIdentifier(did, bytes);
-        return true;
+        RefreshIdentifiersGrid();
+
+        if (populated == 0)
+        {
+            var msg = respectedUserBlanks > 0
+                ? $"Nothing to do - every well-known DID already has a value or " +
+                  $"is a user-blanked row. {respectedUserBlanks} row(s) tagged " +
+                  $"source=user were preserved; re-run and pick 'Overwrite user-blank " +
+                  $"fields' to fill those too."
+                : "Nothing to do - every well-known DID already has a value. " +
+                  "Clear an entry in the Identifiers grid (Value column) and re-run " +
+                  "to re-fill it with the placeholder default.";
+            MessageBox.Show(msg, "Auto-populate DIDs",
+                MessageBoxButton.OK, MessageBoxImage.Information);
+        }
     }
 
     /// <summary>FC.BS byte sent on First Frame reception. Hex display, e.g. "0x01".</summary>
@@ -454,6 +356,52 @@ public sealed class EcuViewModel : NotifyPropertyChangedBase
 
     /// <summary>The fixed list of valid values for the editor dropdown.</summary>
     public IReadOnlyList<int> DownloadAddressByteCountOptions { get; } = new[] { 2, 3, 4 };
+
+    /// <summary>
+    /// GMW3110 §8.16 SPS classification. Default A is a normal running ECU;
+    /// C activates the blank-ECU state machine that GM SPS / DPS uses during
+    /// programming-discovery (silent until $A2 received while $28 active,
+    /// then responds on SPS_PrimeRsp). The editor exposes this as a dropdown
+    /// driven by <see cref="SpsTypeOptions"/>.
+    /// </summary>
+    public Common.Protocol.SpsType SpsType
+    {
+        get => Model.SpsType;
+        set
+        {
+            if (Model.SpsType == value) return;
+            Model.SpsType = value;
+            OnPropertyChanged();
+        }
+    }
+
+    /// <summary>The fixed list of valid SpsType values for the editor dropdown.</summary>
+    public IReadOnlyList<Common.Protocol.SpsType> SpsTypeOptions { get; } = new[]
+    {
+        Common.Protocol.SpsType.A,
+        Common.Protocol.SpsType.B,
+        Common.Protocol.SpsType.C,
+    };
+
+    /// <summary>
+    /// 8-bit diagnostic address used to derive SPS_PrimeReq/Rsp for SpsType.C.
+    /// For type A/B this field is informational. Hex display, e.g. "0x11".
+    /// Setting this does NOT auto-update the CAN ID fields - the user is
+    /// expected to maintain the relationship PhysReq = $000|addr,
+    /// USDT resp = $300|addr when configuring a SPS_TYPE_C ECU.
+    /// </summary>
+    public string DiagnosticAddressHex
+    {
+        get => $"0x{Model.DiagnosticAddress:X2}";
+        set
+        {
+            if (TryParseHexByte(value, out var v) && Model.DiagnosticAddress != v)
+            {
+                Model.DiagnosticAddress = v;
+                OnPropertyChanged();
+            }
+        }
+    }
 
     private static bool TryParseHexByte(string s, out byte v)
     {
@@ -705,6 +653,55 @@ public sealed class EcuViewModel : NotifyPropertyChangedBase
         JsonValueKind.Null => "",
         _ => e.GetRawText(),
     };
+
+    // ---------------- Identifiers grid ----------------
+    //
+    // Generic table covering every $1A DID configured on this ECU. The five
+    // well-known DID textboxes higher up the panel ($90/$92/$98/$C1/$C2/$CC)
+    // are still there for convenience, but the grid is the canonical surface
+    // for anything DPS / a real tester might read - VINs, part numbers, calib
+    // IDs, supplier metadata, programming date, manufacturer enable counters,
+    // and the long $C0..$CA / $F1..$F4 ranges that the DPS Get Controller
+    // Info flow walks through. Persists through ConfigStore.EcuDtoFrom's
+    // existing Identifiers round-trip - no schema change needed.
+
+    /// <summary>Fixed rows: every well-known $1A DID plus any extras already
+    /// configured on the model. Empty Value means the DID isn't set (and $1A
+    /// will return NRC $31 for it).</summary>
+    public ObservableCollection<IdentifierRowViewModel> Identifiers { get; }
+
+    /// <summary>
+    /// Builds the row set: one row per <see cref="Gmw3110DidNames.KnownDids"/>
+    /// entry, plus any extras already present on <see cref="EcuNode.Identifiers"/>
+    /// that aren't in the well-known list (e.g. loaded from a custom JSON).
+    /// Existing rows are replaced; safe to call when the model changes
+    /// externally (LoadInfoFromBin, project file open).
+    /// </summary>
+    private void RebuildIdentifierRows()
+    {
+        Identifiers.Clear();
+        var known = new HashSet<byte>(Gmw3110DidNames.KnownDids);
+        foreach (var did in Gmw3110DidNames.KnownDids)
+        {
+            var bytes = Model.GetIdentifier(did) ?? Array.Empty<byte>();
+            Identifiers.Add(new IdentifierRowViewModel(Model, did, bytes));
+        }
+        // Append any extras the model already has (e.g. from a loaded bin or
+        // hand-edited JSON), sorted by DID for stable ordering.
+        foreach (var kv in Model.Identifiers.OrderBy(kv => kv.Key))
+        {
+            if (known.Contains(kv.Key)) continue;
+            Identifiers.Add(new IdentifierRowViewModel(Model, kv.Key, kv.Value));
+        }
+    }
+
+    /// <summary>
+    /// Rebuilds the grid rows after an external mutation (e.g. Load Info From
+    /// Bin populates several DIDs through their dedicated property setters).
+    /// Public so callers outside the VM (e.g. project-file load) can refresh
+    /// the displayed rows.
+    /// </summary>
+    public void RefreshIdentifiersGrid() => RebuildIdentifierRows();
 }
 
 public sealed class KeyValueEntry : NotifyPropertyChangedBase

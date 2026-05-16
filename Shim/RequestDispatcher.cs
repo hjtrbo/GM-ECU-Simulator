@@ -19,6 +19,12 @@ public sealed class RequestDispatcher
 
     private readonly IpcSessionState state;
 
+    // Per-channel rate limit so empty PassThruReadMsgs polls (every ~10-100ms
+    // on most hosts) don't flood the diagnostic pane. We still want SOME log
+    // signal that the host is polling, hence the first poll always logs and
+    // subsequent empty polls are throttled to once per second.
+    private readonly Dictionary<uint, (long NextLogTick, int SilentCount)> readPollLog = new();
+
     public RequestDispatcher(IpcSessionState state) { this.state = state; }
 
     public (byte responseType, byte[] payload) Dispatch(byte requestType, ReadOnlySpan<byte> payload)
@@ -93,14 +99,34 @@ public sealed class RequestDispatcher
                     uint chan = r.ReadU32();
                     uint num = r.ReadU32();
                     uint timeout = r.ReadU32();
-                    desc = $"PassThruWriteMsgs chan={chan} count={num} timeout={timeout}ms";
+                    var sb = new System.Text.StringBuilder();
+                    sb.Append($"PassThruWriteMsgs chan={chan} count={num} timeout={timeout}ms");
+                    for (uint i = 0; i < num && r.Remaining >= 24; i++)
+                    {
+                        try
+                        {
+                            var m = r.ReadPassThruMsg();
+                            sb.Append($"\n  tx[{i}] proto={m.ProtocolID} flags=0x{(uint)m.TxFlags:X} data({m.Data.Length})={FormatBytes(m.Data, 32)}");
+                        }
+                        catch { sb.Append($"\n  tx[{i}] <malformed>"); break; }
+                    }
+                    desc = sb.ToString();
                     break;
                 }
                 case IpcMessageTypes.StartFilterRequest:
                 {
                     uint chan = r.ReadU32();
                     var ftype = (FilterType)r.ReadU32();
-                    desc = $"PassThruStartMsgFilter chan={chan} type={ftype}";
+                    string mHex = "?", pHex = "?", fHex = "?";
+                    int mLen = 0, pLen = 0, fLen = 0;
+                    try
+                    {
+                        var mask = r.ReadPassThruMsg();    mHex = FormatBytes(mask.Data, 16);    mLen = mask.Data.Length;
+                        var pat  = r.ReadPassThruMsg();    pHex = FormatBytes(pat.Data, 16);     pLen = pat.Data.Length;
+                        var fc   = r.ReadPassThruMsg();    fHex = FormatBytes(fc.Data, 16);      fLen = fc.Data.Length;
+                    }
+                    catch { /* fall through with placeholders */ }
+                    desc = $"PassThruStartMsgFilter chan={chan} type={ftype} mask({mLen})={mHex} pattern({pLen})={pHex} fc({fLen})={fHex}";
                     break;
                 }
                 case IpcMessageTypes.StopFilterRequest:
@@ -128,7 +154,39 @@ public sealed class RequestDispatcher
                 {
                     uint chan = r.ReadU32();
                     uint id = r.ReadU32();
-                    desc = $"PassThruIoctl chan={chan} id=0x{id:X2} ({IoctlName(id)})";
+                    string extra = "";
+                    if (id == 0x01 || id == 0x02)
+                    {
+                        try
+                        {
+                            uint inLen = r.ReadU32();
+                            _ = inLen;
+                            if (r.Remaining >= 4)
+                            {
+                                uint nParams = r.ReadU32();
+                                var sb = new System.Text.StringBuilder();
+                                for (uint i = 0; i < nParams; i++)
+                                {
+                                    if (id == 0x01 && r.Remaining >= 4)
+                                    {
+                                        uint p = r.ReadU32();
+                                        sb.Append(i == 0 ? "" : ", ");
+                                        sb.Append($"0x{p:X2}");
+                                    }
+                                    else if (id == 0x02 && r.Remaining >= 8)
+                                    {
+                                        uint p = r.ReadU32();
+                                        uint v = r.ReadU32();
+                                        sb.Append(i == 0 ? "" : ", ");
+                                        sb.Append($"[0x{p:X2}]={v}");
+                                    }
+                                }
+                                extra = $" {nParams}p: {sb}";
+                            }
+                        }
+                        catch { extra = " <malformed>"; }
+                    }
+                    desc = $"PassThruIoctl chan={chan} id=0x{id:X2} ({IoctlName(id)}){extra}";
                     break;
                 }
                 case IpcMessageTypes.ReadVersionRequest:
@@ -147,6 +205,20 @@ public sealed class RequestDispatcher
             desc = $"<malformed 0x{requestType:X2}>";
         }
         diag(desc);
+    }
+
+    private static string FormatBytes(byte[] data, int cap)
+    {
+        if (data == null || data.Length == 0) return "(empty)";
+        int n = Math.Min(data.Length, cap);
+        var sb = new System.Text.StringBuilder(n * 3);
+        for (int i = 0; i < n; i++)
+        {
+            if (i > 0) sb.Append(' ');
+            sb.Append(data[i].ToString("X2"));
+        }
+        if (data.Length > cap) sb.Append(" ...");
+        return sb.ToString();
     }
 
     private static string IoctlName(uint id) => id switch
@@ -339,6 +411,54 @@ public sealed class RequestDispatcher
         w.WriteU32((uint)rc);
         w.WriteU32((uint)msgs.Count);
         foreach (var m in msgs) w.WritePassThruMsg(m);
+
+        var readDiag = state.Bus.LogDiagnostic;
+        if (readDiag != null)
+        {
+            if (msgs.Count > 0)
+            {
+                lock (readPollLog) readPollLog.Remove(chId);
+                var sb = new System.Text.StringBuilder();
+                sb.Append($"PassThruReadMsgs chan={chId} max={requested} timeout={timeoutMs}ms -> rc={rc} count={msgs.Count}");
+                for (int i = 0; i < msgs.Count; i++)
+                {
+                    var m = msgs[i];
+                    sb.Append($"\n  rx[{i}] proto={m.ProtocolID} rxst=0x{(uint)m.RxStatus:X} data({m.Data.Length})={FormatBytes(m.Data, 32)}");
+                }
+                readDiag(sb.ToString());
+            }
+            else
+            {
+                long now = Environment.TickCount64;
+                bool emit;
+                int silentSinceLast = 0;
+                lock (readPollLog)
+                {
+                    if (!readPollLog.TryGetValue(chId, out var entry))
+                    {
+                        emit = true;
+                        readPollLog[chId] = (now + 1000, 0);
+                    }
+                    else if (now >= entry.NextLogTick)
+                    {
+                        emit = true;
+                        silentSinceLast = entry.SilentCount;
+                        readPollLog[chId] = (now + 1000, 0);
+                    }
+                    else
+                    {
+                        emit = false;
+                        readPollLog[chId] = (entry.NextLogTick, entry.SilentCount + 1);
+                    }
+                }
+                if (emit)
+                {
+                    readDiag(silentSinceLast == 0
+                        ? $"PassThruReadMsgs chan={chId} max={requested} timeout={timeoutMs}ms -> empty"
+                        : $"PassThruReadMsgs chan={chId} -> empty (+ {silentSinceLast} more empty polls in the last 1s)");
+                }
+            }
+        }
         return (IpcMessageTypes.ReadMsgsResponse, w.ToArray());
     }
 
@@ -373,6 +493,15 @@ public sealed class RequestDispatcher
             {
                 state.Bus.DispatchHostTx(m.Data, ch);
             }
+            // J2534 v04.04 LOOPBACK echo. When the host enabled LOOPBACK
+            // (ConfigParam 0x03) we send a copy of every TX back through
+            // ReadMsgs with the TX_MSG_TYPE rxStatus bit set, so the host can
+            // observe its own writes (GM SPS / DPS uses this as a "subnet
+            // alive" probe). Loopback echoes bypass the channel filter table
+            // because the host always needs to see its own writes regardless
+            // of which response IDs it's listening for.
+            if (ch.Loopback)
+                EnqueueLoopback(ch, m);
             accepted++;
         }
 
@@ -385,6 +514,34 @@ public sealed class RequestDispatcher
     // ISO15765 path: parse [4-byte CAN ID][user payload], drive the TX state
     // machine through the cascade, and translate the terminal N_Result into a
     // J2534 ResultCode.
+    // J2534 v04.04 LOOPBACK echo: clone the host's TX message and enqueue it
+    // onto the channel's RX path with RxStatus.TX_MSG_TYPE set. Bypasses the
+    // filter table (the host always needs to see its own writes). For
+    // ISO15765 channels the host TX is already a logical payload prefixed
+    // with the 4-byte CAN ID, which is the same wire shape the reassembled
+    // queue uses - we can echo it through that path unchanged.
+    private static void EnqueueLoopback(ChannelSession ch, PassThruMsg src)
+    {
+        var echo = new PassThruMsg
+        {
+            ProtocolID = src.ProtocolID,
+            RxStatus   = src.RxStatus | RxStatus.TX_MSG_TYPE,
+            TxFlags    = src.TxFlags,
+            Timestamp  = src.Timestamp,
+            Data       = (byte[])src.Data.Clone(),
+        };
+        if (ch.Protocol == ProtocolID.ISO15765 && ch.IsoChannel is Iso15765Channel iso)
+        {
+            iso.ReassembledPayloadQueue.Enqueue(echo);
+            iso.ReassembledAvailable.Release();
+        }
+        else
+        {
+            ch.RxQueue.Enqueue(echo);
+            ch.RxAvailable.Release();
+        }
+    }
+
     private ResultCode WriteMsgIso15765(Iso15765Channel iso, ChannelSession ch, byte[] data)
     {
         if (data.Length < 4)
@@ -718,12 +875,14 @@ public sealed class RequestDispatcher
     // ISO 15765-2 timing object. Other IDs fall through to the legacy
     // generic dictionary on ChannelSession (kept for back-compat with
     // non-ISO15765 paths and any unknown vendor params).
+    private const uint CFG_LOOPBACK         = 0x03;
     private const uint CFG_ISO15765_BS      = 0x1E;
     private const uint CFG_ISO15765_STMIN   = 0x1F;
     private const uint CFG_ISO15765_WFT_MAX = 0x25;
 
     private static void ApplyConfigParam(ChannelSession ch, uint paramId, uint value)
     {
+        if (paramId == CFG_LOOPBACK) { ch.Loopback = value != 0; return; }
         if (ch.IsoChannel is Iso15765Channel iso)
         {
             switch (paramId)
@@ -738,6 +897,7 @@ public sealed class RequestDispatcher
 
     private static uint ReadConfigParam(ChannelSession ch, uint paramId)
     {
+        if (paramId == CFG_LOOPBACK) return ch.Loopback ? 1u : 0u;
         if (ch.IsoChannel is Iso15765Channel iso)
         {
             switch (paramId)

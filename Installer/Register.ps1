@@ -78,7 +78,7 @@ $oldKey32 = "HKLM:\SOFTWARE\WOW6432Node\PassThruSupport.04.04\GmEcuSim\Device1"
 function Set-Device([string]$key, [string]$shimPath) {
     if (-not (Test-Path $key)) { New-Item -Path $key -Force | Out-Null }
     Set-ItemProperty -Path $key -Name "Name"               -Value "GM ECU Simulator"
-    Set-ItemProperty -Path $key -Name "Vendor"             -Value "EcaResources"
+    Set-ItemProperty -Path $key -Name "Vendor"             -Value "hjtrbo"
     Set-ItemProperty -Path $key -Name "ConfigApplication"  -Value $exe
     Set-ItemProperty -Path $key -Name "FunctionLibrary"    -Value $shimPath
     Set-ItemProperty -Path $key -Name "ProtocolsSupported" -Value "CAN,ISO15765"

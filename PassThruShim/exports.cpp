@@ -51,6 +51,35 @@ static void DebugLog(const char* fmt, ...)
     OutputDebugStringA("\n");
 }
 
+// Format up to `cap` bytes as space-separated uppercase hex into `dst`.
+// Appends "..." when the source is longer than cap so the log shows truncation.
+static void FormatHex(char* dst, size_t dstCap, const uint8_t* src, size_t len, size_t cap)
+{
+    if (dstCap == 0) return;
+    dst[0] = '\0';
+    size_t n = len < cap ? len : cap;
+    size_t off = 0;
+    for (size_t i = 0; i < n && off + 4 < dstCap; i++)
+    {
+        off += snprintf(dst + off, dstCap - off, i == 0 ? "%02X" : " %02X", src[i]);
+    }
+    if (len > cap && off + 4 < dstCap)
+    {
+        snprintf(dst + off, dstCap - off, " ...");
+    }
+}
+
+static const char* FilterTypeName(unsigned long t)
+{
+    switch (t)
+    {
+    case 1: return "PASS_FILTER";
+    case 2: return "BLOCK_FILTER";
+    case 3: return "FLOW_CONTROL_FILTER";
+    default: return "?";
+    }
+}
+
 // Little-endian readers/writers — wire format on the C# side (Common.Wire).
 static void PutU32(std::vector<uint8_t>& out, uint32_t v)
 {
@@ -187,9 +216,10 @@ long __stdcall PassThruReadMsgs(
 {
     if (pMsg == nullptr || pNumMsgs == nullptr) { SetLastErrorString("PassThruReadMsgs: null param"); return ERR_NULL_PARAMETER; }
 
+    unsigned long maxMsgs = *pNumMsgs;
     std::vector<uint8_t> req;
     PutU32(req, ChannelID);
-    PutU32(req, *pNumMsgs);
+    PutU32(req, maxMsgs);
     PutU32(req, Timeout);
     std::vector<uint8_t> resp;
     if (!IpcClient::EnsureConnected()) return ERR_DEVICE_NOT_CONNECTED;
@@ -204,6 +234,16 @@ long __stdcall PassThruReadMsgs(
         if (!GetPassThruMsg(resp, off, pMsg[i])) return ERR_FAILED;
     }
     *pNumMsgs = numActual;
+    DebugLog("PassThruReadMsgs ch=%lu max=%lu timeout=%lums -> rc=%ld count=%lu",
+             ChannelID, maxMsgs, Timeout, rc, (unsigned long)numActual);
+    for (uint32_t i = 0; i < numActual; i++)
+    {
+        char hex[200];
+        FormatHex(hex, sizeof(hex), pMsg[i].Data, pMsg[i].DataSize, 32);
+        DebugLog("  rx[%u] proto=%lu rxst=0x%lx ts=%lu data(%lu)=%s",
+                 i, pMsg[i].ProtocolID, pMsg[i].RxStatus, pMsg[i].Timestamp,
+                 pMsg[i].DataSize, hex);
+    }
     SetLastErrorString("No error.");
     return rc;
 }
@@ -212,6 +252,15 @@ long __stdcall PassThruWriteMsgs(
     unsigned long ChannelID, PASSTHRU_MSG* pMsg, unsigned long* pNumMsgs, unsigned long Timeout)
 {
     if (pMsg == nullptr || pNumMsgs == nullptr) { SetLastErrorString("PassThruWriteMsgs: null param"); return ERR_NULL_PARAMETER; }
+
+    DebugLog("PassThruWriteMsgs ch=%lu count=%lu timeout=%lums", ChannelID, *pNumMsgs, Timeout);
+    for (uint32_t i = 0; i < *pNumMsgs; i++)
+    {
+        char hex[200];
+        FormatHex(hex, sizeof(hex), pMsg[i].Data, pMsg[i].DataSize, 32);
+        DebugLog("  tx[%u] proto=%lu flags=0x%lx data(%lu)=%s",
+                 i, pMsg[i].ProtocolID, pMsg[i].TxFlags, pMsg[i].DataSize, hex);
+    }
 
     std::vector<uint8_t> req;
     PutU32(req, ChannelID);
@@ -265,12 +314,24 @@ long __stdcall PassThruStartMsgFilter(
 {
     if (pFilterID == nullptr) { SetLastErrorString("PassThruStartMsgFilter: pFilterID null"); return ERR_NULL_PARAMETER; }
     PASSTHRU_MSG empty = {};
+    const PASSTHRU_MSG& mask = pMaskMsg ? *pMaskMsg : empty;
+    const PASSTHRU_MSG& pat  = pPatternMsg ? *pPatternMsg : empty;
+    const PASSTHRU_MSG& fc   = pFlowControlMsg ? *pFlowControlMsg : empty;
+    {
+        char mHex[120], pHex[120], fHex[120];
+        FormatHex(mHex, sizeof(mHex), mask.Data, mask.DataSize, 16);
+        FormatHex(pHex, sizeof(pHex), pat.Data, pat.DataSize, 16);
+        FormatHex(fHex, sizeof(fHex), fc.Data, fc.DataSize, 16);
+        DebugLog("PassThruStartMsgFilter ch=%lu type=%lu(%s) mask(%lu)=%s pattern(%lu)=%s fc(%lu)=%s",
+                 ChannelID, FilterType, FilterTypeName(FilterType),
+                 mask.DataSize, mHex, pat.DataSize, pHex, fc.DataSize, fHex);
+    }
     std::vector<uint8_t> req;
     PutU32(req, ChannelID);
     PutU32(req, FilterType);
-    PutPassThruMsg(req, pMaskMsg ? *pMaskMsg : empty);
-    PutPassThruMsg(req, pPatternMsg ? *pPatternMsg : empty);
-    PutPassThruMsg(req, pFlowControlMsg ? *pFlowControlMsg : empty);
+    PutPassThruMsg(req, mask);
+    PutPassThruMsg(req, pat);
+    PutPassThruMsg(req, fc);
 
     std::vector<uint8_t> resp;
     long rc = ExchangeAndExtractRc(MSG_START_FILTER_REQ, req, resp, 0x87, ERR_FAILED);
@@ -346,8 +407,15 @@ long __stdcall PassThruIoctl(
         if (pInput == nullptr) { SetLastErrorString("Ioctl GET_CONFIG: pInput null"); return ERR_NULL_PARAMETER; }
         SCONFIG_LIST* list = (SCONFIG_LIST*)pInput;
         PutU32(inBytes, list->NumOfParams);
+        char paramHex[300]; paramHex[0] = '\0'; size_t pOff = 0;
         for (unsigned long i = 0; i < list->NumOfParams; i++)
+        {
             PutU32(inBytes, list->ConfigPtr[i].Parameter);
+            if (pOff + 12 < sizeof(paramHex))
+                pOff += snprintf(paramHex + pOff, sizeof(paramHex) - pOff,
+                                 i == 0 ? "0x%02lX" : ", 0x%02lX", list->ConfigPtr[i].Parameter);
+        }
+        DebugLog("  GET_CONFIG %lu params: %s", list->NumOfParams, paramHex);
         break;
     }
     case 0x02: // SET_CONFIG  — pInput → SCONFIG_LIST*; encode (param, value) pairs
@@ -355,11 +423,17 @@ long __stdcall PassThruIoctl(
         if (pInput == nullptr) { SetLastErrorString("Ioctl SET_CONFIG: pInput null"); return ERR_NULL_PARAMETER; }
         SCONFIG_LIST* list = (SCONFIG_LIST*)pInput;
         PutU32(inBytes, list->NumOfParams);
+        char paramHex[400]; paramHex[0] = '\0'; size_t pOff = 0;
         for (unsigned long i = 0; i < list->NumOfParams; i++)
         {
             PutU32(inBytes, list->ConfigPtr[i].Parameter);
             PutU32(inBytes, list->ConfigPtr[i].Value);
+            if (pOff + 24 < sizeof(paramHex))
+                pOff += snprintf(paramHex + pOff, sizeof(paramHex) - pOff,
+                                 i == 0 ? "[0x%02lX]=%lu" : ", [0x%02lX]=%lu",
+                                 list->ConfigPtr[i].Parameter, list->ConfigPtr[i].Value);
         }
+        DebugLog("  SET_CONFIG %lu params: %s", list->NumOfParams, paramHex);
         break;
     }
     case 0x0C: // ADD_TO_FUNCT_MSG_LOOKUP_TABLE   — pInput → SBYTE_ARRAY*

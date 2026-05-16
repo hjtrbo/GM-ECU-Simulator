@@ -17,6 +17,7 @@ public static class Service
     public const byte DefinePidByAddress = 0x2D;              // $2D - PID by memory address
     public const byte RequestDownload = 0x34;                 // $34 - prepare for module programming (§8.12)
     public const byte TransferData = 0x36;                    // $36 - download/execute block (§8.13)
+    public const byte WriteDataByIdentifier = 0x3B;           // $3B - write static DID (§8.14, Appendix D Pt 2 $11/$12/$13)
     public const byte TesterPresent = 0x3E;                   // $3E - keepalive
     public const byte ReportProgrammedState = 0xA2;           // $A2 - SPS programmed-state query (§8.16)
     public const byte ProgrammingMode = 0xA5;                 // $A5 - enter programming session (§8.17)
@@ -89,4 +90,44 @@ public static class GmlanCanId
     /// PCI byte, no extended-address byte).
     /// </summary>
     public const ushort Obd2FunctionalRequest = 0x7DF;
+
+    /// <summary>
+    /// GMW3110 §8.16 SPS_PrimeReq base: SPS_TYPE_C ECUs (blank/unprogrammed) listen
+    /// on $000 | diag_address once they've enabled diagnostic responses. e.g.
+    /// diagnostic address $11 → SPS_PrimeReq $011.
+    /// </summary>
+    public const ushort SpsPrimeRequestBase = 0x000;
+
+    /// <summary>
+    /// GMW3110 §8.16 SPS_PrimeRsp base: SPS_TYPE_C ECUs respond on $300 | diag_address.
+    /// e.g. diagnostic address $11 → SPS_PrimeRsp $311. GM SPS / DPS installs a
+    /// PASS_FILTER mask=$700 pattern=$300 during $A2 enumeration specifically to
+    /// catch these.
+    /// </summary>
+    public const ushort SpsPrimeResponseBase = 0x300;
+
+    public static ushort SpsPrimeRequest(byte diagAddress)  => (ushort)(SpsPrimeRequestBase | diagAddress);
+    public static ushort SpsPrimeResponse(byte diagAddress) => (ushort)(SpsPrimeResponseBase | diagAddress);
+}
+
+/// <summary>
+/// GMW3110 §8.16 / §9.x classification of an ECU's programmability state at
+/// boot. The simulator uses this to gate the SPS_PrimeReq/Rsp activation flow
+/// that GM SPS / DPS drives during "Get Controller Info" / programming setup.
+/// </summary>
+///   <c>A</c>: fully programmed, permanent diagnostic CAN IDs in flash. Default;
+///            responds normally on its USDT response ID at all times.
+///   <c>B</c>: missing op-software or calibration, but permanent CAN IDs ARE
+///            stored in flash. Same wire behaviour as A; the distinction is
+///            informational (real ECUs report a different programmedState).
+///   <c>C</c>: blank/unprogrammed. No permanent CAN IDs. Silent on every request
+///            until receiving $A2 while $28 DisableNormalCommunication is active;
+///            then enables diagnostic responses, replies on SPS_PrimeRsp
+///            ($300 | diag_address), and subsequently honours SPS_PrimeReq
+///            ($000 | diag_address) until $20 / P3C timeout reverts to silent.
+public enum SpsType : byte
+{
+    A = 0,
+    B = 1,
+    C = 2,
 }

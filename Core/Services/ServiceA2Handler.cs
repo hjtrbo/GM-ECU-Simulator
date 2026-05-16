@@ -25,6 +25,14 @@ namespace Core.Services;
 //   $12 SFNS-IF   request has more bytes than the SID
 //   $78 RCR-RP    programmedState calc not yet complete (we don't simulate this)
 //
+// Functional addressing: §8.16 opens by stating the service is used "to
+// determine which nodes on the link are programmable" - i.e. enumeration via
+// AllNodes broadcast is the canonical use. Every programmable ECU answers a
+// functional $A2 with its own $E2 + programmedState on its USDT response ID;
+// this is how GM SPS / DPS counts programmable ECUs during session setup.
+// On a malformed functional request we stay silent (§6.x convention) rather
+// than blanketing the bus with NRCs.
+//
 // The state byte itself is configured on EcuNode.ProgrammedState (default 0x00),
 // so users can simulate a partially-programmed or fault state when testing
 // programming-tool error paths.
@@ -35,11 +43,12 @@ public static class ServiceA2Handler
     /// $A2 IS a diagnostic-session-extending service in the spec's eyes - it's
     /// used during programming setup, so it counts as enhanced traffic.
     /// </summary>
-    public static bool Handle(EcuNode node, ReadOnlySpan<byte> usdtPayload, ChannelSession ch)
+    public static bool Handle(EcuNode node, ReadOnlySpan<byte> usdtPayload, ChannelSession ch, bool isFunctional = false)
     {
         if (usdtPayload.Length != 1 || usdtPayload[0] != Service.ReportProgrammedState)
         {
-            ServiceUtil.EnqueueNrc(node, ch, Service.ReportProgrammedState, Nrc.SubFunctionNotSupportedInvalidFormat);
+            if (!isFunctional)
+                ServiceUtil.EnqueueNrc(node, ch, Service.ReportProgrammedState, Nrc.SubFunctionNotSupportedInvalidFormat);
             return false;
         }
 

@@ -64,7 +64,7 @@ public static class Service22Handler
         }
 
         int respSize = 1;                                   // SID
-        foreach (var pid in supported) respSize += 2 + (int)pid.Size;
+        foreach (var pid in supported) respSize += 2 + pid.ResponseLength;
         var resp = new byte[respSize];
         resp[0] = Service.Positive(Service.ReadDataByParameterIdentifier);
         int pos = 1;
@@ -72,11 +72,9 @@ public static class Service22Handler
         {
             resp[pos++] = (byte)(pid.Address >> 8);
             resp[pos++] = (byte)(pid.Address & 0xFF);
-            ValueCodec.Encode(
-                pid.Waveform.Sample(timeMs),
-                pid.Scalar, pid.Offset, pid.DataType, (int)pid.Size,
-                resp.AsSpan(pos, (int)pid.Size));
-            pos += (int)pid.Size;
+            int len = pid.ResponseLength;
+            pid.WriteResponseBytes(timeMs, resp.AsSpan(pos, len));
+            pos += len;
         }
 
         node.State.Fragmenter.EnqueueResponse(ch, node.UsdtResponseCanId, resp);
