@@ -34,11 +34,12 @@ Modern GM diagnostic stacks (Tech 2 Win, GDS, SPS) typically use ISO15765; legac
 * **`ISecurityAccessModule`** - owns a whole `$27` exchange step. The bundled `Gmw3110_2010_Generic` module covers the GMW3110-2010 protocol envelope (length validation, subfunction parity, pending-seed tracking, 3-strike lockout with 10s deadline-timestamp recovery, NRC `$12` / `$22` / `$35` / `$36` / `$37` paths).
 * **`ISeedKeyAlgorithm`** - the small strategy you usually write. \~30 lines. `Gmw3110_2010_Generic` wraps one and handles everything else.
 
-Ships with three algorithms registered out of the box, selectable per-ECU in the **Security** tab:
+Ships with four algorithms registered out of the box, selectable per-ECU in the **Security** tab:
 
 * `gmw3110-2010-not-implemented` - deterministic seed `[0x12, 0x34]`, refuses every key. Exercises every NRC path against any J2534 host without committing real algorithm math.
-* `gm-e38-test` - the GM E38 ECM algorithm (GMLAN algorithm `0x92`, also used by E67). 2-byte seed, 2-byte key. Optional `fixedSeed` JSON config for deterministic exchanges.
-* `gm-t43-test` - the GM T43 (Aisin AF40) TCM algorithm. 2-byte seed, 2-byte key.
+* `gm-algo-92` - GMLAN algorithm `0x92`, used by both the GM E38 and E67 ECMs. 2-byte seed, 2-byte key. Optional `fixedSeed` JSON config for deterministic exchanges.
+* `gm-t43` - GM T43 TCM (6T70 family) seed/key algorithm decompiled from 6Speed.T43's `gett43key`. 2-byte seed, 2-byte key. The GM-assigned algorithm number is not yet documented; rename to `gm-algo-NN` once a TCM utility file or vendor doc confirms it.
+* `gm-programming-bypass` - permissive boot-block stub: declares `ProgrammingSessionBehavior.BypassAll` so an ECU in programming mode (after `$10 $02` or `$A5 $03`) returns seed `00 00` and accepts any key. For development / hand-built utility-file demos where real key math is out of scope.
 
 Each ECU also has a **Bypass security** checkbox that short-circuits `$27` entirely (seed `00 00`, any key accepted) for modelling stub-security levels seen on real hardware (e.g. T43 TCM at level 1).
 

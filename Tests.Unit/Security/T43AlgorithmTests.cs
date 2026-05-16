@@ -31,7 +31,7 @@ public sealed class T43AlgorithmTests
         var algo = new T43Algorithm();
         algo.LoadConfig(JsonSerializer.SerializeToElement(new { fixedSeed = "1234" }));
         var node = NodeFactory.CreateNode(
-            module: new Core.Security.Modules.Gmw3110_2010_Generic(algo, id: "gm-t43-test"));
+            module: new Core.Security.Modules.Gmw3110_2010_Generic(algo, id: "gm-t43"));
         var ch = NodeFactory.CreateChannel();
 
         // requestSeed
@@ -52,7 +52,7 @@ public sealed class T43AlgorithmTests
         var algo = new T43Algorithm();
         algo.LoadConfig(JsonSerializer.SerializeToElement(new { fixedSeed = "1234" }));
         var node = NodeFactory.CreateNode(
-            module: new Core.Security.Modules.Gmw3110_2010_Generic(algo, id: "gm-t43-test"));
+            module: new Core.Security.Modules.Gmw3110_2010_Generic(algo, id: "gm-t43"));
         var ch = NodeFactory.CreateChannel();
 
         Service27Handler.Handle(node, new byte[] { 0x27, 0x01 }, ch, nowMs: 0);
@@ -71,7 +71,7 @@ public sealed class T43AlgorithmTests
         // recompute the key with the documented algorithm, send it back, expect unlock.
         var algo = new T43Algorithm();
         var node = NodeFactory.CreateNode(
-            module: new Core.Security.Modules.Gmw3110_2010_Generic(algo, id: "gm-t43-test"));
+            module: new Core.Security.Modules.Gmw3110_2010_Generic(algo, id: "gm-t43"));
         var ch = NodeFactory.CreateChannel();
 
         Service27Handler.Handle(node, new byte[] { 0x27, 0x01 }, ch, nowMs: 0);
@@ -115,7 +115,7 @@ public sealed class T43AlgorithmTests
         var algo = new T43Algorithm();
         algo.LoadConfig(JsonSerializer.SerializeToElement(new { fixedSeed = "B34C" }));
         var node = NodeFactory.CreateNode(
-            module: new Core.Security.Modules.Gmw3110_2010_Generic(algo, id: "gm-t43-test"));
+            module: new Core.Security.Modules.Gmw3110_2010_Generic(algo, id: "gm-t43"));
         var ch = NodeFactory.CreateChannel();
 
         // $10 $02 - enter programming session (security-shortcut path)
@@ -147,7 +147,7 @@ public sealed class T43AlgorithmTests
         var algo = new T43Algorithm();
         algo.LoadConfig(JsonSerializer.SerializeToElement(new { fixedSeed = "B34C" }));
         var node = NodeFactory.CreateNode(
-            module: new Core.Security.Modules.Gmw3110_2010_Generic(algo, id: "gm-t43-test"));
+            module: new Core.Security.Modules.Gmw3110_2010_Generic(algo, id: "gm-t43"));
         var ch = NodeFactory.CreateChannel();
 
         Service27Handler.Handle(node, new byte[] { 0x27, 0x01 }, ch, nowMs: 0);

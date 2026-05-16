@@ -964,12 +964,12 @@
                                                   Margin="16,0,0,0"
                                                   VerticalAlignment="Center"
                                                   IsChecked="{Binding DataContext.BypassAllSecurity, RelativeSource={RelativeSource AncestorType={x:Type Window}}}"
-                                                  ToolTip="Manual dev/test override applied to EVERY ECU at once: short-circuits every $27 request regardless of level, lockout, or programming-session state. Each ECU emits seed=00 00 on requestSeed and transitions to unlocked on sendKey regardless of the key value. Use this when you're developing a non-$27 flow (e.g. $34/$36/$3B) and don't want to compute keys. For realistic boot-block behaviour (real T43 math operationally), leave this OFF and select the gmw3110-programming-bypass module on the ECU properties card instead."/>
+                                                  ToolTip="Manual dev/test override applied to EVERY ECU at once: short-circuits every $27 request regardless of level, lockout, or programming-session state. Each ECU emits seed=00 00 on requestSeed and transitions to unlocked on sendKey regardless of the key value. Use this when you're developing a non-$27 flow (e.g. $34/$36/$3B) and don't want to compute keys. For realistic boot-block behaviour (real T43 math operationally), leave this OFF and select the gm-programming-bypass module on the ECU properties card instead."/>
                                     </StackPanel>
                                     <TextBlock Style="{StaticResource Text.Hint}" Margin="0,6,0,0" TextWrapping="Wrap">
                                         <Run Text="Module-specific config below. Values are passed to the module as JSON strings."/>
                                         <LineBreak/>
-                                        <Run Text="Tip: for realistic boot-block bypass (active only during a programming session, with real T43 seed/key math operationally) select the gmw3110-programming-bypass module on the ECU card instead of toggling the checkbox above."/>
+                                        <Run Text="Tip: for realistic boot-block bypass (active only during a programming session, with real T43 seed/key math operationally) select the gm-programming-bypass module on the ECU card instead of toggling the checkbox above."/>
                                     </TextBlock>
                                 </StackPanel>
                             </Border>

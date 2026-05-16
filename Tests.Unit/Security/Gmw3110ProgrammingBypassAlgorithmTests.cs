@@ -13,7 +13,7 @@ namespace EcuSimulator.Tests.Security;
 // guarantees: registry id, dropdown surface, programming-session policy.
 public sealed class Gmw3110ProgrammingBypassAlgorithmTests
 {
-    private const string RegistryId = "gmw3110-programming-bypass";
+    private const string RegistryId = "gm-programming-bypass";
 
     [Fact]
     public void Algorithm_DeclaresBypassAllAndCorrectId()

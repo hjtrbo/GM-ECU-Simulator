@@ -16,15 +16,22 @@ public static class SecurityModuleRegistry
         Register("gmw3110-2010-not-implemented",
             () => new Gmw3110_2010_Generic(new NotImplementedAlgorithm(),
                                            id: "gmw3110-2010-not-implemented"));
-        Register("gm-e38-test",
+        Register("gm-algo-92",
             () => new Gmw3110_2010_Generic(new E38Algorithm(),
-                                           id: "gm-e38-test"));
-        Register("gm-t43-test",
+                                           id: "gm-algo-92"));
+        // GM algorithm number not yet documented for T43 - rename to gm-algo-NN
+        // once a TCM utility-file `27 NN` byte sequence or vendor doc confirms it.
+        // (Searched Interpreters_September_01_2009.docx and the 2011 DPS Programmers
+        // Reference Manual: both define the op-code language, not per-controller
+        // algorithm assignments. OpCodeAssessment.xls shows a TCM with algorithm
+        // 0x84 but its part numbers don't match the T43 6T70 family, so 0x84
+        // can't be confidently attributed to T43.)
+        Register("gm-t43",
             () => new Gmw3110_2010_Generic(new T43Algorithm(),
-                                           id: "gm-t43-test"));
-        Register("gmw3110-programming-bypass",
+                                           id: "gm-t43"));
+        Register("gm-programming-bypass",
             () => new Gmw3110_2010_Generic(new Gmw3110ProgrammingBypassAlgorithm(),
-                                           id: "gmw3110-programming-bypass"));
+                                           id: "gm-programming-bypass"));
     }
 
     public static void Register(string id, Func<ISecurityAccessModule> factory)

@@ -31,7 +31,7 @@ public sealed class Gmw3110ProgrammingBypassAlgorithm : ISeedKeyAlgorithm
 {
     private byte[]? fixedSeed;
 
-    public string Id => "gmw3110-programming-bypass";
+    public string Id => "gm-programming-bypass";
     public int SeedLength => 2;
     public int KeyLength => 2;
     public IEnumerable<byte> SupportedLevels { get; } = new byte[] { 1 };

@@ -31,7 +31,7 @@ public sealed class E38AlgorithmTests
         var algo = new E38Algorithm();
         algo.LoadConfig(JsonSerializer.SerializeToElement(new { fixedSeed = "1234" }));
         var node = NodeFactory.CreateNode(
-            module: new Core.Security.Modules.Gmw3110_2010_Generic(algo, id: "gm-e38-test"));
+            module: new Core.Security.Modules.Gmw3110_2010_Generic(algo, id: "gm-algo-92"));
         var ch = NodeFactory.CreateChannel();
 
         // requestSeed
@@ -52,7 +52,7 @@ public sealed class E38AlgorithmTests
         var algo = new E38Algorithm();
         algo.LoadConfig(JsonSerializer.SerializeToElement(new { fixedSeed = "1234" }));
         var node = NodeFactory.CreateNode(
-            module: new Core.Security.Modules.Gmw3110_2010_Generic(algo, id: "gm-e38-test"));
+            module: new Core.Security.Modules.Gmw3110_2010_Generic(algo, id: "gm-algo-92"));
         var ch = NodeFactory.CreateChannel();
 
         Service27Handler.Handle(node, new byte[] { 0x27, 0x01 }, ch, nowMs: 0);
@@ -71,7 +71,7 @@ public sealed class E38AlgorithmTests
         // recompute the key with the documented algorithm, send it back, expect unlock.
         var algo = new E38Algorithm();
         var node = NodeFactory.CreateNode(
-            module: new Core.Security.Modules.Gmw3110_2010_Generic(algo, id: "gm-e38-test"));
+            module: new Core.Security.Modules.Gmw3110_2010_Generic(algo, id: "gm-algo-92"));
         var ch = NodeFactory.CreateChannel();
 
         Service27Handler.Handle(node, new byte[] { 0x27, 0x01 }, ch, nowMs: 0);
@@ -108,7 +108,7 @@ public sealed class E38AlgorithmTests
         var algo = new E38Algorithm();
         algo.LoadConfig(JsonSerializer.SerializeToElement(new { fixedSeed = "1234" }));
         var node = NodeFactory.CreateNode(
-            module: new Core.Security.Modules.Gmw3110_2010_Generic(algo, id: "gm-e38-test"));
+            module: new Core.Security.Modules.Gmw3110_2010_Generic(algo, id: "gm-algo-92"));
         var ch = NodeFactory.CreateChannel();
 
         Service10Handler.Handle(node, new byte[] { 0x10, 0x02 }, ch);
