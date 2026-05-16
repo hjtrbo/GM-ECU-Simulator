@@ -178,6 +178,19 @@ long __stdcall PassThruClose(unsigned long DeviceID)
     std::vector<uint8_t> resp;
     long rc = ExchangeAndExtractRc(MSG_CLOSE_REQ, req, resp, 0x82, ERR_FAILED);
     if (rc == STATUS_NOERROR) SetLastErrorString("No error.");
+
+    // Drop the pipe handle so the simulator's HandleClientAsync sees EOF on
+    // its next read and exits, freeing the single-instance pipe for the next
+    // PassThruOpen. Without this, a host that keeps the shim DLL loaded
+    // between programming sessions (e.g. GM's J2534Wrapper.dll, which hosts
+    // us inside DPS) holds the client handle indefinitely. The server-side
+    // accept loop never reaches "create the next listening instance", so
+    // session 2's CreateFileW lands on a still-connected single-instance
+    // pipe and fails with ERROR_PIPE_BUSY - exactly the "Reset IPC pipe"
+    // workaround we want to make unnecessary. PassThruClose is the spec
+    // session-end signal, so closing here is the natural lifecycle hook.
+    IpcClient::Disconnect();
+
     return rc;
 }
 
