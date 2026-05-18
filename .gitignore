@@ -26,6 +26,9 @@ scripts/docx_to_pdf.py
 .vscode/
 .claude/
 scripts/
+tools/
+docs/
+dist/
 
 # Scratch / output
 *.cjs
