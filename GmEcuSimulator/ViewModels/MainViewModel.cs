@@ -656,12 +656,16 @@ public sealed class MainViewModel : NotifyPropertyChangedBase
 
     /// <summary>
     /// Visibility gate for the live PID DataGrid in the Selected ECU pane.
-    /// Hidden in Flash Tool Write mode - flashing is a one-way data push and
-    /// the simulator doesn't synthesise PID responses there, so a live-value
-    /// grid would be misleading. Kept visible in ECU Simulator + DPS modes
-    /// where PIDs are part of the host's read/respond loop.
+    /// Visible only in ECU Simulator mode. Hidden in:
+    /// - Flash Tool Write: flashing is a one-way data push, no PID responses.
+    /// - DPS Write / DPS Read: the primed PID set is an internal implementation
+    ///   detail of the prime pipeline (the solver synthesises bytecode-pinned
+    ///   $22 responses); surfacing it in the inspector implies user-tunable
+    ///   PIDs that don't exist in those modes.
+    /// - Flash Tool Read: same reasoning - PID list is not a user-facing
+    ///   configuration surface in flash-readback flows.
     /// </summary>
-    public bool ShowsPidLiveGrid => currentMode != AppMode.FlashToolWrite;
+    public bool ShowsPidLiveGrid => currentMode == AppMode.EcuSimulator;
 
     /// <summary>
     /// Visibility gate for programming-session-only inspector fields
