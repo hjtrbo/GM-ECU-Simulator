@@ -24,8 +24,12 @@ public sealed class UdsKernelPersona : IDiagnosticPersona
     public string DisplayName => "UDS (SPS kernel)";
 
     public bool Dispatch(EcuNode node, ReadOnlySpan<byte> usdt, ChannelSession ch,
-                        bool isFunctional, byte sid, double nowMs, DpidScheduler scheduler)
+                        bool isFunctional, byte sid, double nowMs, DpidScheduler scheduler,
+                        DiagnosticStack stack)
     {
+        _ = stack;  // kernel persona only runs after $36 sub $80; stack is
+                    // whatever CAN ID the host used to hand control over.
+
         switch (sid)
         {
             case Iso14229.Service.RoutineControl:

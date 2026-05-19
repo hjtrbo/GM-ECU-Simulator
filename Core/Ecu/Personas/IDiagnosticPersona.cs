@@ -1,3 +1,4 @@
+using Common.Protocol;
 using Core.Bus;
 using Core.Scheduler;
 
@@ -38,7 +39,15 @@ public interface IDiagnosticPersona
     /// Returns false if the SID is unknown to this persona - the caller then
     /// emits NRC $11 ServiceNotSupported for physical requests or stays
     /// silent for functional broadcasts.
+    ///
+    /// <paramref name="stack"/> identifies which diagnostic stack the request
+    /// arrived on (derived from the request CAN ID by VirtualBus). Most
+    /// handlers currently ignore it; future per-stack SID coverage (e.g.
+    /// returning NRC $11 for $22 on the GMW3110 stack to match real E38/E67
+    /// silicon) will gate behaviour on this value. Treat it as informational
+    /// today, load-bearing tomorrow.
     /// </summary>
     bool Dispatch(EcuNode node, ReadOnlySpan<byte> usdt, ChannelSession ch,
-                  bool isFunctional, byte sid, double nowMs, DpidScheduler scheduler);
+                  bool isFunctional, byte sid, double nowMs, DpidScheduler scheduler,
+                  DiagnosticStack stack);
 }

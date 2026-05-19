@@ -25,8 +25,11 @@ public sealed class Gmw3110Persona : IDiagnosticPersona
     public string DisplayName => "GMW3110-2010";
 
     public bool Dispatch(EcuNode node, ReadOnlySpan<byte> usdt, ChannelSession ch,
-                        bool isFunctional, byte sid, double nowMs, DpidScheduler scheduler)
+                        bool isFunctional, byte sid, double nowMs, DpidScheduler scheduler,
+                        DiagnosticStack stack)
     {
+        _ = stack;  // future per-stack SID gating; ignored today
+
         switch (sid)
         {
             case Service.ReadDataByIdentifier:

@@ -352,7 +352,12 @@ public sealed class VirtualBus
         }, node.FlowControlBlockSize, fcSeparationTime: 0);
 
         if (assembled == null) return;
-        DispatchUsdt(node, assembled, ch, isFunctional: false);
+        // Tag physical requests with the stack the request CAN ID implies.
+        // Real E38/E67 silicon routes each CAN ID to exactly one dispatcher;
+        // future per-handler stack gates use this to NRC services that
+        // aren't exposed on the caller's stack.
+        var stack = DiagnosticStackClassifier.StackForCanId(canId);
+        DispatchUsdt(node, assembled, ch, isFunctional: false, stack);
     }
 
     private void DispatchFunctional(ReadOnlySpan<byte> data, ChannelSession ch)
@@ -366,10 +371,13 @@ public sealed class VirtualBus
         if (extAddr != GmlanCanId.AllNodesExtAddr) return;
         var payload = data.Slice(2, len);
 
+        // $101 + $FE extAddr is GMLAN's AllNodes functional broadcast - on real
+        // E38/E67 silicon this routes through the OBD-II/UDS dispatcher (the
+        // RE survey of CAN ID $101 confirmed it). Tag accordingly.
         EcuNode[] snapshot;
         lock (nodesLock) snapshot = nodes.ToArray();
         foreach (var node in snapshot)
-            DispatchUsdt(node, payload, ch, isFunctional: true);
+            DispatchUsdt(node, payload, ch, isFunctional: true, DiagnosticStack.Uds);
     }
 
     /// <summary>
@@ -394,10 +402,10 @@ public sealed class VirtualBus
         EcuNode[] snapshot;
         lock (nodesLock) snapshot = nodes.ToArray();
         foreach (var node in snapshot)
-            DispatchUsdt(node, payload, ch, isFunctional: true);
+            DispatchUsdt(node, payload, ch, isFunctional: true, DiagnosticStack.Uds);
     }
 
-    private void DispatchUsdt(EcuNode node, ReadOnlySpan<byte> usdt, ChannelSession ch, bool isFunctional)
+    private void DispatchUsdt(EcuNode node, ReadOnlySpan<byte> usdt, ChannelSession ch, bool isFunctional, DiagnosticStack stack)
     {
         if (usdt.Length < 1) return;
         byte sid = usdt[0];
@@ -424,7 +432,7 @@ public sealed class VirtualBus
             // "I don't recognise this SID" - the spec-correct reply for a
             // physical request is NRC $11 ServiceNotSupported; functional
             // broadcasts stay silent.
-            if (!node.Persona.Dispatch(node, usdt, ch, isFunctional, sid, NowMs, Scheduler)
+            if (!node.Persona.Dispatch(node, usdt, ch, isFunctional, sid, NowMs, Scheduler, stack)
                 && !isFunctional)
             {
                 ServiceUtil.EnqueueNrc(node, ch, sid, Nrc.ServiceNotSupported);
