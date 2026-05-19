@@ -54,15 +54,19 @@
     </Style>
 
     <!--
-        TextBox style for the $2D identifier (free-text hex address) and the
-        Name / Scalar / Offset / Unit cells. MaterialDesignDataGridTextBox
-        wraps the text in a proper input field shape consistent with the
-        ComboBoxes.
+        TextBox style for the $2D identifier (free-text hex address) cell.
+        MaterialDesignThemes 5.3.0 has no DataGrid-specific TextBox style,
+        so we base on the standard MaterialDesignTextBox and override
+        padding to fit a DataGrid row. The DataGridTextColumn-bound
+        Name / Scalar / Offset / Unit cells pick up their input style
+        from MaterialDesign's implicit DataGrid integration instead.
     -->
     <Style x:Key="PidGrid.TextBox"
            TargetType="TextBox"
-           BasedOn="{StaticResource MaterialDesignDataGridTextBox}">
+           BasedOn="{StaticResource MaterialDesignTextBox}">
         <Setter Property="VerticalContentAlignment" Value="Center"/>
+        <Setter Property="Padding" Value="4,2"/>
+        <Setter Property="MinHeight" Value="28"/>
     </Style>
 
 </ResourceDictionary>
