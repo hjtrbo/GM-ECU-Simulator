@@ -74,7 +74,24 @@ public static class Service1AHandler
             return;
         }
 
-        var data = node.GetIdentifier(did);
+        // Editor-side Mode1A PID rows win over the bin/archive-seeded
+        // identifier table: a hand-edited value should always take
+        // precedence over the auto-extracted default for the same DID.
+        var pidRow = node.GetMode1APid(did);
+        byte[]? data;
+        if (pidRow != null)
+        {
+            data = new byte[pidRow.ResponseLength];
+            if (pidRow.StaticBytes is not null)
+            {
+                int n = Math.Min(pidRow.StaticBytes.Length, data.Length);
+                pidRow.StaticBytes.AsSpan(0, n).CopyTo(data);
+            }
+        }
+        else
+        {
+            data = node.GetIdentifier(did);
+        }
         if (data == null)
         {
             // §8.3.5.2 NRC $31 RequestOutOfRange on physical. On functional

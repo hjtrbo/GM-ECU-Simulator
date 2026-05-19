@@ -79,9 +79,18 @@ namespace Common.Persistence;
 // (6Speed.T43 needs BS=1); FC.STmin was never needed in practice and the
 // most-permissive 0 is always correct. v1-v13 configs still load: STJ
 // silently ignores the now-unknown FlowControlSeparationTime property.
+//
+// v15 added PidDto.Mode for multi-mode PID rows ($1A / $22 / $2D in the
+// same grid). Absent in v1-v14 configs - the loader defaults it to
+// PidMode.Mode22, which is the legacy single-mode behaviour, so older
+// configs round-trip identically. Mode2D rows store the 32-bit memory
+// address in PidDto.Address; the wire PID id is derived at runtime as
+// 0xF000 | (addr & 0x0FFF) and never persisted. Mode1A rows store the
+// DID in the low 8 bits of Address; they superseded the v12-dropped
+// IdentifierDto for user-editable DIDs.
 public sealed class SimulatorConfig
 {
-    public const int CurrentVersion = 12;
+    public const int CurrentVersion = 15;
     public const int MinSupportedVersion = 1;
 
     public int Version { get; set; } = CurrentVersion;
@@ -215,6 +224,14 @@ public sealed class PidDto
     public double Offset { get; set; } = 0.0;
     public string Unit { get; set; } = "";
     public required WaveformDto Waveform { get; set; }
+
+    /// <summary>
+    /// Which service this row serves on the wire. See <see cref="PidMode"/>
+    /// for the per-mode meaning of <see cref="Address"/>. Defaults to
+    /// <see cref="PidMode.Mode22"/> so pre-v15 configs (which had no Mode
+    /// field) load with the legacy single-mode behaviour.
+    /// </summary>
+    public PidMode Mode { get; set; } = PidMode.Mode22;
 
     /// <summary>
     /// Optional explicit response length in bytes. Overrides <see cref="Size"/>

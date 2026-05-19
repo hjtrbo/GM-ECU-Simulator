@@ -63,6 +63,11 @@
                 <x:Type TypeName="proto:PidDataType"/>
             </ObjectDataProvider.MethodParameters>
         </ObjectDataProvider>
+        <ObjectDataProvider x:Key="PidModes" MethodName="GetValues" ObjectType="{x:Type sys:Enum}">
+            <ObjectDataProvider.MethodParameters>
+                <x:Type TypeName="proto:PidMode"/>
+            </ObjectDataProvider.MethodParameters>
+        </ObjectDataProvider>
 
         <!-- Caption styles in the theme set a smaller FontSize that would
              override window-level inheritance; pin to 14 locally. Same
@@ -246,6 +251,15 @@
                         <DataGrid.RowStyle>
                             <Style TargetType="{x:Type DataGridRow}" BasedOn="{StaticResource {x:Type DataGridRow}}">
                                 <Style.Triggers>
+                                    <!-- $2D alias-collision warning (two Mode2D rows sharing the
+                                         bottom 12 bits of address). Takes priority over the Nyquist
+                                         warning because it indicates an unreachable row, not a
+                                         display artefact. -->
+                                    <DataTrigger Binding="{Binding HasAliasCollision}" Value="True">
+                                        <Setter Property="BorderBrush" Value="{DynamicResource Status.ErrorBrush}"/>
+                                        <Setter Property="BorderThickness" Value="3,0,0,0"/>
+                                        <Setter Property="ToolTip" Value="{Binding AliasCollisionTooltip}"/>
+                                    </DataTrigger>
                                     <DataTrigger Binding="{Binding HasAliasWarning}" Value="True">
                                         <Setter Property="BorderBrush" Value="{DynamicResource Status.ErrorBrush}"/>
                                         <Setter Property="BorderThickness" Value="3,0,0,0"/>
@@ -255,7 +269,22 @@
                             </Style>
                         </DataGrid.RowStyle>
                         <DataGrid.Columns>
-                            <DataGridTextColumn Header="Address" Binding="{Binding AddressHex, UpdateSourceTrigger=LostFocus}" Width="86"/>
+                            <DataGridTemplateColumn Header="Mode" Width="86">
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <ComboBox Style="{StaticResource ComboBox.Cell}"
+                                                  ItemsSource="{Binding Source={StaticResource PidModes}}"
+                                                  SelectedItem="{Binding Mode, UpdateSourceTrigger=PropertyChanged}"/>
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
+                            <DataGridTextColumn Header="Identifier" Binding="{Binding AddressHex, UpdateSourceTrigger=LostFocus}" Width="100">
+                                <DataGridTextColumn.CellStyle>
+                                    <Style TargetType="DataGridCell" BasedOn="{StaticResource {x:Type DataGridCell}}">
+                                        <Setter Property="ToolTip" Value="{Binding IdentifierLabel}"/>
+                                    </Style>
+                                </DataGridTextColumn.CellStyle>
+                            </DataGridTextColumn>
                             <DataGridTextColumn Header="Name"    Binding="{Binding Name, UpdateSourceTrigger=LostFocus}"       Width="*" MinWidth="120"/>
                             <DataGridTemplateColumn Header="Size" Width="84">
                                 <DataGridTemplateColumn.CellTemplate>
@@ -271,13 +300,51 @@
                                     <DataTemplate>
                                         <ComboBox Style="{StaticResource ComboBox.Cell}"
                                                   ItemsSource="{Binding Source={StaticResource PidDataTypes}}"
-                                                  SelectedItem="{Binding DataType, UpdateSourceTrigger=PropertyChanged}"/>
+                                                  SelectedItem="{Binding DataType, UpdateSourceTrigger=PropertyChanged}"
+                                                  IsEnabled="{Binding SupportsScaling}"/>
                                     </DataTemplate>
                                 </DataGridTemplateColumn.CellTemplate>
                             </DataGridTemplateColumn>
-                            <DataGridTextColumn Header="Scalar" Binding="{Binding Scalar, StringFormat=G, UpdateSourceTrigger=LostFocus}" Width="78"/>
-                            <DataGridTextColumn Header="Offset" Binding="{Binding Offset, StringFormat=G, UpdateSourceTrigger=LostFocus}" Width="78"/>
-                            <DataGridTextColumn Header="Unit"   Binding="{Binding Unit, UpdateSourceTrigger=LostFocus}"   Width="72"/>
+                            <!-- Scalar/Offset/Unit only make sense for waveform-encoded Mode22 rows.
+                                 Mode1A and Mode2D-with-static-bytes return raw payload bytes so
+                                 scaling has no effect; the cells stay visible (consistent layout)
+                                 but read-only and visually dimmed via SupportsScaling. -->
+                            <DataGridTextColumn Header="Scalar" Binding="{Binding Scalar, StringFormat=G, UpdateSourceTrigger=LostFocus}" Width="78">
+                                <DataGridTextColumn.CellStyle>
+                                    <Style TargetType="DataGridCell" BasedOn="{StaticResource {x:Type DataGridCell}}">
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding SupportsScaling}" Value="False">
+                                                <Setter Property="IsEnabled" Value="False"/>
+                                                <Setter Property="Opacity" Value="0.45"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </DataGridTextColumn.CellStyle>
+                            </DataGridTextColumn>
+                            <DataGridTextColumn Header="Offset" Binding="{Binding Offset, StringFormat=G, UpdateSourceTrigger=LostFocus}" Width="78">
+                                <DataGridTextColumn.CellStyle>
+                                    <Style TargetType="DataGridCell" BasedOn="{StaticResource {x:Type DataGridCell}}">
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding SupportsScaling}" Value="False">
+                                                <Setter Property="IsEnabled" Value="False"/>
+                                                <Setter Property="Opacity" Value="0.45"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </DataGridTextColumn.CellStyle>
+                            </DataGridTextColumn>
+                            <DataGridTextColumn Header="Unit"   Binding="{Binding Unit, UpdateSourceTrigger=LostFocus}"   Width="72">
+                                <DataGridTextColumn.CellStyle>
+                                    <Style TargetType="DataGridCell" BasedOn="{StaticResource {x:Type DataGridCell}}">
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding SupportsScaling}" Value="False">
+                                                <Setter Property="IsEnabled" Value="False"/>
+                                                <Setter Property="Opacity" Value="0.45"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </DataGridTextColumn.CellStyle>
+                            </DataGridTextColumn>
                             <DataGridTextColumn Header="Live"   Binding="{Binding LiveValue}" IsReadOnly="True" Width="90"/>
                         </DataGrid.Columns>
                     </DataGrid>

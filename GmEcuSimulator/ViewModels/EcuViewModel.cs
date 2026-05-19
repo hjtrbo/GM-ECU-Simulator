@@ -30,6 +30,12 @@ public sealed class EcuViewModel : NotifyPropertyChangedBase
         Model = model;
         Glitch = new GlitchConfigViewModel(model.Glitch);
         foreach (var pid in model.Pids) Pids.Add(new PidViewModel(pid, this));
+        // Re-evaluate Mode2D alias collisions whenever rows are added,
+        // removed, or replaced. Per-row mode/address edits flow through
+        // PidViewModel -> RaisePidsChanged which also calls this; the two
+        // entry points keep every collision warning in sync.
+        Pids.CollectionChanged += (_, __) => RefreshAliasCollisions();
+        RefreshAliasCollisions();
 
         // Security module picker: synthetic "(none)" at index 0, then every
         // registered module ID. Matches the ComboBox's ItemsSource binding.
@@ -472,7 +478,42 @@ public sealed class EcuViewModel : NotifyPropertyChangedBase
         RaisePidsChanged();
     }
 
-    public void RaisePidsChanged() => Model.RaisePidsChanged();
+    public void RaisePidsChanged()
+    {
+        RefreshAliasCollisions();
+        Model.RaisePidsChanged();
+    }
+
+    // Walks Mode2D rows and flags any pair that derives to the same wire
+    // alias (0xF000 | (addr & 0x0FFF)). Cleared on every recompute so
+    // resolving a collision wipes both rows' warnings on the next tick.
+    // Cheap O(N) - the typical PID list is < 50 rows; no need to memoise.
+    private void RefreshAliasCollisions()
+    {
+        var aliasToRows = new Dictionary<ushort, List<PidViewModel>>();
+        foreach (var vm in Pids)
+        {
+            if (vm.Model.Mode != PidMode.Mode2D) { vm.HasAliasCollision = false; vm.AliasCollisionTooltip = null; continue; }
+            ushort alias = (ushort)(0xF000 | (vm.Model.Address & 0x0FFF));
+            if (!aliasToRows.TryGetValue(alias, out var list))
+                aliasToRows[alias] = list = new List<PidViewModel>();
+            list.Add(vm);
+        }
+        foreach (var (alias, rows) in aliasToRows)
+        {
+            bool collision = rows.Count > 1;
+            string? tip = collision
+                ? $"$2D alias 0x{alias:X4} is shared by {rows.Count} rows ("
+                  + string.Join(", ", rows.Select(r => $"0x{r.Model.Address:X8}"))
+                  + "). The first matching row wins on the $22 wire; the others are unreachable."
+                : null;
+            foreach (var r in rows)
+            {
+                r.HasAliasCollision = collision;
+                r.AliasCollisionTooltip = tip;
+            }
+        }
+    }
 
     private static bool TryParseHexU16(string s, out ushort v)
     {

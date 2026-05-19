@@ -130,6 +130,25 @@ public sealed class EcuNode
         lock (pidsLock) return pids.FirstOrDefault(p => p.Address == address);
     }
 
+    // Wire-side $22 lookup. Walks the list once: Mode22 rows match on
+    // (Address & 0xFFFF); Mode2D rows match on their derived alias
+    // (0xF000 | (Address & 0x0FFF)). Mode1A rows are skipped (they're
+    // routed by Service1AHandler via GetMode1APid instead). First-match
+    // wins, mirroring GetPid's semantics.
+    public Pid? GetPidByWireId(ushort wireId)
+    {
+        lock (pidsLock)
+            return pids.FirstOrDefault(p => p.WireLookupId is ushort id && id == wireId);
+    }
+
+    // $1A handler hook. Returns the first Mode1A row whose DID byte matches,
+    // null otherwise - the caller falls back to GetIdentifier for bin/archive-
+    // seeded values that weren't overridden in the editor grid.
+    public Pid? GetMode1APid(byte did)
+    {
+        lock (pidsLock) return pids.FirstOrDefault(p => p.Mode1ADid == did);
+    }
+
     public void AddPid(Pid pid)
     {
         lock (pidsLock)

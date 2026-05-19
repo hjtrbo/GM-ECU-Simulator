@@ -14,6 +14,9 @@ public sealed class PidViewModel : NotifyPropertyChangedBase
     private readonly EcuViewModel parent;
     private string liveValue = "—";
 
+    private bool hasAliasCollision;
+    private string? aliasCollisionTooltip;
+
     public PidViewModel(Pid pid, EcuViewModel parent)
     {
         Model = pid;
@@ -47,26 +50,109 @@ public sealed class PidViewModel : NotifyPropertyChangedBase
             Model.Address = value;
             OnPropertyChanged();
             OnPropertyChanged(nameof(AddressHex));
+            OnPropertyChanged(nameof(IdentifierLabel));
             parent.RaisePidsChanged();
         }
     }
 
-    // 32-bit-capable hex display. Pads to 4 hex digits for the common $22-PID
-    // case (≤ 0xFFFF) and to 8 hex digits once a memory address (e.g.
-    // 0x002C0000) overflows the 16-bit space.
+    public PidMode Mode
+    {
+        get => Model.Mode;
+        set
+        {
+            if (Model.Mode == value) return;
+            Model.Mode = value;
+            OnPropertyChanged();
+            // Mode flips swap which columns are live and reshape the
+            // identifier display; the cells re-read these on the same tick.
+            OnPropertyChanged(nameof(IsMode1A));
+            OnPropertyChanged(nameof(IsMode22));
+            OnPropertyChanged(nameof(IsMode2D));
+            OnPropertyChanged(nameof(SupportsWaveform));
+            OnPropertyChanged(nameof(SupportsScaling));
+            OnPropertyChanged(nameof(AddressHex));
+            OnPropertyChanged(nameof(IdentifierLabel));
+            parent.RaisePidsChanged();
+        }
+    }
+
+    public bool IsMode1A => Model.Mode == PidMode.Mode1A;
+    public bool IsMode22 => Model.Mode == PidMode.Mode22;
+    public bool IsMode2D => Model.Mode == PidMode.Mode2D;
+
+    // Spec-defined name for the configured identifier, when known. Surfaced
+    // as the Identifier cell tooltip so the user can hover a row to confirm
+    // "$90 = VIN" without cross-referencing the spec. Returns null for
+    // unknown DIDs / PIDs (no tooltip shown). $22 catalogue lookup is a
+    // follow-up - the $22 wire-PID set is family-specific and currently
+    // only available via the (stubbed) Mode22DidBinExtractor.
+    public string? IdentifierLabel => Model.Mode switch
+    {
+        PidMode.Mode1A => Common.Protocol.Gmw3110DidNames.NameOf((byte)(Model.Address & 0xFF)),
+        _              => null,
+    };
+
+    // Mode1A rows always return StaticBytes - waveform fields would have no
+    // effect on the wire so the editor greys them out. Mode22/Mode2D both
+    // support waveform-driven responses (Mode2D inherits its waveform from
+    // the row's own settings, same shape as Mode22).
+    public bool SupportsWaveform => Model.Mode != PidMode.Mode1A;
+
+    // Scalar / Offset / Unit are only meaningful when the response is a
+    // numeric waveform sample. Mode1A always-static and Mode2D-with-
+    // StaticBytes don't use them.
+    public bool SupportsScaling => Model.Mode == PidMode.Mode22;
+
+    // Identifier display: mode-aware hex formatting.
+    //   Mode1A -> "$XX" for the DID byte (e.g. "$90")
+    //   Mode22 -> "0xXXXX" for the wire PID
+    //   Mode2D -> "0xXXXXXXXX" for the 32-bit memory address
+    // The setter accepts any of those forms regardless of mode so quick
+    // edits don't fight the formatter.
     public string AddressHex
     {
-        get => Model.Address <= 0xFFFF ? $"0x{Model.Address:X4}" : $"0x{Model.Address:X8}";
+        get => Model.Mode switch
+        {
+            PidMode.Mode1A => $"${(byte)(Model.Address & 0xFF):X2}",
+            PidMode.Mode2D => $"0x{Model.Address:X8}",
+            _              => Model.Address <= 0xFFFF ? $"0x{Model.Address:X4}" : $"0x{Model.Address:X8}",
+        };
         set
         {
             var trimmed = value?.Trim() ?? "";
-            if (trimmed.StartsWith("0x", StringComparison.OrdinalIgnoreCase)) trimmed = trimmed[2..];
-            else if (trimmed.EndsWith('h') || trimmed.EndsWith('H')) trimmed = trimmed[..^1];
+            if (trimmed.StartsWith("$"))                                      trimmed = trimmed[1..];
+            else if (trimmed.StartsWith("0x", StringComparison.OrdinalIgnoreCase)) trimmed = trimmed[2..];
+            else if (trimmed.EndsWith('h') || trimmed.EndsWith('H'))          trimmed = trimmed[..^1];
             if (uint.TryParse(trimmed, System.Globalization.NumberStyles.HexNumber,
                               System.Globalization.CultureInfo.InvariantCulture, out var v))
                 Address = v;
         }
     }
+
+    // $2D rows derive their wire PID id from Address as 0xF000 | (addr & 0x0FFF).
+    // Two rows whose addresses share the low 12 bits collide on the wire - both
+    // would respond to the same $22 request. EcuViewModel re-evaluates this
+    // whenever a row's mode or address changes; the row border + tooltip in
+    // the SetupWindow grid surface the warning to the user.
+    public bool HasAliasCollision
+    {
+        get => hasAliasCollision;
+        set
+        {
+            if (SetField(ref hasAliasCollision, value))
+                OnPropertyChanged(nameof(HasWarning));
+        }
+    }
+
+    public string? AliasCollisionTooltip
+    {
+        get => aliasCollisionTooltip;
+        set => SetField(ref aliasCollisionTooltip, value);
+    }
+
+    // Combined warning indicator the row style binds to: alias collision OR
+    // Nyquist-band aliasing. Either turns on the red-border row decoration.
+    public bool HasWarning => hasAliasCollision || HasAliasWarning;
 
     public string Name
     {

@@ -23,6 +23,30 @@ public sealed class Pid
     public double Offset { get; set; } = 0.0;
     public string Unit { get; set; } = "";
 
+    // Which service this row serves on the wire. The Address field's meaning
+    // depends on this: Mode22 = 2-byte wire PID id; Mode1A = 1-byte DID in
+    // the low 8 bits; Mode2D = 32-bit memory address (wire PID id is derived
+    // via WireLookupId). Defaults to Mode22 so legacy configs round-trip.
+    public PidMode Mode { get; set; } = PidMode.Mode22;
+
+    // 2-byte wire PID id the $22 dispatcher matches against. Mode22 echoes
+    // Address verbatim; Mode2D derives the alias as 0xF000 | (addr & 0x0FFF)
+    // (GM's dynamic-PID range, deterministic so the DataLogger profile stays
+    // valid across reloads without persisting the alias). Mode1A rows aren't
+    // reachable through $22 - returns null.
+    public ushort? WireLookupId => Mode switch
+    {
+        PidMode.Mode22 => (ushort)(Address & 0xFFFF),
+        PidMode.Mode2D => (ushort)(0xF000 | (Address & 0x0FFF)),
+        _ => null,
+    };
+
+    // 1-byte DID this row serves on $1A; null for Mode22/Mode2D rows. The
+    // $1A handler uses this to short-circuit the identifier-table lookup so
+    // a user-edited row in the PID grid takes precedence over the bin- or
+    // archive-seeded identifier value.
+    public byte? Mode1ADid => Mode == PidMode.Mode1A ? (byte)(Address & 0xFF) : null;
+
     /// <summary>
     /// Optional override for <see cref="Size"/> to express PIDs longer than
     /// 4 bytes. The legacy <see cref="PidSize"/> enum caps at <c>DWord</c>

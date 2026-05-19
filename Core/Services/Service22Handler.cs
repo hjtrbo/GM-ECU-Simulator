@@ -47,12 +47,15 @@ public static class Service22Handler
         // §8.6.1: filter to the subset of supported PIDs. Unsupported entries
         // are silently skipped; the response includes only the PIDs the ECU
         // actually knows. Order is preserved from the request.
-        var supported = new List<Pid>(pidCount);
+        var supported = new List<(ushort WireId, Pid Pid)>(pidCount);
         for (int i = 0; i < pidCount; i++)
         {
             ushort pidId = (ushort)((usdtPayload[1 + i * 2] << 8) | usdtPayload[2 + i * 2]);
-            var pid = node.GetPid(pidId);
-            if (pid != null) supported.Add(pid);
+            // GetPidByWireId resolves Mode22 (Address-as-PID) and Mode2D
+            // (Address-as-memory-addr, alias derived) in one pass; Mode1A
+            // rows aren't reachable here and won't match.
+            var pid = node.GetPidByWireId(pidId);
+            if (pid != null) supported.Add((pidId, pid));
         }
 
         if (supported.Count == 0)
@@ -64,14 +67,17 @@ public static class Service22Handler
         }
 
         int respSize = 1;                                   // SID
-        foreach (var pid in supported) respSize += 2 + pid.ResponseLength;
+        foreach (var (_, pid) in supported) respSize += 2 + pid.ResponseLength;
         var resp = new byte[respSize];
         resp[0] = Service.Positive(Service.ReadDataByParameterIdentifier);
         int pos = 1;
-        foreach (var pid in supported)
+        foreach (var (wireId, pid) in supported)
         {
-            resp[pos++] = (byte)(pid.Address >> 8);
-            resp[pos++] = (byte)(pid.Address & 0xFF);
+            // Echo the wire-side id, not Pid.Address: for Mode2D rows the
+            // Address is a 32-bit memory address and the wire id is the
+            // derived alias.
+            resp[pos++] = (byte)(wireId >> 8);
+            resp[pos++] = (byte)(wireId & 0xFF);
             int len = pid.ResponseLength;
             pid.WriteResponseBytes(timeMs, resp.AsSpan(pos, len));
             pos += len;
