@@ -38,6 +38,12 @@
            BasedOn="{StaticResource MaterialDesignDataGridCell}">
         <Setter Property="FontSize" Value="13"/>
         <Setter Property="Padding"  Value="8,6,8,6"/>
+        <!-- Vertically centre every cell's content so the read-only text
+             columns (Name, Scalar, Offset, Unit, Live) sit on the same
+             baseline as the in-cell ComboBoxes (Mode, Identifier, Size,
+             Type). Without this the text columns top-align and the row
+             looks staggered. -->
+        <Setter Property="VerticalContentAlignment" Value="Center"/>
     </Style>
 
     <!--
@@ -50,6 +56,7 @@
            TargetType="ComboBox"
            BasedOn="{StaticResource MaterialDesignDataGridComboBox}">
         <Setter Property="VerticalContentAlignment" Value="Center"/>
+        <Setter Property="VerticalAlignment"        Value="Center"/>
         <Setter Property="MinHeight" Value="28"/>
     </Style>
 
@@ -65,6 +72,7 @@
            TargetType="TextBox"
            BasedOn="{StaticResource MaterialDesignTextBox}">
         <Setter Property="VerticalContentAlignment" Value="Center"/>
+        <Setter Property="VerticalAlignment"        Value="Center"/>
         <Setter Property="Padding" Value="4,2"/>
         <Setter Property="MinHeight" Value="28"/>
     </Style>
