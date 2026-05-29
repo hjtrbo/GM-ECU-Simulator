@@ -57,4 +57,17 @@
     <Resource Include="Resources\app.ico" />
   </ItemGroup>
 
+  <!-- Ship the J2534 registry installer scripts in an Installer\ subfolder
+       beside the EXE. The in-app "Register as J2534 device" button
+       (MainViewModel.ScriptPath) falls back to <exeDir>\Installer\*.ps1 in a
+       deployed/published layout when the dev .sln marker isn't found upward.
+       Without this copy a downloaded release fails with "Register.ps1 is not
+       recognized". Register.ps1 then resolves the flat-bundled shims itself
+       via Split-Path -Parent $PSScriptRoot. -->
+  <ItemGroup>
+    <Content Include="..\Installer\Register.ps1" Link="Installer\Register.ps1" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="..\Installer\Unregister.ps1" Link="Installer\Unregister.ps1" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="..\Installer\List.ps1" Link="Installer\List.ps1" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
 </Project>
