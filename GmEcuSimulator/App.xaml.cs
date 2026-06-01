@@ -19,6 +19,7 @@ public partial class App : Application
     /// <summary>Convenience accessor for the singleton VirtualBus.</summary>
     public static VirtualBus Bus => Services.GetRequiredService<VirtualBus>();
     private NamedPipeServer? pipeServer;
+    private RawCanTcpServer? rawCanServer;
     private MainWindow? mainWindow;
 
     protected override void OnStartup(StartupEventArgs e)
@@ -54,6 +55,9 @@ public partial class App : Application
         });
         services.AddSingleton<NamedPipeServer>(sp =>
             new NamedPipeServer(sp.GetRequiredService<VirtualBus>(), s => GmEcuSimulator.MainWindow.AppendJ2534Log(s)));
+        services.AddSingleton<RawCanTcpServer>(sp =>
+            new RawCanTcpServer(sp.GetRequiredService<VirtualBus>(), RawCanTcpServer.DefaultPort,
+                s => GmEcuSimulator.MainWindow.AppendJ2534Log(s)));
         Services = services.BuildServiceProvider();
 
         var bus = Services.GetRequiredService<VirtualBus>();
@@ -92,6 +96,7 @@ public partial class App : Application
         // file). Mode defaults to EcuSimulator for fresh installs.
         var bootSettings = AppSettings.Load();
         var mode = bootSettings.Mode;
+        var connection = bootSettings.ConnectionType;
 
         // Auto-load: per-mode config file. DPS modes are volatile-by-design
         // (clean state every launch), so the load path is skipped entirely and
@@ -107,6 +112,11 @@ public partial class App : Application
                 {
                     var cfg = ConfigStore.Load(path);
                     ConfigStore.ApplyTo(cfg, bus);
+                    // Backfill the curated identity + live $22 seed set onto the loaded ECUs. The load path rebuilds
+                    // ECUs verbatim from the file and (unlike Add ECU / first-run defaults) never seeds, so a config
+                    // saved before the curated $22 set existed shows none of the 12 signal-backed $22 PIDs. SeedDefaults
+                    // is precedence-safe (existing DIDs win, primed ECUs skipped), so it only fills the gaps.
+                    if (mode == AppMode.EcuSimulator) DefaultEcuConfig.SeedDefaults(bus);
                     if (cfg.BinReplay != null)
                     {
                         replay.LoopMode = cfg.BinReplay.LoopMode;
@@ -133,28 +143,42 @@ public partial class App : Application
         bus.IdleSupervisor.Start();
 
         pipeServer = Services.GetRequiredService<NamedPipeServer>();
+        rawCanServer = Services.GetRequiredService<RawCanTcpServer>();
 
-        // Bind the IPC pipe to registration state. If the shim DLL isn't
-        // registered, no host can discover us through HKLM, so there's no
-        // point listening - and crucially, if a previous run left the
-        // shim registered and a host has it loaded, starting the pipe here
-        // would let that host connect even though the user has since
-        // unregistered. RegisterJ2534 / UnregisterJ2534 in MainViewModel
-        // drive Start / StopAsync from the buttons.
-        bool registered;
-        try { registered = J2534Registration.Check().IsRegistered; }
-        catch (Exception ex)
+        // Exactly one transport is live at a time, chosen by the persisted
+        // ConnectionType (selected as a sub-variant of the mode dropdown).
+        // MainViewModel flips them when the user changes the selection.
+        if (connection == ConnectionType.RawCanTcp)
         {
-            registered = false;
-            bus.LogSim?.Invoke($"J2534 registration probe failed: {ex.Message}; assuming unregistered");
+            // No registry gating: the gauge sim is hand-configured with the
+            // port, nothing needs to discover us through HKLM.
+            try { rawCanServer.Start(); }
+            catch (Exception ex) { bus.LogSim?.Invoke($"Raw-CAN TCP listener failed to start: {ex.Message}"); }
         }
-        if (registered)
-            pipeServer.Start();
         else
-            bus.LogSim?.Invoke("J2534 not registered - IPC pipe not started; register from Tools to enable host connections");
+        {
+            // Bind the IPC pipe to registration state. If the shim DLL isn't
+            // registered, no host can discover us through HKLM, so there's no
+            // point listening - and crucially, if a previous run left the
+            // shim registered and a host has it loaded, starting the pipe here
+            // would let that host connect even though the user has since
+            // unregistered. RegisterJ2534 / UnregisterJ2534 in MainViewModel
+            // drive Start / StopAsync from the buttons.
+            bool registered;
+            try { registered = J2534Registration.Check().IsRegistered; }
+            catch (Exception ex)
+            {
+                registered = false;
+                bus.LogSim?.Invoke($"J2534 registration probe failed: {ex.Message}; assuming unregistered");
+            }
+            if (registered)
+                pipeServer.Start();
+            else
+                bus.LogSim?.Invoke("J2534 not registered - IPC pipe not started; register from Tools to enable host connections");
+        }
 
         mainWindow = new MainWindow();
-        mainWindow.Bind(bus, replay, pipeServer);
+        mainWindow.Bind(bus, replay, pipeServer, rawCanServer);
 
         // No startup auto-prime: priming is a DPS-mode operation, and DPS modes
         // do not PersistsConfig - they always start clean and the user re-primes

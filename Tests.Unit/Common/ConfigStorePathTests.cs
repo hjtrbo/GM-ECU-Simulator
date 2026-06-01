@@ -7,15 +7,14 @@ namespace EcuSimulator.Tests.AppModes;
 public sealed class ConfigStorePathTests
 {
     [Theory]
-    [InlineData(AppMode.EcuSimulator, "ecu_simulator_config.json")]
-    [InlineData(AppMode.DpsWrite,     "dps_write_config.json")]
-    [InlineData(AppMode.DpsRead,      "dps_read_config.json")]
-    public void PathForMode_ResolvesToLocalAppDataWithModeFilename(AppMode mode, string expectedFile)
+    [InlineData(AppMode.EcuSimulator)]
+    [InlineData(AppMode.DpsSimulator)]
+    public void PathForMode_ResolvesToLocalAppDataLastUsedFile(AppMode mode)
     {
         var path = ConfigStore.PathForMode(mode);
 
-        // Filename is per-mode and stable
-        Assert.Equal(expectedFile, Path.GetFileName(path));
+        // All modes share the single rolling "last used" auto-state file
+        Assert.Equal("lastused.mode.json", Path.GetFileName(path));
 
         // Lives under %LOCALAPPDATA%\GmEcuSimulator\config
         var expectedDir = Path.Combine(

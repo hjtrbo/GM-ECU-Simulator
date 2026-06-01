@@ -563,6 +563,20 @@
                                             <ColumnDefinition Width="96"/>
                                             <ColumnDefinition Width="*"/>
                                         </Grid.ColumnDefinitions>
+                                        <Label Style="{StaticResource Label.FormPair}" Grid.Column="0" Content="Engine model"/>
+                                        <ComboBox Grid.Column="1" Margin="0,2" Height="40"
+                                                  ItemsSource="{Binding EngineModels}"
+                                                  DisplayMemberPath="DisplayName"
+                                                  SelectedValuePath="Id"
+                                                  SelectedValue="{Binding SelectedEngineModelId}"
+                                                  ToolTip="The engine character driving this ECU's derived signals (induction, airflow, fuelling). Naturally Aspirated keeps MAP in vacuum (fuel pressure tops out at the 4 bar base); Boosted V8 drives MAP above barometric under load, so MAF and fuel pressure rise above base. Swaps live - a connected tool sees the change on the next read."/>
+                                    </Grid>
+
+                                    <Grid Style="{StaticResource FormCell}">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="96"/>
+                                            <ColumnDefinition Width="*"/>
+                                        </Grid.ColumnDefinitions>
                                         <Label Style="{StaticResource Label.FormPair}" Grid.Column="0" Content="Scenario"/>
                                         <ComboBox Grid.Column="1" Margin="0,2" Height="40"
                                                   ItemsSource="{Binding Scenarios}"
@@ -570,8 +584,9 @@
                                                   ToolTip="Operating point driving this ECU's live signals. Switching it ramps RPM, load, MAP, MAF, O2 etc. toward the new state - a connected tool sees Mode $01 and any signal-backed $22 PIDs move."/>
                                     </Grid>
 
-                                    <!-- Accel/Decel Sweep knobs. Only shown when the sweep scenario is selected; each is in seconds. -->
-                                    <StackPanel Visibility="{Binding IsSweep, Converter={StaticResource BoolToVis}, FallbackValue=Collapsed}">
+                                    <!-- Accel/Decel Sweep knobs. Hidden in the UI - the underlying Sweep* properties
+                                         still drive the scenario; only the editor inputs are collapsed. -->
+                                    <StackPanel Visibility="Collapsed">
                                         <Grid Margin="0,2">
                                             <Grid.ColumnDefinitions>
                                                 <ColumnDefinition Width="96"/>
@@ -743,7 +758,8 @@
                                                                                   ToolTip="{Binding IdentifierLabel}"
                                                                                   Visibility="{Binding IsCatalogueDriven, Converter={StaticResource BoolToVis}}"/>
                                                                         <TextBox Style="{StaticResource DataGrid.InCellTextBox}"
-                                                                                 Text="{Binding AddressHex, UpdateSourceTrigger=LostFocus}"
+                                                                                 Validation.ErrorTemplate="{StaticResource ValidationErrorTemplate}"
+                                                                                 Text="{Binding AddressHex, UpdateSourceTrigger=LostFocus, ValidatesOnNotifyDataErrors=True}"
                                                                                  Visibility="{Binding IsHandRolled, Converter={StaticResource BoolToVis}}"/>
                                                                     </Grid>
                                                                 </DataTemplate>
@@ -762,6 +778,7 @@
                                                              text, or prefix "0x" to enter raw bytes; editing resizes the row to match. -->
                                                         <DataGridTextColumn Binding="{Binding ValueText, UpdateSourceTrigger=LostFocus}" Width="*" MinWidth="170"
                                                                             Header="Value"
+                                                                            Visibility="{Binding Data.IsNotMode22, Source={StaticResource SecProxy}, Converter={StaticResource BoolToVis}}"
                                                                             FontFamily="{StaticResource Font.Mono}"
                                                                             ElementStyle="{StaticResource DataGrid.TextColumnElement}"
                                                                             EditingElementStyle="{StaticResource MaterialDesignDataGridTextColumnPopupEditingStyle}"/>
@@ -793,9 +810,10 @@
                                                                 </DataTemplate>
                                                             </DataGridTemplateColumn.CellTemplate>
                                                         </DataGridTemplateColumn>
-                                                        <!-- Signal source. '(none)' = the PID uses its waveform / static bytes; picking a signal
-                                                             makes the PID read the live engine model on the wire (encoded with Scalar/Offset/Size).
-                                                             The headline control for a $2D row: point a custom address at a live signal. -->
+                                                        <!-- Value source - the single selector for where this row's value comes from. '(none)' = a
+                                                             flat 0; 'Waveform' = the row's own waveform generator; any signal = the live engine model
+                                                             (encoded with Scalar/Offset/Size). The headline control for a $2D row: point a custom
+                                                             address at a live signal. A static-payload row ($1A / bin-extracted) still serves its bytes. -->
                                                         <DataGridTemplateColumn Width="150"
                                                                                 Visibility="{Binding Data.IsNotMode1A, Source={StaticResource SecProxy}, Converter={StaticResource BoolToVis}}"
                                                                                 HeaderTemplate="{StaticResource PidColumnHeader}"
@@ -805,9 +823,8 @@
                                                                     <ComboBox Style="{StaticResource DataGrid.InCellComboBox}"
                                                                               ItemsSource="{Binding SignalSourceOptions}"
                                                                               DisplayMemberPath="Display"
-                                                                              SelectedValuePath="Id"
-                                                                              SelectedValue="{Binding Signal, UpdateSourceTrigger=PropertyChanged}"
-                                                                              ToolTip="Live signal this PID reads from the engine model. '(none)' = use the waveform/static value. On a $2D row this points a custom address at a live signal."/>
+                                                                              SelectedItem="{Binding SelectedSource, UpdateSourceTrigger=PropertyChanged}"
+                                                                              ToolTip="Where this PID's value comes from. '(none)' = a flat 0; 'Waveform' = the row's waveform generator; any signal = the live engine model (encoded with this row's Scalar/Offset/Size)."/>
                                                                 </DataTemplate>
                                                             </DataGridTemplateColumn.CellTemplate>
                                                         </DataGridTemplateColumn>

@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using Common.Signals.Engines;
 
 namespace Common.Signals;
 
@@ -58,6 +59,17 @@ public sealed class EngineModel
     // sweep just changes the timing the next Sample sees (it can shift the phase, which is fine for a config knob).
     private volatile SweepProfile sweep = SweepProfile.Default;
     public SweepProfile Sweep { get => sweep; set => sweep = value; }
+
+    // The engine character: the model-specific derivation (induction curve, airflow, spark, fuelling) this ECU runs.
+    // Universal physics stay in this class; only ComputeDerived is delegated. Swapped behind a volatile reference like
+    // Sweep, so the editor can change engines live without a lock. Defaults to NA so a fresh model matches the original
+    // naturally-aspirated behaviour.
+    private volatile IEngineCharacter character = new NaGasV8();
+    public IEngineCharacter Character { get => character; set => character = value; }
+
+    // Sea-level barometric reference shared by the induction curve and the $33 barometric PID, until a real altitude
+    // axis lands. Passed to the character via OperatingPoint so MAP and fuel pressure read one consistent value.
+    private const double BaroKpa = 101.0;
 
     public EngineModel(ScenarioId initial = ScenarioId.Idle)
     {
@@ -284,9 +296,9 @@ public sealed class EngineModel
         return (running, wot, overrunCut, closedLoop);
     }
 
-    // Everything that isn't a scenario primary: physically-plausible functions of the current primaries plus the warm
-    // quasi-static constants. Deliberately simple (algebraic, not time-integrating) - faithful enough that related
-    // PIDs move together, with real tuning left for later.
+    // Everything that isn't a scenario primary. EngineModel resolves the universal operating point (eased primaries +
+    // operating-condition flags + bus time + barometric); the active engine character turns that into the model-
+    // specific MAP/MAF/spark/fuel/O2 values. Swapping the character swaps the engine without touching this plumbing.
     private double ComputeDerived(SignalId id, EaseState e, double t)
     {
         double rpm = Primary(SignalId.EngineRpm, e, t);
@@ -295,63 +307,13 @@ public sealed class EngineModel
         double speed = Primary(SignalId.VehicleSpeed, e, t);
         var (running, wot, overrunCut, closed) = Flags(rpm, load, throttle, speed);
 
-        const double baro = 101.0;
-        double ts = t / 1000.0;
-        double map = running ? baro * (0.18 + 0.0082 * load) : baro;
+        var op = new OperatingPoint(
+            Rpm: rpm, Load: load, Throttle: throttle, Speed: speed,
+            Running: running, Wot: wot, OverrunCut: overrunCut, ClosedLoop: closed,
+            EngineOff: e.Scenario == ScenarioId.KeyOnEngineOff,
+            BaroKpa: BaroKpa, TimeSeconds: t / 1000.0);
 
-        // Key-on-engine-off is a cold soak: coolant/intake/oil have equalised to ambient, and ambient itself sits at the
-        // ISA sea-level standard (15 C). While running they read their warm quasi-static values instead.
-        const double IsaSeaLevelTempC = 15.0;
-        bool engineOff = e.Scenario == ScenarioId.KeyOnEngineOff;
-
-        return id switch
-        {
-            // Temperatures: warm quasi-static when running, cold-soaked to the ISA sea-level standard with the engine off.
-            SignalId.CoolantTemp => engineOff ? IsaSeaLevelTempC : 90,
-            SignalId.IntakeAirTemp => engineOff ? IsaSeaLevelTempC : 35,
-            SignalId.AmbientAirTemp => engineOff ? IsaSeaLevelTempC : 25,
-            SignalId.FuelLevel => 57,
-            SignalId.EngineOilTemp => engineOff ? IsaSeaLevelTempC : 95,
-            SignalId.BarometricPressure => baro,
-
-            // Charge / airflow. No vacuum when the engine is off (MAP sits at barometric), MAF dead.
-            SignalId.ManifoldAbsolutePressure => map,
-            SignalId.MassAirFlow => running ? rpm * map * 1.5e-4 : 0,
-
-            // Spark and electrical. More advance at light load; charging voltage only while running.
-            SignalId.TimingAdvance => running ? 32.0 - 0.2 * load : 0,
-            SignalId.ControlModuleVoltage => running ? 14.2 : 12.6,
-
-            // Pedal echoes the commanded throttle (two redundant channels).
-            SignalId.AcceleratorPedalD => throttle,
-            SignalId.AcceleratorPedalE => throttle,
-
-            // Fuelling. Closed loop dithers around stoich; WOT commands rich.
-            SignalId.CommandedEquivalenceRatio => wot ? 0.85 : 1.0,
-            SignalId.ShortTermFuelTrimBank1 => closed ? 4.0 * Math.Sin(2 * Math.PI * 0.4 * ts) : 0,
-            SignalId.ShortTermFuelTrimBank2 => closed ? 4.0 * Math.Sin(2 * Math.PI * 0.4 * ts + 0.7) : 0,
-            SignalId.LongTermFuelTrimBank1 => 2.0,
-            SignalId.LongTermFuelTrimBank2 => 1.5,
-
-            // O2 sensors. Front sensors switch in closed loop (the texture), peg rich at WOT and lean on fuel cut;
-            // rear (post-cat) sensors sit high and steady. Inactive when the engine is off.
-            SignalId.O2VoltageBank1Sensor1 => FrontO2(running, wot, overrunCut, ts, 0.0),
-            SignalId.O2VoltageBank2Sensor1 => FrontO2(running, wot, overrunCut, ts, 1.1),
-            SignalId.O2VoltageBank1Sensor2 => running ? 0.65 : 0.45,
-            SignalId.O2VoltageBank2Sensor2 => running ? 0.65 : 0.45,
-
-            _ => 0,
-        };
-    }
-
-    // Front (pre-cat) O2 voltage: rich/lean pegs in open loop, otherwise the 0.1-0.9 V switching that a healthy
-    // closed-loop sensor shows. The phase argument decorrelates the two banks so they don't switch in lockstep.
-    private static double FrontO2(bool running, bool wot, bool overrunCut, double ts, double phase)
-    {
-        if (!running) return 0.45;
-        if (wot) return 0.85;
-        if (overrunCut) return 0.10;
-        return 0.45 + 0.35 * Math.Sin(2 * Math.PI * 1.2 * ts + phase);
+        return character.Derive(id, op);
     }
 
     // A small, smooth, value-proportional wobble layered on every sampled value so a steady operating point still

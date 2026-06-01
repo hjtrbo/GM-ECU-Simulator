@@ -18,6 +18,7 @@ public enum SignalId
     // Derived - computed from the primaries on each sample.
     ManifoldAbsolutePressure,
     MassAirFlow,
+    FuelPressure,
     TimingAdvance,
     ControlModuleVoltage,
     ShortTermFuelTrimBank1,
@@ -29,8 +30,7 @@ public enum SignalId
     O2VoltageBank2Sensor1,
     O2VoltageBank2Sensor2,
     CommandedEquivalenceRatio,
-    AcceleratorPedalD,
-    AcceleratorPedalE,
+    AcceleratorPedalPosition,
 
     // Quasi-static - fixed warm-engine values until the thermal axis lands.
     CoolantTemp,

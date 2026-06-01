@@ -9,10 +9,9 @@ namespace Core.Ecu;
 // or DPS archive). Both ArchivePrimer.BuildEcuNode and the new
 // BinEcuFactory used to need the same opening 30 lines: pick the next
 // OBD-II CAN-ID triple, mark IsPrimed=true so EcuIdentitySeeder skips
-// the node, install a security module, set AutoRespondFromLibrary so
-// uncovered DIDs still answer rather than NRC. That boilerplate now
-// lives here and the two factories just call CreatePrimed before
-// continuing with their own data-population logic.
+// the node, install a security module. That boilerplate now lives here
+// and the two factories just call CreatePrimed before continuing with
+// their own data-population logic.
 public static class EcuNodeFactory
 {
     /// <summary>
@@ -70,10 +69,8 @@ public static class EcuNodeFactory
     /// <summary>
     /// Build a bare, primed <see cref="EcuNode"/>: identity fields populated
     /// from <paramref name="ids"/>, security module installed, IsPrimed=true
-    /// so <c>EcuIdentitySeeder</c> skips it, AutoRespondFromLibrary=true so
-    /// any library-known DID answers with a zero-filled payload until the
-    /// caller overlays real values. No PIDs, no identifiers - the calling
-    /// factory populates those from its own data source.
+    /// so <c>EcuIdentitySeeder</c> skips it. No PIDs, no identifiers - the
+    /// calling factory populates those from its own data source.
     /// </summary>
     /// <param name="name">Display name shown in the ECU list.</param>
     /// <param name="ids">CAN-ID + diagnostic-address tuple, typically from
@@ -100,10 +97,6 @@ public static class EcuNodeFactory
             DiagnosticAddress    = ids.DiagnosticAddress,
             ProgrammedState      = 0x00,   // FullyProgrammed, GMW3110 §8.16
             Persona              = Gmw3110Persona.Instance,
-            // Match ConfigSchema's persisted default - a primed ECU answers
-            // any library-known $22 / $01 / $1A DID with a zero-filled
-            // payload until the data-population step overlays real values.
-            AutoRespondFromLibrary = true,
         };
 
         node.SecurityModule = SecurityModuleRegistry.Create(securityModuleId);

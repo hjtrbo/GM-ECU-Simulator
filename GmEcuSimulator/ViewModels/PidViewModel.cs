@@ -58,6 +58,17 @@ public sealed class PidViewModel : NotifyPropertyChangedBase
         set
         {
             if (Model.Address == value) return;
+            // Reject a typed identifier already served by another row in this mode (the $1A DID / $2D address box).
+            // The store keeps one row per key, so a duplicate would silently shadow the existing row on the wire. Flag
+            // the cell (red border via INotifyDataErrorInfo) and leave the model unchanged; the user's text stays put
+            // so they can correct it, matching the Size column's validation.
+            if (parent.IsIdentifierTaken(Model, Model.Mode, value))
+            {
+                string label = Model.Mode == PidMode.Mode2D ? $"address 0x{value:X6}" : $"DID ${value & 0xFF:X2}";
+                SetError(nameof(AddressHex), $"Another row in this mode already uses {label}.");
+                return;
+            }
+            SetError(nameof(AddressHex), null);
             var oldAddress = Model.Address;
             Model.Address = value;
             // The per-mode store is keyed by Address, so re-key the entry before notifying. Without this a $2D / $22
@@ -123,11 +134,25 @@ public sealed class PidViewModel : NotifyPropertyChangedBase
     public bool IsCatalogueDriven => Model.Mode == PidMode.Mode22;
     public bool IsHandRolled      => Model.Mode is PidMode.Mode1A or PidMode.Mode2D;
 
-    // The full picker list for the current mode. Bound to the Identifier
-    // cell's ComboBox.ItemsSource on $1A/$22 rows; empty (and the cell
-    // collapses to a TextBox) for $2D.
+    // The picker list for the current mode. Bound to the Identifier cell's ComboBox.ItemsSource on $22 rows; empty
+    // (and the cell collapses to a TextBox) for $1A/$2D. Identifiers another row in this mode already serves are
+    // filtered out - each identifier maps to exactly one row in its per-mode store, so offering a taken one would let
+    // the user create a row that silently shadows (or is shadowed by) the existing one on the wire. The row's own
+    // current identifier is never filtered (IdentifiersInUse excludes self), so the combo can still show its selection.
     public IReadOnlyList<PidCatalogueEntry> IdentifierCatalogue
-        => PidCatalogue.For(Model.Mode);
+    {
+        get
+        {
+            var full = PidCatalogue.For(Model.Mode);
+            var taken = parent.IdentifiersInUse(Model.Mode, exclude: Model);
+            if (taken.Count == 0) return full;
+            return full.Where(e => !taken.Contains(Pid.StoreKeyFor(Model.Mode, e.Identifier))).ToList();
+        }
+    }
+
+    // Re-announce IdentifierCatalogue so the picker re-filters when another row claims or releases an identifier.
+    // Called by EcuViewModel after a structural identifier change.
+    internal void RefreshIdentifierCatalogue() => OnPropertyChanged(nameof(IdentifierCatalogue));
 
     // Round-trips the current row through the catalogue: the getter finds
     // the entry whose mode + identifier match the model (or null if the
@@ -141,6 +166,14 @@ public sealed class PidViewModel : NotifyPropertyChangedBase
         set
         {
             if (value is null) return;
+            // Refuse a duplicate identifier - each DID gets exactly one row per mode (the per-mode store would keep
+            // only the last one and shadow the rest on the wire). The picker already hides taken identifiers; this is
+            // the backstop for a stale-open dropdown. Snap the combo back to the current selection.
+            if (parent.IsIdentifierTaken(Model, Model.Mode, value.Identifier))
+            {
+                OnPropertyChanged(nameof(SelectedCatalogueEntry));
+                return;
+            }
             // Apply identifier first so AddressHex / IdentifierLabel raise
             // in the same property change burst as the rest.
             var oldAddress    = Model.Address;
@@ -370,32 +403,42 @@ public sealed class PidViewModel : NotifyPropertyChangedBase
         set { if (Model.Unit != value) { Model.Unit = value; OnPropertyChanged(); parent.RaisePidsChanged(); } }
     }
 
-    // The live signal this PID reads, or null for a waveform/static PID. Typically bound on a $2D row to point a
-    // custom address at a live engine signal; once set, the PID reads the engine model on the wire (encoded with the
-    // row's Scalar/Offset/Size). Bound to the Signal column's picker.
-    public SignalId? Signal
+    // The row's live-value source, bound to the Signal column's picker. This is now the single selector for where the
+    // value comes from: "(none)" reads 0, "Waveform" runs the row's waveform generator, and any engine signal reads the
+    // live model. Picking an option writes both Model.ValueSource and Model.Signal (the latter only for a real signal).
+    public SignalOption SelectedSource
     {
-        get => Model.Signal;
+        get => SignalOptions.FirstOrDefault(o => o.Matches(Model.ValueSource, Model.Signal)) ?? SignalOptions[0];
         set
         {
-            if (Model.Signal == value) return;
-            Model.Signal = value;
+            if (value is null || value.Matches(Model.ValueSource, Model.Signal)) return;
+            // Signal first (its setter auto-selects ValueSource.Signal), then the explicit source so None/Waveform win.
+            Model.Signal = value.Source == PidValueSource.Signal ? value.Signal : null;
+            Model.ValueSource = value.Source;
             OnPropertyChanged();
-            RaiseAliasWarningChanged();   // picking/clearing a signal flips whether the waveform (and its Nyquist risk) applies
+            OnPropertyChanged(nameof(SignalDisplay));
+            RaiseAliasWarningChanged();   // switching source flips whether the waveform (and its Nyquist risk) applies
             parent.RaisePidsChanged();
         }
     }
 
-    // Options for the Signal picker: a "(none)" entry (waveform/static) followed by every catalogue signal shown by
-    // friendly name. Shared across all rows - the list never changes.
+    // Flat text of the current source for the Signal column's filter/sort (the cell itself shows the picker).
+    public string SignalDisplay => SelectedSource.Display;
+
+    // Options for the Signal picker: "(none)" and "Waveform" up front, then every catalogue signal by friendly name.
+    // Shared across all rows - the list never changes.
     public IReadOnlyList<SignalOption> SignalSourceOptions => SignalOptions;
 
     private static readonly IReadOnlyList<SignalOption> SignalOptions = BuildSignalOptions();
 
     private static IReadOnlyList<SignalOption> BuildSignalOptions()
     {
-        var list = new List<SignalOption> { new(null, "(none)") };
-        foreach (var d in SignalCatalogue.All) list.Add(new SignalOption(d.Id, d.Name));
+        var list = new List<SignalOption>
+        {
+            new(PidValueSource.None,     null, "(none)"),
+            new(PidValueSource.Waveform, null, "Waveform"),
+        };
+        foreach (var d in SignalCatalogue.All) list.Add(new SignalOption(PidValueSource.Signal, d.Id, d.Name));
         return list;
     }
 
@@ -496,12 +539,12 @@ public sealed class PidViewModel : NotifyPropertyChangedBase
         }
     }
 
-    // True only when this row's wire value actually comes from the waveform generator. A signal-backed row reads the
-    // live engine model and a static row ($1A identity, bin-extracted bytes) returns fixed bytes - neither samples the
-    // waveform, so the Nyquist analysis is meaningless for them. $1A is excluded outright (identity is always static).
-    // Mirrors Pid.WriteResponseBytes precedence: Signal > StaticBytes > waveform.
+    // True only when this row's wire value actually comes from the waveform generator - i.e. the user picked "Waveform"
+    // as the source. A signal-backed or "(none)" row, and any static-payload row, never samples the waveform, so the
+    // Nyquist analysis is meaningless for them. StaticBytes still wins over the waveform on the wire, so a static-payload
+    // row is excluded even if its source is Waveform. Mirrors Pid.WriteResponseBytes precedence.
     private bool UsesWaveform => Model.Mode != PidMode.Mode1A
-                              && Model.Signal is null
+                              && Model.ValueSource == PidValueSource.Waveform
                               && (Model.StaticBytes is null || Model.StaticBytes.Length == 0);
 
     private List<string> AliasingBands()
@@ -537,5 +580,11 @@ public sealed class PidViewModel : NotifyPropertyChangedBase
         && shape != WaveformShape.CsvFile;
 }
 
-// One entry in a PID row's Signal-source picker: the signal id (null = "(none)") and its friendly display name.
-public sealed record SignalOption(SignalId? Id, string Display);
+// One entry in a PID row's value-source picker. Source is the kind (None / Waveform / Signal); Signal is the engine
+// signal id, non-null only when Source == Signal. Display is the friendly name shown in the dropdown.
+public sealed record SignalOption(PidValueSource Source, SignalId? Signal, string Display)
+{
+    // True when this option represents the given model state - used to select the current entry and to detect no-ops.
+    public bool Matches(PidValueSource source, SignalId? signal)
+        => Source == source && (Source != PidValueSource.Signal || Signal == signal);
+}

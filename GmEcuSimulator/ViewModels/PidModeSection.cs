@@ -23,6 +23,11 @@ public sealed class PidModeSection : NotifyPropertyChangedBase
     public bool IsMode1A => Mode == PidMode.Mode1A;
     public bool IsNotMode1A => !IsMode1A;
 
+    // $22 rows drive their response from a live signal / waveform, so the editor hides the static-payload Value column
+    // for this section. IsNotMode22 is bound by the shared section template through the column BindingProxy.
+    public bool IsMode22 => Mode == PidMode.Mode22;
+    public bool IsNotMode22 => !IsMode22;
+
     // Independent view over the shared Pids collection (NOT the default view - each section needs its own filter and
     // sort state). A ListCollectionView subscribes to the ObservableCollection's CollectionChanged, so Add/Remove on
     // Pids re-flows every section automatically.
@@ -59,8 +64,7 @@ public sealed class PidModeSection : NotifyPropertyChangedBase
         NameColumnFilter       = Make("Name", "Name", p => p.Name);
         SizeColumnFilter       = Make("Size (B)", "Model.ResponseLength", p => p.LengthBytesText);
         TypeColumnFilter       = Make("Type", "DataType", p => p.DataType.ToString());
-        SignalColumnFilter     = Make("Signal", "Signal",
-                                     p => p.SignalSourceOptions.FirstOrDefault(o => Equals(o.Id, p.Signal))?.Display);
+        SignalColumnFilter     = Make("Signal", "SignalDisplay", p => p.SignalDisplay);
         ScalarColumnFilter     = Make("Scalar", "Scalar", p => p.Scalar.ToString());
         OffsetColumnFilter     = Make("Offset", "Offset", p => p.Offset.ToString());
         UnitColumnFilter       = Make("Unit", "Unit", p => p.Unit);

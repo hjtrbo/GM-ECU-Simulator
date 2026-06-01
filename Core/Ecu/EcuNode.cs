@@ -69,22 +69,6 @@ public sealed class EcuNode
     // injection logic in Core/Services is NOT yet implemented.
     public GlitchConfig Glitch { get; set; } = GlitchConfig.CreateDefault();
 
-    /// <summary>
-    /// When true, $22 / $01 / $1A requests for an identifier the ECU has not
-    /// been explicitly configured for fall through to <c>PidLibraryResponder</c>
-    /// (embedded A2L-derived catalogues) and answer with a zero-filled payload
-    /// of the library-defined length. User-curated entries in the per-mode PID
-    /// stores and <see cref="Identifiers"/> still win on collision (primary
-    /// store is consulted first); the library only fills the gaps so a fresh
-    /// ECU responds to any of the ~605 + 39 + 37 known DIDs without manual setup.
-    ///
-    /// Defaults to <c>false</c> so direct <c>new EcuNode()</c> construction
-    /// (used by test fixtures that assert NRC $31 for unconfigured DIDs) keeps
-    /// its strict behaviour. Live ECUs flip it on via <c>EcuDto</c> (default
-    /// true in the persistence schema) and <see cref="Dps.ArchivePrimer.BuildEcuNode"/>.
-    /// </summary>
-    public bool AutoRespondFromLibrary { get; set; }
-
     // Three mode-keyed stores. Each PidMode owns its own dictionary keyed by the slice of Pid.Address the wire uses
     // for lookup, so a $1A request for DID $0C and a $22 request for 0x000C never reach into each other's namespace.
     // A single lock guards all three for simple atomic Add/Remove/Relocate. (Mode $01 is no longer a store - it is

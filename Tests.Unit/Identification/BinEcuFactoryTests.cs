@@ -86,7 +86,6 @@ public sealed class BinEcuFactoryTests
         // The node carries the foundation contract from EcuNodeFactory.
         Assert.NotNull(result.Node);
         Assert.True(result.Node.IsPrimed);
-        Assert.True(result.Node.AutoRespondFromLibrary);
         Assert.Equal("ECU1", result.Node.Name);
         Assert.Equal(canIds.PhysicalRequestId, result.Node.PhysicalRequestCanId);
         Assert.Equal(canIds.UsdtResponseId,    result.Node.UsdtResponseCanId);

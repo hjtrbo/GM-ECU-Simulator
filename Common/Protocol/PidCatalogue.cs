@@ -10,11 +10,10 @@ namespace Common.Protocol;
 // Identifier itself stays locked - the picker is the only editor for it,
 // so the override never drifts off the chosen library entry.
 //
-// Note that the live ECU also answers any library-known DID autonomously
-// via PidLibraryResponder (gated by EcuNode.AutoRespondFromLibrary). The
-// editor picker is therefore not how PIDs are "enabled" - it is the
-// override mechanism for the rare case where a user wants non-default
-// wire bytes or a custom waveform for one specific DID.
+// The editor picker is how a DID gets a curated row on the ECU: an ECU
+// only answers $1A / $22 DIDs it has a configured row for, and NRCs $31
+// for anything else. The picker is also the override mechanism when a
+// user wants non-default wire bytes or a custom waveform for one DID.
 //
 // $2D mode rows do NOT pull from this catalogue - the user types a memory
 // address freehand and edits every other field by hand, because $2D is the

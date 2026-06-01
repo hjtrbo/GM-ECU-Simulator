@@ -212,21 +212,6 @@ public sealed class EcuDto
 
     public List<PidDto> Pids { get; set; } = new();
 
-    // When true (the default for new and persisted configs), $22/$01/$1A
-    // requests for an identifier this ECU has not been configured for fall
-    // through to the embedded PidLibrary catalogues and answer with a zero-
-    // filled payload of the library-defined length. User-curated entries
-    // above still win on collision. Set false to restore strict NRC $31
-    // behaviour on a per-ECU basis.
-    //
-    // Default-true semantics mean configs predating this field (which
-    // deserialise the field as default(bool) = false) and newly-saved
-    // configs diverge at load time: we want the always-on behaviour by
-    // default, so EcuNodeFrom flips false-from-old-config to true unless
-    // the JSON explicitly carries `"AutoRespondFromLibrary": false`. The
-    // nullable type lets us tell "not present" from "present and false".
-    public bool? AutoRespondFromLibrary { get; set; } = true;
-
     // Persona / dispatch table this ECU uses for inbound USDT requests.
     // Null or omitted -> "gmw3110" (the default that every GM ECU starts
     // with). "ford-capture" routes every request through FordCapturePersona,
@@ -247,6 +232,11 @@ public sealed class EcuDto
     // The operating point this ECU boots at (drives the live signal model). Null / omitted -> Idle. Persisted only
     // when it differs from Idle so standard configs stay quiet.
     public ScenarioId? Scenario { get; set; }
+
+    // ID of the engine character driving the live signal model's derivation (induction curve, airflow, fuelling). Null
+    // (or unknown to EngineCharacterRegistry) -> the naturally-aspirated default, so every config saved before this
+    // field existed loads with the original behaviour unchanged. "boosted-gas-v8" selects the forced-induction model.
+    public string? EngineModelId { get; set; }
 
     // Tunable timing of the AccelDecelSweep rev pull, in milliseconds: climb time, rev-limiter hold, coast time, and
     // the entry cross-fade. Each is persisted only when it differs from the SweepProfile default (keeps standard
@@ -313,6 +303,11 @@ public sealed class PidDto
     // from the ECU's EngineModel rather than the waveform/StaticBytes, encoded with this row's Scalar/Offset. Null = a
     // legacy waveform / static PID. Serialised as a camelCase string (e.g. "engineRpm").
     public SignalId? Signal { get; set; }
+
+    // Where the row draws its live value: "none" (reads 0), "waveform", or "signal". Null in a pre-v17 config that
+    // predates the explicit selector - ConfigStore.PidFrom then infers it (a non-null Signal -> Signal, otherwise the
+    // old null-signal-means-waveform fallback) so older files keep behaving exactly as they did. Serialised camelCase.
+    public PidValueSource? ValueSource { get; set; }
 }
 
 public sealed class WaveformDto

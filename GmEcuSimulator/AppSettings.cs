@@ -52,7 +52,7 @@ public sealed class AppSettings
     public bool LogSuppressTesterPresentInWindow { get; set; }
 
     /// <summary>
-    /// Active top-level mode (ECU Simulator / DPS Write / DPS Read).
+    /// Active top-level mode (ECU Simulator / DPS Simulator).
     /// Drives which per-mode config file the app loads and saves, single-ECU
     /// vs multi-ECU constraints, and which tabs / fields are visible. Default
     /// is <see cref="AppMode.EcuSimulator"/> so fresh installs land in the
@@ -60,6 +60,17 @@ public sealed class AppSettings
     /// </summary>
     [JsonConverter(typeof(JsonStringEnumConverter))]
     public AppMode Mode { get; set; } = AppMode.EcuSimulator;
+
+    /// <summary>
+    /// Active connection type (transport) for the current mode: the J2534
+    /// named-pipe shim, or the localhost raw-CAN TCP listener that a gauge
+    /// simulator connects to. Selected as a sub-variant inside the mode
+    /// dropdown; exactly one transport is live at a time. Default
+    /// <see cref="ConnectionType.J2534"/> keeps fresh installs on the original
+    /// registry-discovered shim path.
+    /// </summary>
+    [JsonConverter(typeof(JsonStringEnumConverter))]
+    public ConnectionType ConnectionType { get; set; } = ConnectionType.J2534;
 
     /// <summary>
     /// Last directory the user picked an archive from in the DPS prime wizard.

@@ -51,6 +51,7 @@ public static class J1979Catalogue
         AnalogPid(0x07, 1, "Long term fuel trim B1",            SignalId.LongTermFuelTrimBank1, TrimScalar, -100, "%"),
         AnalogPid(0x08, 1, "Short term fuel trim B2",           SignalId.ShortTermFuelTrimBank2, TrimScalar, -100, "%"),
         AnalogPid(0x09, 1, "Long term fuel trim B2",            SignalId.LongTermFuelTrimBank2, TrimScalar, -100, "%"),
+        AnalogPid(0x0A, 1, "Fuel pressure",                     SignalId.FuelPressure, 3, 0, "kPa"),
         AnalogPid(0x0B, 1, "Intake manifold absolute pressure", SignalId.ManifoldAbsolutePressure, 1, 0, "kPa"),
         AnalogPid(0x0C, 2, "Engine RPM",                        SignalId.EngineRpm, 0.25, 0, "rpm"),
         AnalogPid(0x0D, 1, "Vehicle speed",                     SignalId.VehicleSpeed, 1, 0, "km/h"),
@@ -79,8 +80,10 @@ public static class J1979Catalogue
         AnalogPid(0x44, 2, "Commanded equivalence ratio", SignalId.CommandedEquivalenceRatio, 1.0 / 32768.0, 0, "lambda"),
         AnalogPid(0x45, 1, "Relative throttle position", SignalId.ThrottlePosition, PercentScalar, 0, "%"),
         AnalogPid(0x46, 1, "Ambient air temperature", SignalId.AmbientAirTemp, 1, -40, "degC"),
-        AnalogPid(0x49, 1, "Accelerator pedal position D", SignalId.AcceleratorPedalD, PercentScalar, 0, "%"),
-        AnalogPid(0x4A, 1, "Accelerator pedal position E", SignalId.AcceleratorPedalE, PercentScalar, 0, "%"),
+        // Both legislated pedal-sensor PIDs read the one Accelerator Pedal Position signal (the two redundant channels
+        // track together on a healthy throttle-by-wire pedal).
+        AnalogPid(0x49, 1, "Accelerator pedal position D", SignalId.AcceleratorPedalPosition, PercentScalar, 0, "%"),
+        AnalogPid(0x4A, 1, "Accelerator pedal position E", SignalId.AcceleratorPedalPosition, PercentScalar, 0, "%"),
         new(0x51, 1, "Fuel type", (_, s, _, d) => d[0] = s.FuelType, DecodeFuelType),
         AnalogPid(0x5C, 1, "Engine oil temperature", SignalId.EngineOilTemp, 1, -40, "degC"),
     };

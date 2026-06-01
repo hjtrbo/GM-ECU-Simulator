@@ -1,5 +1,6 @@
 using Common.Protocol;
 using Common.Signals;
+using Common.Signals.Engines;
 using Common.Waveforms;
 using Core.Ecu;
 using Core.Identification;
@@ -115,12 +116,27 @@ public sealed class EcuViewModel : NotifyPropertyChangedBase
             if (Model.EngineModel.ActiveScenario == value) return;
             Model.EngineModel.SetScenario(value, bus?.NowMs ?? 0);
             OnPropertyChanged();
-            OnPropertyChanged(nameof(IsSweep));
         }
     }
 
-    // True only for AccelDecelSweep, so the editor can show the sweep-timing knobs below the scenario combo.
-    public bool IsSweep => Model.EngineModel.ActiveScenario == ScenarioId.AccelDecelSweep;
+    // The engine characters the user can pick for this ECU; bound to the Engine Model ComboBox in the inspector.
+    public EngineModelOption[] EngineModels { get; } =
+        EngineCharacterRegistry.Catalogue.Select(c => new EngineModelOption(c.Id, c.DisplayName)).ToArray();
+
+    // The selected engine character's id. Backed by the live model (not a VM field) so it always reflects what is
+    // running. Setting it swaps the character behind the engine model's volatile reference - so a connected tool
+    // immediately sees the new induction behaviour (e.g. MAP and fuel pressure rising above base under boost) on the
+    // next $01 / $22 read, without re-creating the ECU or dropping the session.
+    public string SelectedEngineModelId
+    {
+        get => Model.EngineModel.Character.Id;
+        set
+        {
+            if (Model.EngineModel.Character.Id == value) return;
+            Model.EngineModel.Character = EngineCharacterRegistry.Create(value);
+            OnPropertyChanged();
+        }
+    }
 
     // The three AccelDecelSweep knobs, in seconds for the editor (the model stores ms). Each rebuilds the profile
     // record with-expression-style so the other fields are preserved; clamped non-negative. PeriodMs = the sum.
@@ -532,22 +548,6 @@ public sealed class EcuViewModel : NotifyPropertyChangedBase
         }
     }
 
-    // Per-ECU gate for the embedded PID-library fallback. When on, $1A / $22 / $01 requests for an identifier this ECU
-    // has no curated row for answer with a synthetic library payload instead of NRC $31; when off the ECU is strict and
-    // NRCs anything unconfigured, matching how real silicon rejects DIDs it does not implement. Mutates the live
-    // EcuNode directly, so a toggle takes effect on the next request with no apply step. Two-way bound to the Advanced
-    // card's checkbox.
-    public bool AutoRespondFromLibrary
-    {
-        get => Model.AutoRespondFromLibrary;
-        set
-        {
-            if (Model.AutoRespondFromLibrary == value) return;
-            Model.AutoRespondFromLibrary = value;
-            OnPropertyChanged();
-        }
-    }
-
     private static bool TryParseHexByte(string s, out byte v)
     {
         var trimmed = (s ?? "").Trim();
@@ -622,6 +622,10 @@ public sealed class EcuViewModel : NotifyPropertyChangedBase
             Scalar = 1.0,
             Offset = 0.0,
             Unit = "",
+            // A fresh row has no live source - it reads 0 until the user picks a signal or "Waveform" in the Signal
+            // column. The waveform config is still seeded with a sensible visible shape so picking "Waveform" produces
+            // something immediately, but it stays dormant under ValueSource.None.
+            ValueSource = PidValueSource.None,
             WaveformConfig = new WaveformConfig { Shape = WaveformShape.Sin, Amplitude = 50, Offset = 50, FrequencyHz = 1.0 },
         };
         // AddPid routes by pid.Mode into the right per-mode store.
@@ -629,6 +633,7 @@ public sealed class EcuViewModel : NotifyPropertyChangedBase
         var vm = new PidViewModel(pid, this);
         Pids.Add(vm);                       // ListCollectionView in each section re-flows; only the matching one shows it
         RefreshAliasCollisions();
+        NotifyIdentifierSetChanged();
         var section = Sections.FirstOrDefault(s => s.Mode == mode);
         if (section != null) section.SelectedPid = vm;   // selects in-section + promotes to SelectedPid
         else SelectedPid = vm;
@@ -636,6 +641,32 @@ public sealed class EcuViewModel : NotifyPropertyChangedBase
 
     // Back-compat no-arg add (MainViewModel's top toolbar): default to a $22 row.
     public void AddPid() => AddPid(PidMode.Mode22);
+
+    // The per-mode store keys currently occupied by rows in <paramref name="mode"/>, optionally excluding one row.
+    // Two rows that share a key collide in EcuNode's store (last write wins, the rest go silent on the wire), so the
+    // editor consults this to keep each identifier unique - the $22 catalogue picker hides taken identifiers and the
+    // $1A/$2D address box rejects a typed duplicate.
+    internal HashSet<uint> IdentifiersInUse(PidMode mode, Pid? exclude = null)
+    {
+        var set = new HashSet<uint>();
+        foreach (var vm in Pids)
+            if (vm.Model.Mode == mode && !ReferenceEquals(vm.Model, exclude))
+                set.Add(vm.Model.StoreKey);
+        return set;
+    }
+
+    // True when a row other than <paramref name="self"/> in <paramref name="mode"/> already serves the identifier
+    // <paramref name="address"/> maps to.
+    internal bool IsIdentifierTaken(Pid self, PidMode mode, uint address)
+        => IdentifiersInUse(mode, exclude: self).Contains(Pid.StoreKeyFor(mode, address));
+
+    // Re-announce each row's IdentifierCatalogue so the $22 picker drops (or restores) identifiers as rows claim or
+    // release them. Called after a structural identifier change (add / remove / address edit / bulk replace), not on
+    // every field edit, so the per-row filtering stays cheap.
+    private void NotifyIdentifierSetChanged()
+    {
+        foreach (var vm in Pids) vm.RefreshIdentifierCatalogue();
+    }
 
     // Remove a specific row (the section Remove buttons call this with the section's selection).
     public void RemovePid(PidViewModel vm)
@@ -646,6 +677,7 @@ public sealed class EcuViewModel : NotifyPropertyChangedBase
         foreach (var s in Sections) s.ClearSelection();
         if (ReferenceEquals(selectedPid, vm)) SelectedPid = null;
         RefreshAliasCollisions();
+        NotifyIdentifierSetChanged();
     }
 
     public void RemoveSelectedPid()
@@ -673,7 +705,10 @@ public sealed class EcuViewModel : NotifyPropertyChangedBase
     // request - e.g. a $2D or $22 read returns RequestOutOfRange. PidViewModel has already written the new address onto
     // the model, so pass the prior address to find the existing entry.
     internal void OnPidAddressChanged(Pid pid, uint oldAddress)
-        => Model.RekeyPidAddress(pid, oldAddress);
+    {
+        Model.RekeyPidAddress(pid, oldAddress);
+        NotifyIdentifierSetChanged();
+    }
 
     /// <summary>
     /// Atomically replace this ECU's PID list with <paramref name="loaded"/>.
@@ -696,6 +731,7 @@ public sealed class EcuViewModel : NotifyPropertyChangedBase
             Pids.Add(new PidViewModel(pid, this));
         }
         foreach (var s in Sections) s.Refresh();   // re-apply each section's filter + sort to the swapped-in rows
+        NotifyIdentifierSetChanged();
         RaisePidsChanged();
     }
 

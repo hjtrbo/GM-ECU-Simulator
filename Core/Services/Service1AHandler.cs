@@ -1,7 +1,6 @@
 using Common.Protocol;
 using Core.Bus;
 using Core.Ecu;
-using Core.Pids;
 
 namespace Core.Services;
 
@@ -91,12 +90,6 @@ public static class Service1AHandler
         else
         {
             data = node.GetIdentifier(did);
-            // Fallback to the embedded library so a fresh ECU answers any of
-            // the A2L-derived Mode$1A DIDs without manual setup. Zero-filled
-            // payload of the library's declared length; user-configured
-            // identifiers (set via SetIdentifier above) still win.
-            if (data == null && node.AutoRespondFromLibrary)
-                data = PidLibraryResponder.GetMode1AIdentifier(did);
         }
         if (data == null)
         {

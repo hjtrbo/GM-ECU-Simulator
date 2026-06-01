@@ -5,15 +5,15 @@ namespace Common;
 // and which tabs / fields surface in the editor pane.
 //
 // EcuSimulator is the original behaviour: multiple ECUs, full editor pane,
-// state persists to ecu_simulator_config.json. The DPS modes are single-ECU
-// workflows for DPS programming. OBD-II Mode $01 emulation is supported
-// inside EcuSimulator via per-PID PidMode selection - no separate top-level
-// mode for it.
+// state persists to ecu_simulator.mode.json. DpsSimulator is the single-ECU
+// DPS programming workflow - prime from an archive, drive a target ECU through
+// a programming session. It folds together the former separate DpsWrite /
+// DpsRead modes into one persona. OBD-II Mode $01 emulation is supported inside
+// EcuSimulator via per-PID PidMode selection - no separate top-level mode.
 public enum AppMode
 {
     EcuSimulator = 0,
-    DpsWrite = 1,
-    DpsRead = 2,
+    DpsSimulator = 1,
 }
 
 public static class AppModeExtensions
@@ -27,19 +27,21 @@ public static class AppModeExtensions
     public static bool PersistsConfig(this AppMode mode) =>
         mode is AppMode.EcuSimulator;
 
+    // Per-mode config files use the ".mode.json" suffix - a catch-all that reads naturally for every mode (the ECU
+    // Simulator setup AND the DPS programming session are all mode-scoped state), and sits alongside the per-ECU
+    // ".ecu.json" and per-PID-list ".pids.json" artefacts so the kinds are distinguishable at a glance. Drives both
+    // the implicit auto-load/auto-save path (ConfigStore.PathForMode) and the default name in the Save As dialog.
     public static string ConfigFileName(this AppMode mode) => mode switch
     {
-        AppMode.EcuSimulator => "ecu_simulator_config.json",
-        AppMode.DpsWrite     => "dps_write_config.json",
-        AppMode.DpsRead      => "dps_read_config.json",
-        _ => "ecu_simulator_config.json",
+        AppMode.EcuSimulator => "ecu_simulator.mode.json",
+        AppMode.DpsSimulator => "dps_simulator.mode.json",
+        _ => "default.mode.json",
     };
 
     public static string DisplayName(this AppMode mode) => mode switch
     {
         AppMode.EcuSimulator => "ECU Simulator",
-        AppMode.DpsWrite     => "DPS Write",
-        AppMode.DpsRead      => "DPS Read",
+        AppMode.DpsSimulator => "DPS Simulator",
         _ => mode.ToString(),
     };
 }

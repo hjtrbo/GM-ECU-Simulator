@@ -7,7 +7,7 @@ namespace Core.Ecu;
 //
 // Each seeded DID is materialised as a Mode1A StaticBytes Pid row rather than an entry in EcuNode's identifier
 // dictionary. That choice buys three things for free: the row persists through the v15 PidDto/StaticBytes path in
-// ecu_simulator_config.json with no schema change, it shows up in the editor PID grid as a visible, editable row, and
+// ecu_simulator.mode.json with no schema change, it shows up in the editor PID grid as a visible, editable row, and
 // it is the same row Service3BHandler's write-through updates so a tester's $3B VIN write survives a save/load.
 //
 // Call this only on genuine new-ECU creation in EcuSimulator mode - the AddEcu button and the first-launch

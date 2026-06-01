@@ -1,7 +1,9 @@
 using Common;
 using Common.Persistence;
+using Common.Protocol;
 using Common.Replay;
 using Common.Signals;
+using Common.Signals.Engines;
 using Core.Bus;
 using Core.Ecu;
 using Core.Replay;
@@ -19,17 +21,22 @@ public static class ConfigStore
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
         "GmEcuSimulator", "config");
 
+    /// <summary>Filename for the rolling auto-load / auto-save state.</summary>
+    public const string LastUsedFileName = "lastused.mode.json";
+
     /// <summary>
-    /// Per-mode auto-load / auto-save path under
-    /// %LocalAppData%\GmEcuSimulator\config\. Each persistable mode owns its
-    /// own file so DPS and ECU Simulator state stay separate worlds. DPS modes
-    /// get a path too, but the App lifecycle skips reading / auto-writing it -
-    /// the path exists only so manual File > Save has a target.
+    /// Auto-load / auto-save path under %LocalAppData%\GmEcuSimulator\config\.
+    /// All modes share a single "last used" file: only EcuSimulator actually
+    /// reads / writes it (DPS modes don't PersistsConfig, so the App lifecycle
+    /// skips the auto path for them entirely), so there's no cross-mode clash.
+    /// The <paramref name="mode"/> argument is retained for call-site clarity
+    /// even though the filename no longer varies by mode. Manual File > Save As
+    /// still defaults to the per-mode <see cref="AppModeExtensions.ConfigFileName"/>.
     /// </summary>
     public static string PathForMode(AppMode mode)
     {
         Directory.CreateDirectory(ConfigDirectory);
-        return Path.Combine(ConfigDirectory, mode.ConfigFileName());
+        return Path.Combine(ConfigDirectory, LastUsedFileName);
     }
 
     public static void Save(SimulatorConfig cfg, string path)
@@ -133,10 +140,6 @@ public static class ConfigStore
         FlowControlBlockSize = node.FlowControlBlockSize,
         ProgrammedState = node.ProgrammedState,
         DiagnosticAddress = node.DiagnosticAddress,
-        // Persist only the off case explicitly; the default-true reload
-        // path in EcuNodeFrom would round-trip true silently anyway, so
-        // skipping it keeps saved configs minimal.
-        AutoRespondFromLibrary = node.AutoRespondFromLibrary ? null : false,
         // Persist persona id only when it diverges from the default
         // (gmw3110). Saves a noisy "PersonaId": "gmw3110" line on every
         // ECU in the standard config and keeps diffs stable.
@@ -155,6 +158,8 @@ public static class ConfigStore
         Pids = node.AllPids.Select(PidDtoFrom).ToList(),
         // Persist the boot operating point only when it diverges from the default Idle (keeps standard configs quiet).
         Scenario = node.EngineModel.ActiveScenario == ScenarioId.Idle ? null : node.EngineModel.ActiveScenario,
+        // Persist the engine character only when it diverges from the NA default (keeps standard configs quiet).
+        EngineModelId = node.EngineModel.Character.Id == EngineCharacterRegistry.DefaultId ? null : node.EngineModel.Character.Id,
         // Persist each AccelDecelSweep time only when the user has tuned it off the default (keeps standard configs quiet).
         SweepAccelMs = node.EngineModel.Sweep.AccelTimeMs == SweepProfile.Default.AccelTimeMs ? null : node.EngineModel.Sweep.AccelTimeMs,
         SweepLimiterHoldMs = node.EngineModel.Sweep.LimiterHoldMs == SweepProfile.Default.LimiterHoldMs ? null : node.EngineModel.Sweep.LimiterHoldMs,
@@ -180,12 +185,6 @@ public static class ConfigStore
             FlowControlBlockSize = dto.FlowControlBlockSize,
             ProgrammedState = dto.ProgrammedState,
             DiagnosticAddress = dto.DiagnosticAddress,
-            // null in the JSON (missing field on a config saved before this
-            // landed) -> true: the always-on library fallback is the new
-            // default and old configs upgrade silently. Explicit false in
-            // the JSON stays false so a user who turns it off per-ECU keeps
-            // strict NRC behaviour across save/load.
-            AutoRespondFromLibrary = dto.AutoRespondFromLibrary ?? true,
         };
         node.SecurityModule = SecurityModuleRegistry.Create(dto.SecurityModuleId);
         node.SecurityModule?.LoadConfig(dto.SecurityModuleConfig);
@@ -221,6 +220,8 @@ public static class ConfigStore
                 LimiterBounceRpm = dto.SweepLimiterCutRpm ?? SweepProfile.Default.LimiterBounceRpm,
             };
         }
+        // Restore the engine character (absent / unknown -> the NA default via the registry's fallback).
+        node.EngineModel.Character = EngineCharacterRegistry.Create(dto.EngineModelId);
         // Restore the boot operating point for the live signal model (absent -> the engine model's default Idle).
         if (dto.Scenario is { } scenario) node.EngineModel.SetScenario(scenario, 0);
         // Re-apply the saved $01 supported-PID delta: start from the built-in
@@ -257,6 +258,10 @@ public static class ConfigStore
         WaveformConfig = dto.Waveform.ToWaveformConfig(),
         LengthBytes = dto.LengthBytes,
         StaticBytes = HexStringToBytes(dto.StaticBytes),
+        // Explicit source when the config carries one; otherwise infer for pre-v17 files: a signal-backed row stays
+        // signal-backed, everything else keeps the old null-signal-means-waveform behaviour. Assigned after Signal so
+        // it wins over the setter's auto-select.
+        ValueSource = dto.ValueSource ?? (dto.Signal.HasValue ? PidValueSource.Signal : PidValueSource.Waveform),
     };
 
     public static PidDto PidDtoFrom(Pid pid) => new()
@@ -270,6 +275,7 @@ public static class ConfigStore
         Unit = pid.Unit,
         Mode = pid.Mode,
         Signal = pid.Signal,
+        ValueSource = pid.ValueSource,
         Waveform = WaveformDto.From(pid.WaveformConfig),
         LengthBytes = pid.LengthBytes,
         StaticBytes = BytesToHexString(pid.StaticBytes),

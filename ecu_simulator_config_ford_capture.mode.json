@@ -10,7 +10,6 @@
       "flowControlBlockSize": 0,
       "programmedState": 0,
       "diagnosticAddress": "0x10",
-      "autoRespondFromLibrary": false,
       "personaId": "ford-capture",
       "flashBinPath": "C:\\Users\\Nathan\\OneDrive\\Cars\\FG XR6T\\Hacks\\PCMtec Data Extraction\\bin\\HAEE4UY.bin",
       "pids": []

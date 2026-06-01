@@ -30,6 +30,10 @@ public sealed class StatusToBrushConverter : IValueConverter
           : s.Contains("Not",        StringComparison.OrdinalIgnoreCase) ? "Status.WarningBrush"
           : s.Contains("Locked",     StringComparison.OrdinalIgnoreCase) ? "Status.WarningBrush"
           : s.Contains("Registered", StringComparison.OrdinalIgnoreCase) ? "Status.SuccessBrush"
+          // Raw-CAN TCP gauge link: connected/listening are healthy, stopped is idle.
+          : s.Contains("connected",  StringComparison.OrdinalIgnoreCase) ? "Status.SuccessBrush"
+          : s.Contains("listening",  StringComparison.OrdinalIgnoreCase) ? "Status.SuccessBrush"
+          : s.Contains("stopped",    StringComparison.OrdinalIgnoreCase) ? "Status.WarningBrush"
           : s.Contains("OK",         StringComparison.OrdinalIgnoreCase) ? "Status.SuccessBrush"
           : s.Contains("failed",     StringComparison.OrdinalIgnoreCase) ? "Status.ErrorBrush"
           :                                                                "Text.TertiaryBrush";

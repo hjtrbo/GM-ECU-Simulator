@@ -16,9 +16,10 @@ namespace Core.Ecu;
 // omitted (the A2L exposes those only as FLOAT32 / via driver-state bytes, which the integer ValueCodec can't dress
 // faithfully). A donor bin / DPS archive still replaces this with the vehicle's real $22 map when one is supplied.
 //
-// Like EcuIdentitySeeder this is for genuine new-ECU creation only (AddBlankEcu + DefaultEcuConfig); primed ECUs own
-// their $22 set from the archive and are skipped via the IsPrimed guard. Existing rows at a DID are never overwritten,
-// so it's precedence-safe against a loaded config and a no-op on re-seed.
+// Entry points: the Add ECU button, the first-launch DefaultEcuConfig, AND a re-seed pass after each EcuSimulator
+// config load (DefaultEcuConfig.SeedDefaults) so a config saved before this set existed still backfills the set on the
+// next launch. Primed ECUs own their $22 set from the archive and are skipped via the IsPrimed guard. Existing rows at
+// a DID are never overwritten, so it's precedence-safe against a loaded config and a no-op on re-seed.
 public static class EcuMode22Seeder
 {
     // DID + signal + A2L scaling (phys = Scalar*raw + Offset) + wire width. DID numbers and slopes are verbatim from
@@ -30,6 +31,7 @@ public static class EcuMode22Seeder
     {
         new(0x1421, SignalId.EngineRpm,                  "Engine RPM",                    0.125,       0, 2, PidDataType.Unsigned),
         new(0x0005, SignalId.CoolantTemp,                "Engine coolant temperature",    0.0078125,   0, 2, PidDataType.Signed),
+        new(0x000A, SignalId.FuelPressure,               "Estimated fuel rail pressure",  0.03125,     0, 2, PidDataType.Unsigned),
         new(0x000B, SignalId.ManifoldAbsolutePressure,   "Intake manifold abs pressure",  0.00390625,  0, 2, PidDataType.Unsigned),
         new(0x000F, SignalId.IntakeAirTemp,              "Intake air temperature",        0.0078125,   0, 2, PidDataType.Signed),
         new(0x000E, SignalId.TimingAdvance,              "Spark advance",                 0.0078125,   0, 2, PidDataType.Signed),
@@ -38,8 +40,8 @@ public static class EcuMode22Seeder
         new(0x0044, SignalId.CommandedEquivalenceRatio,  "Commanded equivalence ratio",   0.000976562, 0, 2, PidDataType.Unsigned),
         new(0x0046, SignalId.AmbientAirTemp,             "Estimated ambient air temp",    0.0078125,   0, 2, PidDataType.Signed),
         new(0x002F, SignalId.FuelLevel,                  "Fuel tank level",               0.00305176,  0, 2, PidDataType.Unsigned),
-        new(0x0049, SignalId.AcceleratorPedalD,          "Accelerator pedal position D",  0.00152588,  0, 2, PidDataType.Unsigned),
-        new(0x004A, SignalId.AcceleratorPedalE,          "Accelerator pedal position E",  0.00152588,  0, 2, PidDataType.Unsigned),
+        new(0x0049, SignalId.AcceleratorPedalPosition,   "Accelerator pedal position D",  0.00152588,  0, 2, PidDataType.Unsigned),
+        new(0x004A, SignalId.AcceleratorPedalPosition,   "Accelerator pedal position E",  0.00152588,  0, 2, PidDataType.Unsigned),
     };
 
     // Adds every seed DID the ECU does not already carry as a Mode22 row. Existing rows win (loaded config / prior

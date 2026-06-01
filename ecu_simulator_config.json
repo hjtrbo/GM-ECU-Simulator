@@ -113,8 +113,7 @@
       "flowControlBlockSize": 1,
       "programmedState": 0,
       "diagnosticAddress": "0x00",
-      "pids": [],
-      "autoRespondFromLibrary": false
+      "pids": []
     }
   ]
 }

@@ -107,6 +107,19 @@ public static class DefaultEcuConfig
 
         // Give the first-launch ECM/TCM the same baseline identity + live $22 set a button-added ECU gets, so a fresh
         // install answers $1A $90 and shows scenario-correlated $22 values immediately.
+        SeedDefaults(bus);
+    }
+
+    /// <summary>
+    /// Apply the baseline identity ($1A) + curated live $22 seed set to every non-primed ECU on the bus. Idempotent
+    /// and precedence-safe: both seeders skip primed nodes and never overwrite a DID the ECU already carries, so
+    /// re-running on a loaded config only backfills the curated rows a saved file was missing - it never clobbers a
+    /// user edit. Called for the first-launch defaults above AND after each EcuSimulator config load (App startup
+    /// auto-load + mode switch), so the shipped $22 set is authoritative and self-healing rather than reachable only
+    /// through the Add ECU button. Trade-off: a seeded $22 row the user deletes reappears on the next load.
+    /// </summary>
+    public static void SeedDefaults(VirtualBus bus)
+    {
         foreach (var node in bus.Nodes)
         {
             Core.Ecu.EcuIdentitySeeder.Seed(node);

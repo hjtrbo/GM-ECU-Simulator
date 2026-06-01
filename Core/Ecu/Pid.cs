@@ -42,6 +42,19 @@ public sealed class Pid
         _ => null,
     };
 
+    // The key this PID occupies in its per-mode store (see EcuNode.AddPid): the 1-byte DID for $1A, the 2-byte wire
+    // PID for $22, the full 32-bit address for $2D. Two rows in the same mode that share this key collide - the store
+    // keeps only the last one added and silently shadows the rest on the wire - so the editor uses it to keep each
+    // identifier unique within a mode.
+    public uint StoreKey => StoreKeyFor(Mode, Address);
+
+    public static uint StoreKeyFor(PidMode mode, uint address) => mode switch
+    {
+        PidMode.Mode1A => address & 0xFF,
+        PidMode.Mode22 => address & 0xFFFF,
+        _              => address,
+    };
+
     // 1-byte DID this row serves on $1A; null for Mode22/Mode2D rows. The
     // $1A handler uses this to short-circuit the identifier-table lookup so
     // a user-edited row in the PID grid takes precedence over the bin- or
@@ -72,21 +85,44 @@ public sealed class Pid
     /// when explicit, otherwise the value of the legacy <see cref="Size"/> enum.</summary>
     public int ResponseLength => LengthBytes ?? (int)Size;
 
+    // Where this row draws its live value from (None / Waveform / Signal). The editor's Signal column is the single
+    // selector for this - a row is no longer implicitly wired to its waveform just because no signal is chosen. Defaults
+    // to Waveform so a bare `new Pid { WaveformConfig = ... }` and every pre-v17 config (which had no source field)
+    // behave exactly as before; the editor's Add button overrides this to None so a fresh row reads 0 until sourced.
+    private PidValueSource valueSource = PidValueSource.Waveform;
+    public PidValueSource ValueSource
+    {
+        get => valueSource;
+        set => valueSource = value;
+    }
+
     // When set, this PID is signal-backed: its value comes from the owning ECU's EngineModel (live, scenario-driven)
-    // rather than a standalone waveform or StaticBytes. Scalar/Offset/DataType still define the wire encoding, so the
-    // same signal can carry GM A2L scaling here while Mode $01 carries the legislated J1979 formula for it. Null = a
-    // legacy waveform / static PID. Resolving it needs the engine attached via AttachEngine (EcuNode.AddPid does so).
-    public SignalId? Signal { get; set; }
+    // rather than its waveform or StaticBytes. Scalar/Offset/DataType still define the wire encoding, so the same signal
+    // can carry GM A2L scaling here while Mode $01 carries the legislated J1979 formula for it. Assigning a non-null
+    // signal selects ValueSource.Signal automatically (the common "this row reads signal X" intent); clear the source
+    // explicitly via ValueSource to go back to Waveform/None. Resolving it needs the engine attached via AttachEngine
+    // (EcuNode.AddPid does so).
+    private SignalId? signal;
+    public SignalId? Signal
+    {
+        get => signal;
+        set
+        {
+            signal = value;
+            if (value is not null) valueSource = PidValueSource.Signal;
+        }
+    }
 
     /// <summary>
-    /// Fill <paramref name="dest"/> with this PID's response payload bytes.
-    /// Precedence: a signal-backed PID (<see cref="Signal"/> set, engine attached) samples the live EngineModel;
-    /// otherwise <see cref="StaticBytes"/> verbatim (zero-padded if shorter) when present; otherwise the waveform.
+    /// Fill <paramref name="dest"/> with this PID's response payload bytes. Precedence:
+    /// an attached <see cref="ValueSource.Signal"/> row samples the live EngineModel; otherwise <see cref="StaticBytes"/>
+    /// verbatim (zero-padded if shorter) when present; otherwise a <see cref="ValueSource.Waveform"/> row encodes its
+    /// waveform; otherwise (<see cref="PidValueSource.None"/> with no static payload) the response is all zeros.
     /// All numeric paths encode through <see cref="ValueCodec.Encode"/> with this PID's Scalar/Offset/DataType.
     /// </summary>
     public void WriteResponseBytes(double timeMs, Span<byte> dest)
     {
-        if (Signal is { } sig && engine is { } eng)
+        if (valueSource == PidValueSource.Signal && Signal is { } sig && engine is { } eng)
         {
             ValueCodec.Encode(eng.Sample(sig, timeMs), Scalar, Offset, DataType, dest.Length, dest);
             return;
@@ -98,18 +134,22 @@ public sealed class Pid
             if (n < dest.Length) dest.Slice(n).Clear();
             return;
         }
-        ValueCodec.Encode(
-            waveform.Sample(timeMs),
-            Scalar, Offset, DataType, dest.Length, dest);
+        if (valueSource == PidValueSource.Waveform)
+        {
+            ValueCodec.Encode(waveform.Sample(timeMs), Scalar, Offset, DataType, dest.Length, dest);
+            return;
+        }
+        dest.Clear();   // None, no static payload -> a flat zero response (the value must come from a chosen source)
     }
 
-    // The PID's current engineering value (pre-encoding): the live signal when signal-backed, otherwise the waveform
-    // sample; static-byte PIDs have no scalar value so report 0. Used by the editor's live readout - the wire path
-    // goes through WriteResponseBytes, which applies Scalar/Offset on top of this.
+    // The PID's current engineering value (pre-encoding): the live signal when signal-backed, the waveform sample when
+    // waveform-sourced, otherwise 0 (a None row, or a static-byte row whose bytes the editor surfaces directly). Used
+    // by the editor's live readout - the wire path goes through WriteResponseBytes, which applies Scalar/Offset on top.
     public double SampleValue(double timeMs)
     {
-        if (Signal is { } sig && engine is { } eng) return eng.Sample(sig, timeMs);
-        return StaticBytes is not null ? 0 : waveform.Sample(timeMs);
+        if (valueSource == PidValueSource.Signal && Signal is { } sig && engine is { } eng) return eng.Sample(sig, timeMs);
+        if (StaticBytes is not null) return 0;
+        return valueSource == PidValueSource.Waveform ? waveform.Sample(timeMs) : 0;
     }
 
     private WaveformConfig waveformConfig = new();

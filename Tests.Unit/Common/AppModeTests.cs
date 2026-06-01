@@ -7,29 +7,25 @@ public sealed class AppModeTests
 {
     [Theory]
     [InlineData(AppMode.EcuSimulator, true)]
-    [InlineData(AppMode.DpsWrite,     false)]
-    [InlineData(AppMode.DpsRead,      false)]
+    [InlineData(AppMode.DpsSimulator, false)]
     public void AllowsMultipleEcus_IsTrueOnlyForEcuSimulator(AppMode mode, bool expected)
         => Assert.Equal(expected, mode.AllowsMultipleEcus());
 
     [Theory]
     [InlineData(AppMode.EcuSimulator, true)]
-    [InlineData(AppMode.DpsWrite,     false)]
-    [InlineData(AppMode.DpsRead,      false)]
+    [InlineData(AppMode.DpsSimulator, false)]
     public void PersistsConfig_IsFalseForDpsModes(AppMode mode, bool expected)
         => Assert.Equal(expected, mode.PersistsConfig());
 
     [Theory]
-    [InlineData(AppMode.EcuSimulator, "ecu_simulator_config.json")]
-    [InlineData(AppMode.DpsWrite,     "dps_write_config.json")]
-    [InlineData(AppMode.DpsRead,      "dps_read_config.json")]
+    [InlineData(AppMode.EcuSimulator, "ecu_simulator.mode.json")]
+    [InlineData(AppMode.DpsSimulator, "dps_simulator.mode.json")]
     public void ConfigFileName_HasStableNamePerMode(AppMode mode, string expected)
         => Assert.Equal(expected, mode.ConfigFileName());
 
     [Theory]
     [InlineData(AppMode.EcuSimulator, "ECU Simulator")]
-    [InlineData(AppMode.DpsWrite,     "DPS Write")]
-    [InlineData(AppMode.DpsRead,      "DPS Read")]
+    [InlineData(AppMode.DpsSimulator, "DPS Simulator")]
     public void DisplayName_MatchesUserVocabulary(AppMode mode, string expected)
         => Assert.Equal(expected, mode.DisplayName());
 
@@ -39,8 +35,7 @@ public sealed class AppModeTests
         var names = new[]
         {
             AppMode.EcuSimulator.DisplayName(),
-            AppMode.DpsWrite.DisplayName(),
-            AppMode.DpsRead.DisplayName(),
+            AppMode.DpsSimulator.DisplayName(),
         };
         Assert.Equal(names.Length, names.Distinct().Count());
     }
@@ -51,8 +46,7 @@ public sealed class AppModeTests
         var names = new[]
         {
             AppMode.EcuSimulator.ConfigFileName(),
-            AppMode.DpsWrite.ConfigFileName(),
-            AppMode.DpsRead.ConfigFileName(),
+            AppMode.DpsSimulator.ConfigFileName(),
         };
         Assert.Equal(names.Length, names.Distinct().Count());
     }

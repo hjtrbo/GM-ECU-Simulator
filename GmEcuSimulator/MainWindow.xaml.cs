@@ -439,9 +439,10 @@ public partial class MainWindow : Window
         e.Handled = true;
     }
 
-    public void Bind(VirtualBus bus, Core.Replay.BinReplayCoordinator replay, Shim.Ipc.NamedPipeServer pipeServer)
+    public void Bind(VirtualBus bus, Core.Replay.BinReplayCoordinator replay, Shim.Ipc.NamedPipeServer pipeServer,
+                     Shim.Ipc.RawCanTcpServer rawCanServer)
     {
-        vm = new MainViewModel(bus, replay, pipeServer);
+        vm = new MainViewModel(bus, replay, pipeServer, rawCanServer);
         DataContext = vm;
         bus.NodesChanged += (_, _) => Dispatcher.BeginInvoke(() => vm?.Rebuild());
 
@@ -477,6 +478,7 @@ public partial class MainWindow : Window
             }
             vm.RefreshBinReplayLive();
             vm.RefreshFileLogStatus();
+            vm.RefreshConnectionStatus();
         };
         refreshTimer.Start();
 

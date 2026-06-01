@@ -25,6 +25,7 @@ public sealed class MainViewModel : NotifyPropertyChangedBase
     private readonly VirtualBus bus;
     private readonly BinReplayCoordinator replay;
     private readonly NamedPipeServer pipeServer;
+    private readonly RawCanTcpServer rawCanServer;
     public ObservableCollection<EcuViewModel> Ecus { get; } = new();
 
     // The ordered set of PIDs pinned to the main window's live-tile dashboard.
@@ -106,21 +107,25 @@ public sealed class MainViewModel : NotifyPropertyChangedBase
     public RelayCommand AddTileCommand { get; }
 
     /// <summary>
-    /// All top-level modes in declaration order. Bound to the mode selector
-    /// ComboBox at the top of the main window.
+    /// Mode + connection-type combinations offered by the selector ComboBox.
+    /// ECU Simulator is offered on both transports (J2534 / raw-CAN TCP); DPS
+    /// programming is J2534-only. Bound to the mode selector at the top of the
+    /// main window.
     /// </summary>
-    public IReadOnlyList<AppMode> AvailableModes { get; } = new[]
+    public IReadOnlyList<ModeOption> AvailableModes { get; } = new[]
     {
-        AppMode.EcuSimulator,
-        AppMode.DpsWrite,
-        AppMode.DpsRead,
+        new ModeOption(AppMode.EcuSimulator, ConnectionType.J2534),
+        new ModeOption(AppMode.EcuSimulator, ConnectionType.RawCanTcp),
+        new ModeOption(AppMode.DpsSimulator, ConnectionType.J2534),
     };
 
-    public MainViewModel(VirtualBus bus, BinReplayCoordinator replay, NamedPipeServer pipeServer)
+    public MainViewModel(VirtualBus bus, BinReplayCoordinator replay, NamedPipeServer pipeServer,
+                         RawCanTcpServer rawCanServer)
     {
         this.bus = bus;
         this.replay = replay;
         this.pipeServer = pipeServer;
+        this.rawCanServer = rawCanServer;
 
         BinReplay = new BinReplayViewModel(replay, bus, OnBinReplayLoad, OnBinReplayUnload);
         Capture = new CaptureViewModel(bus.Capture);
@@ -130,6 +135,7 @@ public sealed class MainViewModel : NotifyPropertyChangedBase
         // choices before any frame flows.
         appSettings = AppSettings.Load();
         currentMode                  = appSettings.Mode;
+        currentConnection            = appSettings.ConnectionType;
         logIncludeJ2534Calls         = appSettings.LogIncludeJ2534Calls;
         logIncludeBusTraffic         = appSettings.LogIncludeBusTraffic;
         logAppendDescriptionTag      = appSettings.LogAppendDescriptionTag;
@@ -194,7 +200,7 @@ public sealed class MainViewModel : NotifyPropertyChangedBase
         ClearPrimeArchiveCommand      = new RelayCommand(ClearPrimeArchive, () => !string.IsNullOrEmpty(primeArchivePath));
         AddTileCommand                = new RelayCommand(AddTile, p => p is PidPickerEntry);
 
-        RefreshJ2534Status();
+        RefreshConnectionStatus();
     }
 
     public EcuViewModel? SelectedEcu
@@ -210,22 +216,35 @@ public sealed class MainViewModel : NotifyPropertyChangedBase
     // ---------------- Global mode ----------------
 
     private AppMode currentMode;
+    private ConnectionType currentConnection;
 
     /// <summary>
-    /// Top-level operational mode. Bound two-way to the mode selector
-    /// ComboBox above the menu. Setter delegates to <see cref="ChangeMode"/>
-    /// so the dialog + ECU clear + per-mode config swap all run together.
+    /// Active top-level mode (what is simulated). Connection type is the other
+    /// half of the selection - see <see cref="CurrentConnection"/> and
+    /// <see cref="SelectedModeOption"/>.
+    /// </summary>
+    public AppMode CurrentMode => currentMode;
+
+    /// <summary>Active transport for the current mode.</summary>
+    public ConnectionType CurrentConnection => currentConnection;
+
+    /// <summary>
+    /// The (mode, connection) pick bound two-way to the selector ComboBox.
+    /// Setter delegates to <see cref="ChangeSelection"/> so the dialog + ECU
+    /// clear + per-mode config reload + transport flip all run together.
     /// Cancelling the dialog restores the prior selection via this setter.
     /// </summary>
-    public AppMode CurrentMode
+    public ModeOption SelectedModeOption
     {
-        get => currentMode;
+        get => AvailableModes.FirstOrDefault(o => o.Mode == currentMode && o.Connection == currentConnection)
+               ?? AvailableModes[0];
         set
         {
-            if (currentMode == value) return;
+            if (value is null) return;
+            if (value.Mode == currentMode && value.Connection == currentConnection) return;
             // Suppress reentrancy while we may snap the value back on cancel.
             if (modeSwitchInProgress) return;
-            if (!ChangeMode(value))
+            if (!ChangeSelection(value.Mode, value.Connection))
             {
                 modeSwitchInProgress = true;
                 try { OnPropertyChanged(); } // notify so the ComboBox refreshes
@@ -243,15 +262,39 @@ public sealed class MainViewModel : NotifyPropertyChangedBase
         => currentMode.AllowsMultipleEcus() || Ecus.Count == 0;
 
     /// <summary>
-    /// Drives the mode transition: optionally save current state, clear the
-    /// bus, persist the new mode, then load the new mode's config (if any).
-    /// Returns false when the user cancels - the caller restores the
-    /// previous selection in the bound control.
+    /// Drives a mode and/or connection-type transition: optionally save current
+    /// state, clear the bus, persist the new selection, reload the mode's config
+    /// (so every ECU + bus module re-initialises from a clean slate - no session
+    /// remnants carry over), then flip the active transport. Returns false when
+    /// the user cancels - the caller restores the previous selection.
     /// </summary>
-    private bool ChangeMode(AppMode newMode)
+    private bool ChangeSelection(AppMode newMode, ConnectionType newConnection)
     {
         var oldMode = currentMode;
+        var oldConnection = currentConnection;
+        var fromLabel = new ModeOption(oldMode, oldConnection).Label;
+        var toLabel = new ModeOption(newMode, newConnection).Label;
         bool hasEcus = Ecus.Count > 0;
+
+        // Connection-type-only flip within the same mode: the ECU configuration
+        // is identical on either transport, so there is nothing to save and no
+        // need to reload from disk (which would discard unsaved edits and pop a
+        // save dialog for no reason). Just reset transient per-ECU session state
+        // - the same teardown the Reset State command performs - so no J2534
+        // session remnants (unlocked security, DPID streams, programming state)
+        // carry over to the gauge link, then swap the transport. The save dialog
+        // below is reserved for true mode changes, where the config file differs.
+        if (newMode == oldMode)
+        {
+            foreach (var ecu in Ecus) ecu.ResetEcuState(bus.Scheduler);
+            currentConnection = newConnection;
+            appSettings.ConnectionType = newConnection;
+            try { appSettings.Save(); } catch { /* persistence best-effort */ }
+            ApplyActiveTransport(oldConnection, newConnection);
+            StatusText = $"Connection: {toLabel}";
+            System.Windows.Input.CommandManager.InvalidateRequerySuggested();
+            return true;
+        }
 
         if (hasEcus)
         {
@@ -267,7 +310,7 @@ public sealed class MainViewModel : NotifyPropertyChangedBase
                 ThemedMessageBox.Show(
                     owner,
                     "Change mode",
-                    $"Switching from {oldMode.DisplayName()} to {newMode.DisplayName()} will clear " +
+                    $"Switching from {fromLabel} to {toLabel} will clear " +
                     "the current ECU set.\n\nSave the current configuration first?",
                     MessageBoxImage.Question,
                     new ThemedDialogButton(
@@ -283,7 +326,8 @@ public sealed class MainViewModel : NotifyPropertyChangedBase
                             var settings = AppSettings.Load();
                             var dlg = new SaveFileDialog
                             {
-                                Filter = "JSON config (*.json)|*.json",
+                                Filter = "Mode config (*.mode.json)|*.mode.json|JSON (*.json)|*.json|All files|*.*",
+                                DefaultExt = ".mode.json",
                                 FileName = oldMode.ConfigFileName(),
                                 InitialDirectory = AppSettings.ResolveInitialDir(settings.LastConfigDir),
                             };
@@ -315,7 +359,7 @@ public sealed class MainViewModel : NotifyPropertyChangedBase
                 ThemedMessageBox.Show(
                     owner,
                     "Change mode",
-                    $"Switching from {oldMode.DisplayName()} will clear the current ECU. " +
+                    $"Switching from {fromLabel} will clear the current ECU. " +
                     $"{oldMode.DisplayName()} state is not persisted - continue?",
                     MessageBoxImage.Warning,
                     new ThemedDialogButton(
@@ -351,7 +395,9 @@ public sealed class MainViewModel : NotifyPropertyChangedBase
         PrimedDataset = null;
 
         currentMode = newMode;
+        currentConnection = newConnection;
         appSettings.Mode = newMode;
+        appSettings.ConnectionType = newConnection;
         try { appSettings.Save(); } catch { /* persistence best-effort */ }
 
         // Switching modes resets the dashboard to the new mode's saved tiles
@@ -369,12 +415,16 @@ public sealed class MainViewModel : NotifyPropertyChangedBase
                 {
                     var cfg = ConfigStore.Load(path);
                     ConfigStore.ApplyTo(cfg, bus);
+                    // Backfill curated identity + live $22 seeds onto the loaded ECUs (same reason as the App startup
+                    // auto-load): the load path never seeds, so a pre-seeder config would hide the 12 signal-backed
+                    // $22 PIDs. Precedence-safe and EcuSimulator-only.
+                    if (newMode == AppMode.EcuSimulator) DefaultEcuConfig.SeedDefaults(bus);
                     pendingTileDescriptors = cfg.LiveTiles;
                     // Priming is DPS-only. If a persisted non-DPS config carries
                     // a stale primeArchivePath (e.g. from a pre-gating session
                     // where a user primed into ECU Simulator mode), drop it on
                     // load so the next save scrubs the field from disk.
-                    bool canPrime = newMode is AppMode.DpsWrite or AppMode.DpsRead;
+                    bool canPrime = newMode is AppMode.DpsSimulator;
                     PrimeArchivePath = canPrime ? cfg.PrimeArchivePath : null;
                     donorBinPath     = canPrime ? cfg.DonorBinPath     : null;
                 }
@@ -387,9 +437,55 @@ public sealed class MainViewModel : NotifyPropertyChangedBase
         catch (Exception ex) { Error("Load failed", ex); }
 
         Rebuild();
-        StatusText = $"Mode: {newMode.DisplayName()}";
+
+        // Flip the active transport around the freshly re-initialised bus. A
+        // mode-only change that keeps the same connection type is a no-op here.
+        ApplyActiveTransport(oldConnection, newConnection);
+
+        StatusText = $"Mode: {toLabel}";
         System.Windows.Input.CommandManager.InvalidateRequerySuggested();
         return true;
+    }
+
+    /// <summary>
+    /// Stops the outgoing transport and starts the incoming one so exactly one
+    /// is live. No-op when the connection type is unchanged. Both servers'
+    /// Start / StopAsync are idempotent and target disjoint resources (named
+    /// pipe vs TCP port), so a brief overlap during the async stop is harmless.
+    /// async void is acceptable here: it is invoked as a fire-and-forget side
+    /// effect of a UI selection change.
+    /// </summary>
+    private async void ApplyActiveTransport(ConnectionType oldConnection, ConnectionType newConnection)
+    {
+        if (oldConnection == newConnection) return;
+
+        try
+        {
+            if (oldConnection == ConnectionType.RawCanTcp) await rawCanServer.StopAsync();
+            else                                           await pipeServer.StopAsync();
+        }
+        catch (Exception ex) { bus.LogSim?.Invoke($"Stopping {oldConnection} transport failed: {ex.Message}"); }
+
+        try
+        {
+            if (newConnection == ConnectionType.RawCanTcp)
+            {
+                // No registry gating - the gauge sim is hand-configured with the port.
+                rawCanServer.Start();
+            }
+            else
+            {
+                // Mirror App startup: only listen on the pipe if the shim is
+                // registered, so an unregistered host can't reach us.
+                bool registered = false;
+                try { registered = J2534Registration.Check().IsRegistered; } catch { }
+                if (registered) pipeServer.Start();
+                else bus.LogSim?.Invoke("J2534 not registered - IPC pipe not started; register from the J2534 menu to enable host connections.");
+            }
+        }
+        catch (Exception ex) { bus.LogSim?.Invoke($"Starting {newConnection} transport failed: {ex.Message}"); }
+
+        RefreshConnectionStatus();
     }
 
     private SimulatorConfig SnapshotForSave()
@@ -813,9 +909,7 @@ public sealed class MainViewModel : NotifyPropertyChangedBase
         set { SetField(ref currentFilePath, value); OnPropertyChanged(nameof(WindowTitle)); }
     }
 
-    public string WindowTitle => string.IsNullOrEmpty(CurrentFilePath)
-        ? "GM ECU Simulator"
-        : $"GM ECU Simulator - {Path.GetFileName(CurrentFilePath)}";
+    public string WindowTitle => "GM ECU Simulator";
 
     public string StatusText
     {
@@ -881,9 +975,9 @@ public sealed class MainViewModel : NotifyPropertyChangedBase
     public bool ShowsBinReplayTab => IsPidEditorMode;
     /// <summary>Glitch tab shows in PID-editor modes.</summary>
     public bool ShowsGlitchTab    => IsPidEditorMode;
-    /// <summary>Captures tab shows in DPS modes.</summary>
+    /// <summary>Captures tab shows in DPS Simulator mode.</summary>
     public bool ShowsCaptureTab
-        => currentMode is AppMode.DpsWrite or AppMode.DpsRead;
+        => currentMode is AppMode.DpsSimulator;
     /// <summary>
     /// Prime menu (Prime from DPS archive / Clear primed archive) is DPS-only.
     /// Priming creates a persona at $7E0 from a DPS programming archive, which
@@ -893,21 +987,21 @@ public sealed class MainViewModel : NotifyPropertyChangedBase
     /// resurrect a "removed" ECU on next launch.
     /// </summary>
     public bool ShowsPrimeMenu
-        => currentMode is AppMode.DpsWrite or AppMode.DpsRead;
+        => currentMode is AppMode.DpsSimulator;
 
     /// <summary>
-    /// Read-only display of the per-ECU security module in DPS Write / DPS Read
-    /// modes. The dropdown is hidden there (Prime Wizard owns the choice), but
+    /// Read-only display of the per-ECU security module in DPS Simulator
+    /// mode. The dropdown is hidden there (Prime Wizard owns the choice), but
     /// the user still wants to see which algorithm got picked - so a read-only
     /// TextBox sits in the inspector with the same label position.
     /// </summary>
     public bool ShowsSecurityModuleReadOnly
-        => currentMode is AppMode.DpsWrite or AppMode.DpsRead;
+        => currentMode is AppMode.DpsSimulator;
 
     /// <summary>
     /// Visibility gate for PID-editor-mode inspector actions (e.g. the per-
     /// ECU "Configure PIDs..." launcher). True in modes where the user
-    /// defines/edits PIDs directly (ECU Simulator). In DPS modes
+    /// defines/edits PIDs directly (ECU Simulator). In DPS Simulator mode
     /// the Prime Wizard / archive owns the PID list so the standalone editor
     /// isn't surfaced from the inspector. Property name retained for XAML-
     /// binding stability - it now reads "is this a PID-editor mode" rather
@@ -917,7 +1011,7 @@ public sealed class MainViewModel : NotifyPropertyChangedBase
 
     /// <summary>
     /// Visibility gate for the live PID DataGrid in the Selected ECU pane.
-    /// Visible in ECU Simulator. Hidden in DPS Write / DPS Read:
+    /// Visible in ECU Simulator. Hidden in DPS Simulator:
     /// the primed PID set is an internal implementation detail of the prime
     /// pipeline (the solver synthesises bytecode-pinned $22 responses);
     /// surfacing it in the inspector implies user-tunable PIDs that don't
@@ -935,15 +1029,15 @@ public sealed class MainViewModel : NotifyPropertyChangedBase
 
     /// <summary>
     /// Visibility gate for the titlebar Security pill. Shown when an ECU is
-    /// selected (the normal case in ECU Simulator) AND in DPS Write / DPS Read
-    /// modes regardless of selection - those modes are about programming a
+    /// selected (the normal case in ECU Simulator) AND in DPS Simulator
+    /// mode regardless of selection - that mode is about programming a
     /// single primed ECU, so the pill stays present even before the user
     /// primes one. The TextBlock falls back to "No ECU primed" when
     /// SelectedEcu is null.
     /// </summary>
     public bool ShowsSecurityPill
         => SelectedEcu != null
-           || currentMode is AppMode.DpsWrite or AppMode.DpsRead;
+           || currentMode is AppMode.DpsSimulator;
 
     /// <summary>
     /// Cap on the Selected ECU inspector's form row when it is sized as a "*"
@@ -958,9 +1052,9 @@ public sealed class MainViewModel : NotifyPropertyChangedBase
     /// </summary>
     public double FormRowMaxHeight => currentMode switch
     {
-        AppMode.EcuSimulator                => 120.0,
-        AppMode.DpsWrite or AppMode.DpsRead => 220.0,
-        _                                   => double.PositiveInfinity,
+        AppMode.EcuSimulator => 120.0,
+        AppMode.DpsSimulator => 220.0,
+        _                    => double.PositiveInfinity,
     };
 
     /// <summary>
@@ -983,7 +1077,7 @@ public sealed class MainViewModel : NotifyPropertyChangedBase
         var settings = AppSettings.Load();
         var dlg = new OpenFileDialog
         {
-            Filter = "JSON config (*.json)|*.json|All files|*.*",
+            Filter = "Mode config (*.mode.json)|*.mode.json|JSON (*.json)|*.json|All files|*.*",
             InitialDirectory = AppSettings.ResolveInitialDir(settings.LastConfigDir),
         };
         if (dlg.ShowDialog() != true) return;
@@ -1026,7 +1120,8 @@ public sealed class MainViewModel : NotifyPropertyChangedBase
         var settings = AppSettings.Load();
         var dlg = new SaveFileDialog
         {
-            Filter = "JSON config (*.json)|*.json",
+            Filter = "Mode config (*.mode.json)|*.mode.json|JSON (*.json)|*.json|All files|*.*",
+            DefaultExt = ".mode.json",
             FileName = currentMode.ConfigFileName(),
             InitialDirectory = AppSettings.ResolveInitialDir(settings.LastConfigDir),
         };
@@ -1068,7 +1163,7 @@ public sealed class MainViewModel : NotifyPropertyChangedBase
         // Single-ECU modes refuse the second add at the CanExecute layer; this guard catches a programmatic call.
         if (!CanAddEcu()) return;
 
-        if (currentMode is AppMode.DpsWrite or AppMode.DpsRead)
+        if (currentMode is AppMode.DpsSimulator)
         {
             PrimeFromArchive();
             return;
@@ -1387,6 +1482,39 @@ public sealed class MainViewModel : NotifyPropertyChangedBase
         private set => SetField(ref j2534Status, value);
     }
 
+    private string connectionStatus = "(checking…)";
+    /// <summary>
+    /// Status-pill text for the ACTIVE transport. In J2534 mode this mirrors
+    /// <see cref="J2534Status"/> (registry-derived); in raw-CAN TCP mode it
+    /// reports the gauge link state. Refreshed by the 10 Hz UI timer and after
+    /// any transport change, so the keyword-driven StatusToBrush dot stays live.
+    /// </summary>
+    public string ConnectionStatus
+    {
+        get => connectionStatus;
+        private set => SetField(ref connectionStatus, value);
+    }
+
+    /// <summary>
+    /// Recomputes <see cref="ConnectionStatus"/> from the active transport.
+    /// Safe to call on the UI timer.
+    /// </summary>
+    public void RefreshConnectionStatus()
+    {
+        if (currentConnection == ConnectionType.RawCanTcp)
+        {
+            ConnectionStatus =
+                rawCanServer.IsConnected ? "Gauge link: connected"
+              : rawCanServer.IsRunning  ? $"Gauge link: listening :{rawCanServer.Port}"
+              :                           "Gauge link: stopped";
+        }
+        else
+        {
+            RefreshJ2534Status();
+            ConnectionStatus = J2534Status;
+        }
+    }
+
     private static string ScriptPath(string name)
     {
         // The EXE lives at GmEcuSimulator/bin/Debug/net9.0-windows/. The
@@ -1425,7 +1553,7 @@ public sealed class MainViewModel : NotifyPropertyChangedBase
             StatusText = $"Registration failed - log at {logPath}";
             ShowScriptFailureDialog("J2534 Registration failed", "Register.ps1", logPath, output);
         }
-        RefreshJ2534Status();
+        RefreshConnectionStatus();
     }
 
     private async void UnregisterJ2534()
@@ -1450,7 +1578,7 @@ public sealed class MainViewModel : NotifyPropertyChangedBase
             StatusText = $"Unregister failed - log at {logPath}";
             ShowScriptFailureDialog("J2534 Unregister failed", "Unregister.ps1", logPath, output);
         }
-        RefreshJ2534Status();
+        RefreshConnectionStatus();
     }
 
     // Surfaces the captured PowerShell output in the same dialog used for

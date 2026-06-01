@@ -134,7 +134,9 @@
                     </StackPanel>
                 </Border>
 
-                <!-- J2534 status pill (live, accent-coloured dot + text) -->
+                <!-- Active-connection status pill (live, accent-coloured dot + text).
+                     Shows J2534 shim registration state, or the raw-CAN TCP gauge
+                     link state, depending on the selected connection type. -->
                 <Border CornerRadius="11"
                         Background="{DynamicResource Bg.SurfaceBrush}"
                         BorderBrush="{DynamicResource Border.SubtleBrush}"
@@ -142,12 +144,12 @@
                         Padding="10,3" Margin="0,0,12,0"
                         VerticalAlignment="Center"
                         WindowChrome.IsHitTestVisibleInChrome="True"
-                        ToolTip="J2534 device registration state (HKLM\SOFTWARE\PassThruSupport.04.04\GmEcuSim)">
+                        ToolTip="Active connection status: J2534 shim registration (HKLM\SOFTWARE\PassThruSupport.04.04\GmEcuSim) or the raw-CAN TCP gauge link.">
                     <StackPanel Orientation="Horizontal">
                         <Ellipse Width="8" Height="8" Margin="0,0,8,0"
-                                 Fill="{Binding J2534Status, Converter={StaticResource StatusToBrush}}"
+                                 Fill="{Binding ConnectionStatus, Converter={StaticResource StatusToBrush}}"
                                  VerticalAlignment="Center"/>
-                        <TextBlock Text="{Binding J2534Status}"
+                        <TextBlock Text="{Binding ConnectionStatus}"
                                    Style="{StaticResource Text.Caption}"
                                    Foreground="{DynamicResource Text.PrimaryBrush}"
                                    VerticalAlignment="Center"/>
@@ -329,28 +331,16 @@
                                Foreground="{DynamicResource Text.SecondaryBrush}"
                                VerticalAlignment="Center"
                                Margin="0,0,8,0"/>
-                    <ComboBox Width="180"
+                    <ComboBox Width="200"
                               ItemsSource="{Binding AvailableModes}"
-                              SelectedItem="{Binding CurrentMode, Mode=TwoWay}"
+                              SelectedItem="{Binding SelectedModeOption, Mode=TwoWay}"
                               VerticalAlignment="Center"
-                              ToolTip="Top-level mode. Switching clears the current ECU set; you'll be offered a save first when leaving a persistable mode.">
+                              ToolTip="Top-level mode and connection type. Switching clears the current ECU set and re-initialises the bus; you'll be offered a save first when leaving a persistable mode.">
                         <ComboBox.ItemTemplate>
                             <DataTemplate>
-                                <TextBlock Text="{Binding Converter={StaticResource AppModeDisplay}}"/>
+                                <TextBlock Text="{Binding Label}"/>
                             </DataTemplate>
                         </ComboBox.ItemTemplate>
-                        <!-- DpsRead isn't wired up yet; keep it visible-but-
-                             disabled so the dropdown still telegraphs the
-                             planned scope. -->
-                        <ComboBox.ItemContainerStyle>
-                            <Style TargetType="ComboBoxItem">
-                                <Style.Triggers>
-                                    <DataTrigger Binding="{Binding}" Value="{x:Static common:AppMode.DpsRead}">
-                                        <Setter Property="IsEnabled" Value="False"/>
-                                    </DataTrigger>
-                                </Style.Triggers>
-                            </Style>
-                        </ComboBox.ItemContainerStyle>
                     </ComboBox>
                 </StackPanel>
             </Grid>

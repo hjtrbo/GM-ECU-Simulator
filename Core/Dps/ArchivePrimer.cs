@@ -158,10 +158,10 @@ public static class ArchivePrimer
 
     public static EcuNode BuildEcuNode(PrimedDataset dataset)
     {
-        // Foundation: bare primed node with the OBD-II first-ECM CAN triple,
-        // security module installed, AutoRespondFromLibrary on. Same code
-        // path BinEcuFactory uses so both factories produce identically-
-        // wired nodes; what differs is the data populated afterwards.
+        // Foundation: bare primed node with the OBD-II first-ECM CAN triple
+        // and security module installed. Same code path BinEcuFactory uses so
+        // both factories produce identically-wired nodes; what differs is the
+        // data populated afterwards.
         var node = EcuNodeFactory.CreatePrimed(
             name: "PrimedECU",
             ids: new EcuNodeFactory.CanIds(
@@ -212,40 +212,53 @@ public static class ArchivePrimer
         // Empty rows pass through as zero stubs (won't overwrite anything).
         var manifest = dataset.EditedPhase3 ?? dataset.Phase3;
         foreach (var row in manifest.Rows)
-        {
-            if (row.Source == Phase3RowSource.Empty) continue;
-            if (row.ExpectedValue.Length == 0) continue;
-
-            if (row.OpCode == 0x1A)
-            {
-                node.SetIdentifier((byte)row.DidOrPid, row.ExpectedValue, MapSource(row.Source));
-            }
-            else if (row.OpCode == 0x22)
-            {
-                node.AddPid(new Pid
-                {
-                    Address = row.DidOrPid,
-                    Name = $"Phase3-primed 0x{row.DidOrPid:X4}",
-                    Size = PidSize.Byte,
-                    LengthBytes = row.ExpectedValue.Length,
-                    StaticBytes = row.ExpectedValue,
-                    DataType = PidDataType.Unsigned,
-                    Unit = "",
-                });
-            }
-        }
+            ApplyPhase3Row(node, row);
 
         return node;
     }
 
-    private static DidSource MapSource(Phase3RowSource src) => src switch
+    // Apply one Phase 3 manifest row to the node. A $1A read becomes a Mode1A Pid row and a $22 read becomes a Mode22
+    // Pid row, so BOTH land in the per-mode Pid stores the editor grid, the service handlers (GetMode1APid /
+    // GetPidByWireId), and File -> Save persistence read from. The earlier code stored $1A rows only in the raw
+    // identifier dictionary, which the wire could still answer from but the editor and persistence never saw - hence
+    // primed $1A PIDs were invisible in the $1A section. Empty / zero-length rows are skipped: they would only
+    // overwrite a real value (or an auto-stub) with nothing. internal so the dispatch is unit-testable without a
+    // full archive fixture (see Tests.Unit/Dps/ArchivePrimerTests).
+    internal static void ApplyPhase3Row(EcuNode node, Phase3Row row)
     {
-        Phase3RowSource.Bin      => DidSource.Bin,
-        Phase3RowSource.Bytecode => DidSource.Bytecode,
-        Phase3RowSource.User     => DidSource.User,
-        Phase3RowSource.Default  => DidSource.Auto,
-        _                        => DidSource.Auto,
-    };
+        if (row.Source == Phase3RowSource.Empty) return;
+        if (row.ExpectedValue.Length == 0) return;
+
+        if (row.OpCode == 0x1A)
+        {
+            byte did = (byte)row.DidOrPid;
+            node.AddPid(new Pid
+            {
+                Mode        = PidMode.Mode1A,
+                Address     = did,
+                Name        = Gmw3110DidNames.NameOf(did) ?? $"DID {did:X2}",
+                StaticBytes = row.ExpectedValue,
+                LengthBytes = row.ExpectedValue.Length,
+                Size        = PidSize.DWord,
+                DataType    = PidDataType.Unsigned,
+                Unit        = "",
+            });
+        }
+        else if (row.OpCode == 0x22)
+        {
+            node.AddPid(new Pid
+            {
+                Mode        = PidMode.Mode22,
+                Address     = row.DidOrPid,
+                Name        = $"Phase3-primed 0x{row.DidOrPid:X4}",
+                Size        = PidSize.Byte,
+                LengthBytes = row.ExpectedValue.Length,
+                StaticBytes = row.ExpectedValue,
+                DataType    = PidDataType.Unsigned,
+                Unit        = "",
+            });
+        }
+    }
 
     // Decide which security module to install for the primed ECU. The
     // utility-file $27 instruction encodes the algorithm-id in Action[1]
