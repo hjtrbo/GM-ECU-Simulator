@@ -12,9 +12,10 @@
         Title="{Binding WindowTitle, FallbackValue=GM ECU Simulator}"
         Icon="/Resources/app.ico"
         Height="900" Width="1130"
-        MinHeight="810" MinWidth="600"
         WindowStartupLocation="CenterScreen"
         BorderBrush="Black" BorderThickness="1">
+        
+        <!--MinHeight="810" MinWidth="600"-->
 
     <Window.Resources>
         <conv:BoolToVisibilityConverter  x:Key="BoolToVis"/>

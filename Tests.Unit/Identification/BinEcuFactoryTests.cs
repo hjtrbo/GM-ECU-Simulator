@@ -1,4 +1,5 @@
 using Common.Persistence;
+using Common.Pids;
 using Common.Protocol;
 using Common.Waveforms;
 using Core.Bus;
@@ -133,7 +134,64 @@ public sealed class BinEcuFactoryTests
         }
     }
 
+    [Fact]
+    public void Create_BinPidTable_NamesRowsFromA2lCatalogue()
+    {
+        // Plant a real $22 PID table on the synthetic E38 image so the
+        // bin-extracted path (BuildBinPid) actually runs, then assert the
+        // rows pick up names from the A2L catalogue (PidLibrary.Mode22)
+        // instead of the "Bin-extracted 0xNNNN" placeholder.
+        var bin = BuildSyntheticE38(out _);
+        PlantMode22Table(bin, offset: 0x100000, count: 210, startPid: 0x0003, tailPid: 0xFFFE);
+        using var tmp = new TempBin(bin);
+
+        var result = BinEcuFactory.Create(tmp.Path, CanIds(), "ECU1");
+        Assert.NotNull(result.Mode22);
+
+        // 0x0003 is in the catalogue (VeEPSI_b_EngineRunning) and NOT in the
+        // AlwaysDynamicPids overlay, so the bin row keeps its catalogue name.
+        // Derive the expected name from the catalogue the same way ResolveName
+        // does (FriendlyName when curated, else the A2L symbol) so the test
+        // stays correct whether or not the embedded blob carries friendly
+        // names - the point is that a catalogue name landed, not a placeholder.
+        var entry = PidLibrary.Mode22[0x0003];
+        var expected = !string.IsNullOrWhiteSpace(entry.FriendlyName) ? entry.FriendlyName : entry.A2lName;
+        Assert.False(string.IsNullOrWhiteSpace(expected));
+
+        var named = result.Node.GetPidByWireId(0x0003);
+        Assert.NotNull(named);
+        Assert.Equal(expected, named!.Name);
+        Assert.NotEqual("Bin-extracted 0x0003", named.Name);
+
+        // 0xFFFE is not in the catalogue, so the synthetic placeholder stands.
+        var unnamed = result.Node.GetPidByWireId(0xFFFE);
+        Assert.NotNull(unnamed);
+        Assert.Equal("Bin-extracted 0xFFFE", unnamed!.Name);
+    }
+
     // ----------------------- helpers -----------------------
+
+    /// <summary>
+    /// Plant a valid $22 PID table: <paramref name="count"/> monotonic 8-byte
+    /// records at <paramref name="offset"/>, each record type 0x01, length 1,
+    /// PID = <paramref name="startPid"/> + i. The last record's PID is forced
+    /// to <paramref name="tailPid"/> so a test can include a PID the catalogue
+    /// doesn't list and assert the synthetic-name fallback. count must be >=
+    /// Mode22DidBinExtractor's MinRun (200) for the signature scan to anchor.
+    /// </summary>
+    private static void PlantMode22Table(byte[] bin, int offset, int count, ushort startPid, ushort tailPid)
+    {
+        for (int i = 0; i < count; i++)
+        {
+            int o = offset + i * 8;
+            ushort pid = (i == count - 1) ? tailPid : (ushort)(startPid + i);
+            bin[o]     = 0x01;   // record type (one of the valid set)
+            bin[o + 1] = 0x00;   // padding byte the validator requires
+            BinaryPrimitives.WriteUInt16BigEndian(bin.AsSpan(o + 2, 2), pid);
+            BinaryPrimitives.WriteUInt16BigEndian(bin.AsSpan(o + 4, 2), 1);  // length = 1 byte
+            // bytes 6-7 (ptr_lo) left zero - unresolved is the normal case
+        }
+    }
 
     private static EcuNodeFactory.CanIds CanIds() => new(
         PhysicalRequestId: 0x7E0,

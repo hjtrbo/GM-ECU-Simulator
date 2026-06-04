@@ -113,6 +113,14 @@ public sealed class AppSettings
     public string? LastBinDir { get; set; }
 
     /// <summary>
+    /// Last directory used by the ECU editor's CAN Broadcast section for
+    /// Import DBC (*.dbc) and Save / Load broadcast config (*.dbc.json).
+    /// Separate slot because DBCs and broadcast snapshots are often kept apart
+    /// from full configs and flash bins.
+    /// </summary>
+    public string? LastBroadcastDir { get; set; }
+
+    /// <summary>
     /// Last directory used by Bin Replay > Load file. Replay bins are
     /// usually scenario / capture files, often kept apart from flash bins
     /// and DPS archives, so this gets its own slot.

@@ -74,12 +74,22 @@ public static class EcuExitLogic
         //     timeout to occur." Both paths funnel through here.
         node.State.ClearProgrammingState();
 
-        // 3c. Reset persona back to GMW3110. After a $36 sub $80
-        //     DownloadAndExecute the ECU was speaking UDS via UdsKernelPersona;
-        //     $20 / P3C timeout is the documented "kernel hands control back to
-        //     the boot ROM" point, so the ECU answers as a stock GMW3110 module
-        //     again from here on.
-        node.Persona = Gmw3110Persona.Instance;
+        // 3c. Revert ONLY a runtime UDS-kernel handover back to GMW3110. After a
+        //     $36 sub $80 DownloadAndExecute the ECU was speaking UDS via
+        //     UdsKernelPersona; $20 / P3C timeout is the documented "kernel hands
+        //     control back to the boot ROM" point, so the ECU answers as a stock
+        //     GMW3110 module again from here on.
+        //
+        //     Gate on the kernel persona specifically: a *configured* persona
+        //     (e.g. ford-capture, loaded from the config file) is user state, not
+        //     a runtime handover, and must survive an exit/reset. ResetEcuState
+        //     funnels through here too - and the gauge-link transport flip calls
+        //     ResetEcuState on every ECU - so an unconditional reset silently
+        //     reverted a loaded FordCapturePersona to gmw3110, after which the
+        //     capture sink NRC'd PCMTec's Mode $09 ($7F 09 11) instead of
+        //     answering VIN/CalID.
+        if (node.Persona is UdsKernelPersona)
+            node.Persona = Gmw3110Persona.Instance;
 
         // 4. Send $60 positive response only when the spec demands it: caller
         //    provided a channel AND a programming session was NOT being torn

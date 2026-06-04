@@ -185,6 +185,17 @@ public sealed class RawCanTcpServer : IAsyncDisposable
         try { bus.RaiseHostConnected(); }
         catch (Exception ex) { log($"[raw-can] HostConnected subscriber threw: {ex.Message}"); }
 
+        // Whatever opened the socket is just a raw-CAN TCP client - could be a
+        // gauge, a logger, a test harness - so don't assume "gauge". Show the
+        // remote endpoint instead; it's the one thing we actually know.
+        // Symmetric with the disconnect message below. StatusText is event-driven
+        // (last message wins), so without a connect message the status bar keeps
+        // showing the stale "disconnected" from the previous session even after a
+        // new client attaches - out of sync with the poll-driven titlebar pill
+        // (ConnectionStatus reads IsConnected on the UI timer).
+        var remote = client.Client.RemoteEndPoint?.ToString() ?? "unknown";
+        bus.OnStatusMessage?.Invoke($"raw-CAN TCP client connected ({remote})");
+
         using (client)
         {
             client.NoDelay = true;                                 // low-latency single frames
@@ -201,9 +212,9 @@ public sealed class RawCanTcpServer : IAsyncDisposable
                     bus.DispatchHostTx(frame, ch);
                 }
             }
-            catch (EndOfStreamException) { /* gauge closed */ }
+            catch (EndOfStreamException) { /* client closed */ }
             catch (OperationCanceledException) { /* shutting down */ }
-            catch (Exception ex) { log($"Raw-CAN gauge error: {ex.Message}"); }
+            catch (Exception ex) { log($"Raw-CAN client error: {ex.Message}"); }
             finally
             {
                 connCts.Cancel();                                  // stop the drain loop
@@ -215,8 +226,8 @@ public sealed class RawCanTcpServer : IAsyncDisposable
                 // bin-replay stop, etc. Subscribers are idempotent.
                 try { bus.RaiseHostDisconnected(); }
                 catch (Exception ex) { log($"[raw-can] HostDisconnected subscriber threw: {ex.Message}"); }
-                bus.OnStatusMessage?.Invoke("Gauge disconnected (raw-CAN TCP)");
-                log("Raw-CAN gauge disconnected.");
+                bus.OnStatusMessage?.Invoke($"raw-CAN TCP client disconnected ({remote})");
+                log("Raw-CAN client disconnected.");
             }
         }
     }

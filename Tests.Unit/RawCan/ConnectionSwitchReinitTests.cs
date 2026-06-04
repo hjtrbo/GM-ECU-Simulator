@@ -9,13 +9,18 @@ using Xunit;
 
 namespace EcuSimulator.Tests.RawCan;
 
-// Flipping the connection type (J2534 <-> raw-CAN TCP) must fully re-initialise
-// every ECU so no session remnants from one transport contaminate the other.
-// The MainViewModel rides the existing mode-switch teardown to do this:
-//   bus.ReplaceNodes(empty) -> ConfigStore.ApplyTo(sameCfg, bus) -> Rebuild().
-// That path is tested here at the bus/config layer (no WPF, no confirm dialog):
-// a node mutated to look like a used session is rebuilt from its config and
-// must come back clean.
+// Switching mode (or connection type) must fully re-initialise every ECU so no
+// session remnants from one transport contaminate the other. There are two
+// distinct teardowns in MainViewModel.ChangeSelection:
+//   - A true MODE change rebuilds from disk:
+//       bus.ReplaceNodes(empty) -> ConfigStore.ApplyTo(cfg, bus) -> Rebuild().
+//   - A connection-type-only flip (same mode) resets each ECU IN PLACE via
+//       EcuViewModel.ResetEcuState (EcuExitLogic.Run + ResetSecurityState),
+//     which keeps the loaded config (and its persona) instead of reloading.
+// This file covers the first path at the bus/config layer (no WPF, no confirm
+// dialog): a node mutated to look like a used session is rebuilt from its config
+// and must come back clean. The in-place reset path is covered by
+// EcuExitLogicPersonaTests (persona retention) and the security reset tests.
 public sealed class ConnectionSwitchReinitTests
 {
     [Fact]

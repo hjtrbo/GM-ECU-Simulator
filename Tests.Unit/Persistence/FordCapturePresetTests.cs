@@ -5,9 +5,12 @@ using Xunit;
 
 namespace EcuSimulator.Tests.Persistence;
 
-// Guards the in-repo preset at `ecu_simulator_config_ford_capture.json` so we
-// catch schema drift before the user has to: tests pre-bake the expected
-// camelCase JSON and round-trip it through ConfigSerializer + ConfigStore.
+// Guards the Ford-capture preset the user actually loads at
+// %LocalAppData%\GmEcuSimulator\config\ford_capture.mode.json so we catch schema
+// drift before the user has to: the tests round-trip it through
+// ConfigSerializer + ConfigStore. This is the live file File > Open points at;
+// keeping the guard on the real artefact (not a stale repo copy) is the whole
+// point - a copy in the repo root drifted out of sync once already.
 //
 // History: the first version of this preset was written with PascalCase
 // keys ("Version", "Ecus", "Name", "PersonaId") and version=1. The serializer
@@ -18,15 +21,13 @@ namespace EcuSimulator.Tests.Persistence;
 // there with zero ECUs and no on-screen indication of why. Hence this test.
 public sealed class FordCapturePresetTests
 {
-    // Repo-relative path. The tests run from
-    // Tests.Unit/bin/Debug/net9.0-windows/, so ../../../../ed back to the repo
-    // root.
+    // The live preset under %LocalAppData%\GmEcuSimulator\config\ - the same
+    // directory ConfigStore.ConfigDirectory resolves to, so this tracks the
+    // file the running app reads, not a repo copy.
     private static string PresetPath()
-    {
-        var dir = Path.GetDirectoryName(typeof(FordCapturePresetTests).Assembly.Location)!;
-        return Path.GetFullPath(Path.Combine(dir,
-            "..", "..", "..", "..", "ecu_simulator_config_ford_capture.json"));
-    }
+        => Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "GmEcuSimulator", "config", "ford_capture.mode.json");
 
     [Fact]
     public void Preset_File_Exists()

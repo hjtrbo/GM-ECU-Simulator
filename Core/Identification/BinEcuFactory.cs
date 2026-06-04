@@ -1,4 +1,5 @@
 using Common.Persistence;
+using Common.Pids;
 using Common.Protocol;
 using Core.Ecu;
 
@@ -116,8 +117,9 @@ public static class BinEcuFactory
             mode22 = Mode22DidBinExtractor.Parse(bytes);
             if (mode22 is not null)
             {
+                var catalogue = Mode22Catalogue();
                 foreach (var pid in mode22.Pids)
-                    node.AddPid(BuildBinPid(pid));
+                    node.AddPid(BuildBinPid(pid, catalogue));
             }
         }
 
@@ -157,9 +159,14 @@ public static class BinEcuFactory
     /// fall back to a zero-filled payload of the correct length. The bin's
     /// LengthBytes is the wire size a real ECU would emit - getting that
     /// right matters even when the data is zero, otherwise the tester sees
-    /// the wrong number of bytes.
+    /// the wrong number of bytes. The flash $22 table holds no name strings,
+    /// so the display name is borrowed from the A2L catalogue via
+    /// <see cref="ResolveName"/>; PIDs the catalogue doesn't list keep the
+    /// "Bin-extracted 0xNNNN" placeholder.
     /// </summary>
-    private static Pid BuildBinPid(Mode22DidBinExtractor.PidExtraction pid)
+    private static Pid BuildBinPid(
+        Mode22DidBinExtractor.PidExtraction pid,
+        IReadOnlyDictionary<ushort, PidLibraryEntry> catalogue)
     {
         var staticBytes = pid.WireBytes.Length == pid.LengthBytes
             ? pid.WireBytes
@@ -168,13 +175,52 @@ public static class BinEcuFactory
         {
             Mode        = PidMode.Mode22,
             Address     = pid.Pid,
-            Name        = $"Bin-extracted 0x{pid.Pid:X4}",
+            Name        = ResolveName(pid.Pid, catalogue),
             Size        = PidSize.Byte,           // unused when LengthBytes is set
             LengthBytes = pid.LengthBytes,
             StaticBytes = staticBytes,
             DataType    = PidDataType.Unsigned,
             Unit        = "",
         };
+    }
+
+    /// <summary>
+    /// The A2L-derived $22 catalogue (<see cref="PidLibrary.Mode22"/>), keyed
+    /// by 2-byte PID. Loaded once per Create and threaded into BuildBinPid so
+    /// every bin record can borrow the programmer-facing name the flash table
+    /// itself doesn't carry. Guarded: the catalogue is an embedded encrypted
+    /// resource, and a decrypt/parse fault must degrade to synthetic names
+    /// rather than abort the whole bin import - so a load failure yields the
+    /// empty map and the "Bin-extracted 0xNNNN" fallback stands.
+    /// </summary>
+    private static IReadOnlyDictionary<ushort, PidLibraryEntry> Mode22Catalogue()
+    {
+        try { return PidLibrary.Mode22; }
+        catch { return EmptyCatalogue; }
+    }
+
+    private static readonly IReadOnlyDictionary<ushort, PidLibraryEntry> EmptyCatalogue
+        = new Dictionary<ushort, PidLibraryEntry>();
+
+    /// <summary>
+    /// Borrow the display name for a bin-extracted $22 PID from the A2L
+    /// catalogue: the curated <see cref="PidLibraryEntry.FriendlyName"/>
+    /// ("Engine Coolant Temperature") when present, else the verbatim A2L
+    /// symbol <see cref="PidLibraryEntry.A2lName"/> ("SfECTI_T_EngCoolCvrtd"),
+    /// else the "Bin-extracted 0xNNNN" placeholder for PIDs the catalogue does
+    /// not list. The flash $22 table carries no name strings, so this is the
+    /// only place a bin row acquires one.
+    /// </summary>
+    private static string ResolveName(
+        ushort pid,
+        IReadOnlyDictionary<ushort, PidLibraryEntry> catalogue)
+    {
+        if (catalogue.TryGetValue(pid, out var entry))
+        {
+            if (!string.IsNullOrWhiteSpace(entry.FriendlyName)) return entry.FriendlyName;
+            if (!string.IsNullOrWhiteSpace(entry.A2lName)) return entry.A2lName;
+        }
+        return $"Bin-extracted 0x{pid:X4}";
     }
 
     /// <summary>

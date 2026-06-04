@@ -584,56 +584,152 @@
                                                   ToolTip="Operating point driving this ECU's live signals. Switching it ramps RPM, load, MAP, MAF, O2 etc. toward the new state - a connected tool sees Mode $01 and any signal-backed $22 PIDs move."/>
                                     </Grid>
 
-                                    <!-- Accel/Decel Sweep knobs. Hidden in the UI - the underlying Sweep* properties
-                                         still drive the scenario; only the editor inputs are collapsed. -->
-                                    <StackPanel Visibility="Collapsed">
-                                        <Grid Margin="0,2">
-                                            <Grid.ColumnDefinitions>
-                                                <ColumnDefinition Width="96"/>
-                                                <ColumnDefinition Width="*"/>
-                                            </Grid.ColumnDefinitions>
-                                            <Label Style="{StaticResource Label.FormPair}" Grid.Column="0" Content="Accel (s)"/>
-                                            <TextBox Grid.Column="1" Margin="0,2" Text="{Binding SweepAccelSeconds, UpdateSourceTrigger=LostFocus, StringFormat=0.#}"
-                                                     ToolTip="Seconds for the rev pull to climb off idle to the rev limiter."/>
-                                        </Grid>
-                                        <Grid Margin="0,2">
-                                            <Grid.ColumnDefinitions>
-                                                <ColumnDefinition Width="96"/>
-                                                <ColumnDefinition Width="*"/>
-                                            </Grid.ColumnDefinitions>
-                                            <Label Style="{StaticResource Label.FormPair}" Grid.Column="0" Content="Limiter (s)"/>
-                                            <TextBox Grid.Column="1" Margin="0,2" Text="{Binding SweepLimiterHoldSeconds, UpdateSourceTrigger=LostFocus, StringFormat=0.#}"
-                                                     ToolTip="Seconds spent bouncing off the rev limiter at the top of the pull (foot flat)."/>
-                                        </Grid>
-                                        <Grid Margin="0,2">
-                                            <Grid.ColumnDefinitions>
-                                                <ColumnDefinition Width="96"/>
-                                                <ColumnDefinition Width="*"/>
-                                            </Grid.ColumnDefinitions>
-                                            <Label Style="{StaticResource Label.FormPair}" Grid.Column="0" Content="Decel (s)"/>
-                                            <TextBox Grid.Column="1" Margin="0,2" Text="{Binding SweepDecelSeconds, UpdateSourceTrigger=LostFocus, StringFormat=0.#}"
-                                                     ToolTip="Seconds for the lifted-throttle coast back down to idle and a standstill, before the loop repeats."/>
-                                        </Grid>
-                                        <Grid Margin="0,2">
-                                            <Grid.ColumnDefinitions>
-                                                <ColumnDefinition Width="96"/>
-                                                <ColumnDefinition Width="*"/>
-                                            </Grid.ColumnDefinitions>
-                                            <Label Style="{StaticResource Label.FormPair}" Grid.Column="0" Content="Crossfade (s)"/>
-                                            <TextBox Grid.Column="1" Margin="0,2" Text="{Binding SweepCrossfadeSeconds, UpdateSourceTrigger=LostFocus, StringFormat=0.##}"
-                                                     ToolTip="Seconds the pull eases in from the previous operating point when the sweep is selected (0 = snap straight to the loop)."/>
-                                        </Grid>
-                                        <Grid Margin="0,2">
-                                            <Grid.ColumnDefinitions>
-                                                <ColumnDefinition Width="96"/>
-                                                <ColumnDefinition Width="*"/>
-                                            </Grid.ColumnDefinitions>
-                                            <Label Style="{StaticResource Label.FormPair}" Grid.Column="0" Content="Limiter cut (rpm)"/>
-                                            <TextBox Grid.Column="1" Margin="0,2" Text="{Binding SweepLimiterCutRpm, UpdateSourceTrigger=LostFocus, StringFormat=0.#}"
-                                                     ToolTip="The +/- rpm the engine bounces by while on the rev limiter (the fuel/spark-cut amplitude). 0 = a steady peg at the limit."/>
-                                        </Grid>
-                                    </StackPanel>
+                                    <!-- AccelDecelSweep timing is fixed at SweepProfile.Default; the per-ECU Sweep*
+                                         editor inputs were retired (they were collapsed and no longer persisted). -->
                                 </WrapPanel>
+                            </Expander>
+                            <Border Style="{StaticResource SectionDivider}"/>
+
+                            <!-- CAN Broadcast: the DBC-driven unsolicited frames this ECU emits while a host session is
+                                 open (the background traffic a passive logger sees). Sits above $01. Nested layout: an
+                                 outer messages grid; selecting a message reveals its signals grid (row details) where
+                                 each field maps to a live engine signal / constant. Import DBC / Save / Load reach the
+                                 MainViewModel via the Window DataContext; Add / Remove message are EcuViewModel commands. -->
+                            <Expander Header="CAN Broadcast" HeaderTemplate="{StaticResource ModeSectionHeader}"
+                                      IsExpanded="False" Margin="0,0,0,10">
+                                <DockPanel>
+                                    <StackPanel DockPanel.Dock="Top" Orientation="Horizontal"
+                                                HorizontalAlignment="Right" Margin="0,0,0,6">
+                                        <Button Content="Import DBC..." Padding="10,4" Margin="0,0,6,0"
+                                                Command="{Binding DataContext.ImportDbcCommand, RelativeSource={RelativeSource AncestorType={x:Type Window}}}"
+                                                ToolTip="Parse a .dbc file, pick the transmitter + messages, and add them to this ECU's broadcast set."/>
+                                        <Button Width="30" Height="26" Padding="0" Margin="0,0,6,0"
+                                                Command="{Binding DataContext.SaveBroadcastsCommand, RelativeSource={RelativeSource AncestorType={x:Type Window}}}"
+                                                ToolTip="Save this ECU's broadcast set to a *.dbc.json file.">
+                                            <TextBlock Text="&#xE74E;" FontFamily="Segoe MDL2 Assets" FontSize="14"
+                                                       HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                        </Button>
+                                        <Button Width="30" Height="26" Padding="0" Margin="0,0,12,0"
+                                                Command="{Binding DataContext.LoadBroadcastsCommand, RelativeSource={RelativeSource AncestorType={x:Type Window}}}"
+                                                ToolTip="Load a *.dbc.json file and replace this ECU's broadcast set.">
+                                            <TextBlock Text="&#xE8E5;" FontFamily="Segoe MDL2 Assets" FontSize="14"
+                                                       HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                        </Button>
+                                        <Button Width="30" Height="26" Padding="0" Margin="0,0,6,0"
+                                                Command="{Binding AddBroadcastCommand}"
+                                                ToolTip="Add a new broadcast message. Set its CAN ID, period and signals after.">
+                                            <TextBlock Text="&#xE710;" FontFamily="Segoe MDL2 Assets" FontSize="14"
+                                                       HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                        </Button>
+                                        <Button Width="30" Height="26" Padding="0"
+                                                Command="{Binding RemoveBroadcastCommand}"
+                                                ToolTip="Remove the selected broadcast message.">
+                                            <TextBlock Text="&#xE74D;" FontFamily="Segoe MDL2 Assets" FontSize="14"
+                                                       HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                        </Button>
+                                    </StackPanel>
+
+                                    <!-- Outer messages grid. Selecting a row reveals its signals via RowDetails. -->
+                                    <DataGrid ItemsSource="{Binding Broadcasts}"
+                                              SelectedItem="{Binding SelectedBroadcast}"
+                                              AutoGenerateColumns="False"
+                                              CanUserAddRows="False"
+                                              CanUserDeleteRows="False"
+                                              CanUserSortColumns="False"
+                                              FontSize="14"
+                                              HeadersVisibility="Column"
+                                              GridLinesVisibility="Horizontal"
+                                              RowDetailsVisibilityMode="Visible"
+                                              MaxHeight="420">
+                                        <!-- The details area is always present; its content collapses to zero height
+                                             unless the row's IsExpanded is set via the chevron column, so a row opens and
+                                             re-collapses on each chevron click (independent of selection). Binding the
+                                             content's Visibility directly is reliable, unlike fighting the DataGrid's own
+                                             per-row DetailsVisibility management. -->
+                                        <DataGrid.Columns>
+                                            <DataGridTemplateColumn Width="30">
+                                                <DataGridTemplateColumn.CellTemplate>
+                                                    <DataTemplate>
+                                                        <Button Command="{Binding ToggleExpandedCommand}"
+                                                                Background="Transparent" BorderThickness="0"
+                                                                Padding="0" Cursor="Hand"
+                                                                ToolTip="Show / hide this message's signals">
+                                                            <TextBlock Text="{Binding ChevronGlyph}"
+                                                                       FontFamily="Segoe MDL2 Assets" FontSize="12"
+                                                                       HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                                        </Button>
+                                                    </DataTemplate>
+                                                </DataGridTemplateColumn.CellTemplate>
+                                            </DataGridTemplateColumn>
+                                            <DataGridCheckBoxColumn Header="On" Width="44"
+                                                                    Binding="{Binding Enabled, UpdateSourceTrigger=PropertyChanged}"/>
+                                            <DataGridTextColumn Header="CAN ID" Width="90"
+                                                                Binding="{Binding CanIdHex, UpdateSourceTrigger=LostFocus}"
+                                                                FontFamily="{StaticResource Font.Mono}"/>
+                                            <DataGridTextColumn Header="Name" Width="*" MinWidth="120"
+                                                                Binding="{Binding Name, UpdateSourceTrigger=LostFocus}"/>
+                                            <DataGridTextColumn Header="DLC" Width="56"
+                                                                Binding="{Binding Dlc, UpdateSourceTrigger=LostFocus}"/>
+                                            <DataGridTextColumn Header="Period (ms)" Width="92"
+                                                                Binding="{Binding PeriodMs, UpdateSourceTrigger=LostFocus}"/>
+                                            <DataGridTextColumn Header="Signals" Width="64" IsReadOnly="True"
+                                                                Binding="{Binding SignalCount}"/>
+                                        </DataGrid.Columns>
+
+                                        <DataGrid.RowDetailsTemplate>
+                                            <DataTemplate>
+                                                <Border Margin="20,4,8,8" Padding="8" CornerRadius="4"
+                                                        BorderBrush="{DynamicResource Border.SubtleBrush}" BorderThickness="1"
+                                                        Visibility="{Binding IsExpanded, Converter={StaticResource BoolToVis}}">
+                                                    <DockPanel>
+                                                        <!-- Signals come from the DBC; the editor maps each to a live
+                                                             source but does not add or remove rows (re-import to change). -->
+                                                        <DataGrid ItemsSource="{Binding Signals}"
+                                                                  AutoGenerateColumns="False"
+                                                                  CanUserAddRows="False"
+                                                                  CanUserDeleteRows="False"
+                                                                  CanUserSortColumns="False"
+                                                                  FontSize="13"
+                                                                  HeadersVisibility="Column"
+                                                                  GridLinesVisibility="Horizontal"
+                                                                  MaxHeight="260">
+                                                            <DataGrid.Columns>
+                                                                <DataGridTextColumn Header="Signal" Width="160"
+                                                                                    Binding="{Binding Name, UpdateSourceTrigger=LostFocus}"/>
+                                                                <DataGridTextColumn Header="Bit" Width="48"
+                                                                                    Binding="{Binding StartBit, UpdateSourceTrigger=LostFocus}"/>
+                                                                <DataGridTextColumn Header="Len" Width="48"
+                                                                                    Binding="{Binding Length, UpdateSourceTrigger=LostFocus}"/>
+                                                                <DataGridTextColumn Header="Ord" Width="64" IsReadOnly="True"
+                                                                                    Binding="{Binding ByteOrderLabel}"/>
+                                                                <DataGridTextColumn Header="Scale" Width="70"
+                                                                                    Binding="{Binding Scale, StringFormat=G, UpdateSourceTrigger=LostFocus}"/>
+                                                                <DataGridTextColumn Header="Offset" Width="64"
+                                                                                    Binding="{Binding Offset, StringFormat=G, UpdateSourceTrigger=LostFocus}"/>
+                                                                <DataGridTextColumn Header="Unit" Width="56"
+                                                                                    Binding="{Binding Unit, UpdateSourceTrigger=LostFocus}"/>
+                                                                <DataGridTemplateColumn Header="Source" Width="150">
+                                                                    <DataGridTemplateColumn.CellTemplate>
+                                                                        <DataTemplate>
+                                                                            <ComboBox ItemsSource="{Binding SourceOptions}"
+                                                                                      DisplayMemberPath="Display"
+                                                                                      SelectedItem="{Binding SelectedSource, UpdateSourceTrigger=PropertyChanged}"
+                                                                                      ToolTip="Where this field's value comes from: (none)=0, Constant=the fixed value, or a live engine signal."/>
+                                                                        </DataTemplate>
+                                                                    </DataGridTemplateColumn.CellTemplate>
+                                                                </DataGridTemplateColumn>
+                                                                <DataGridTextColumn Header="Const" Width="64"
+                                                                                    Binding="{Binding Constant, StringFormat=G, UpdateSourceTrigger=LostFocus}"/>
+                                                                <DataGridTextColumn Header="Live" Width="70" IsReadOnly="True"
+                                                                                    Binding="{Binding LiveValue}"/>
+                                                            </DataGrid.Columns>
+                                                        </DataGrid>
+                                                    </DockPanel>
+                                                </Border>
+                                            </DataTemplate>
+                                        </DataGrid.RowDetailsTemplate>
+                                    </DataGrid>
+                                </DockPanel>
                             </Expander>
                             <Border Style="{StaticResource SectionDivider}"/>
 

@@ -64,36 +64,11 @@ public sealed class SignalSourcePersistenceTests
     }
 
     [Fact]
-    public void EcuDto_DefaultSweepProfile_IsNotPersisted()
+    public void EcuNodeFrom_AlwaysUsesDefaultSweepProfile()
     {
-        // A node left on the default sweep profile stays quiet on disk - every tuning field is null.
-        var dto = ConfigStore.EcuDtoFrom(NodeFactory.CreateNode());
-        Assert.Null(dto.SweepAccelMs);
-        Assert.Null(dto.SweepLimiterHoldMs);
-        Assert.Null(dto.SweepDecelMs);
-        Assert.Null(dto.SweepCrossfadeMs);
-        Assert.Null(dto.SweepLimiterCutRpm);
-    }
-
-    [Fact]
-    public void EcuDto_RoundTrip_PreservesTunedSweepProfile()
-    {
-        var node = NodeFactory.CreateNode();
-        node.EngineModel.Sweep = SweepProfile.Default with
-        {
-            AccelTimeMs = 6000,
-            LimiterHoldMs = 3000,
-            DecelTimeMs = 4000,
-            CrossfadeMs = 250,
-            LimiterBounceRpm = 40,
-        };
-
-        var restored = ConfigStore.EcuNodeFrom(ConfigStore.EcuDtoFrom(node)).EngineModel.Sweep;
-
-        Assert.Equal(6000, restored.AccelTimeMs);
-        Assert.Equal(3000, restored.LimiterHoldMs);
-        Assert.Equal(4000, restored.DecelTimeMs);
-        Assert.Equal(250, restored.CrossfadeMs);
-        Assert.Equal(40, restored.LimiterBounceRpm);
+        // The per-ECU Sweep* override fields were retired: every loaded ECU gets the hard-coded SweepProfile.Default,
+        // regardless of what the config carried. Round-tripping a node leaves the default in place.
+        var restored = ConfigStore.EcuNodeFrom(ConfigStore.EcuDtoFrom(NodeFactory.CreateNode())).EngineModel.Sweep;
+        Assert.Equal(SweepProfile.Default, restored);
     }
 }

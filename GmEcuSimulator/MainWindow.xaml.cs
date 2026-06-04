@@ -444,7 +444,17 @@ public partial class MainWindow : Window
     {
         vm = new MainViewModel(bus, replay, pipeServer, rawCanServer);
         DataContext = vm;
-        bus.NodesChanged += (_, _) => Dispatcher.BeginInvoke(() => vm?.Rebuild());
+        bus.NodesChanged += (_, _) => Dispatcher.BeginInvoke(() =>
+        {
+            vm?.Rebuild();
+            // A new ECU set may carry different broadcasts; refresh the live emitter if a session is up.
+            bus.BroadcastScheduler.RebuildIfRunning();
+        });
+
+        // DBC broadcast emission is meaningful only while a host session is open (frames only land on
+        // an open channel). Start the broadcast scheduler on connect, stop it on disconnect.
+        bus.HostConnected    += () => bus.BroadcastScheduler.RebuildAndStart();
+        bus.HostDisconnected += () => bus.BroadcastScheduler.StopAll();
 
         // Per-session file-log lifecycle. The "Log to file" menu toggle is the
         // user's persisted PREFERENCE; the actual sink lifecycle is tied to
@@ -474,6 +484,7 @@ public partial class MainWindow : Window
                 foreach (var pid in ecu.Pids)
                     pid.RefreshLive(now);
                 ecu.RefreshObd2Live(now);
+                ecu.RefreshBroadcastsLive(now);
                 ecu.RefreshSecurity(nowLong);
             }
             vm.RefreshBinReplayLive();

@@ -93,6 +93,9 @@ public sealed class MainViewModel : NotifyPropertyChangedBase
     public RelayCommand ConfigurePidsCommand { get; }
     public RelayCommand SavePidsCommand { get; }
     public RelayCommand LoadPidsCommand { get; }
+    public RelayCommand ImportDbcCommand { get; }
+    public RelayCommand SaveBroadcastsCommand { get; }
+    public RelayCommand LoadBroadcastsCommand { get; }
     public RelayCommand SaveEcuCommand { get; }
     public RelayCommand LoadEcuCommand { get; }
     public RelayCommand SaveSetupEcuCommand { get; }
@@ -187,6 +190,9 @@ public sealed class MainViewModel : NotifyPropertyChangedBase
         ConfigurePidsCommand         = new RelayCommand(ConfigurePids, CanConfigurePids);
         SavePidsCommand              = new RelayCommand(SaveSetupPids, () => SetupSelectedEcu != null && SetupSelectedEcu.Pids.Count > 0);
         LoadPidsCommand              = new RelayCommand(LoadSetupPids, () => SetupSelectedEcu != null);
+        ImportDbcCommand             = new RelayCommand(ImportDbc, () => SetupSelectedEcu != null);
+        SaveBroadcastsCommand        = new RelayCommand(SaveSetupBroadcasts, () => SetupSelectedEcu != null && SetupSelectedEcu.Broadcasts.Count > 0);
+        LoadBroadcastsCommand        = new RelayCommand(LoadSetupBroadcasts, () => SetupSelectedEcu != null);
         SaveEcuCommand               = new RelayCommand(SaveEcu, () => SelectedEcu != null);
         LoadEcuCommand               = new RelayCommand(LoadEcu, CanAddEcu);
         SaveSetupEcuCommand          = new RelayCommand(SaveSetupEcu,   () => SetupSelectedEcu != null);
@@ -1404,6 +1410,106 @@ public sealed class MainViewModel : NotifyPropertyChangedBase
         settings.Save();
     }
 
+    // ---- CAN broadcast: Import DBC + Save/Load *.dbc.json ----
+
+    // Import a raw .dbc: parse, open the scoped picker (transmitter + message checklist), then replace
+    // the selected ECU's broadcast set with the chosen messages (the DBC owns the set - no merge).
+    private void ImportDbc()
+    {
+        if (SetupSelectedEcu is not { } ecu) return;
+        var settings = AppSettings.Load();
+        var dlg = new OpenFileDialog
+        {
+            Filter = "DBC (*.dbc)|*.dbc|All files|*.*",
+            InitialDirectory = AppSettings.ResolveInitialDir(settings.LastBroadcastDir),
+        };
+        if (dlg.ShowDialog() != true) return;
+
+        Common.Dbc.DbcDatabase db;
+        try { db = Common.Dbc.DbcParser.Parse(File.ReadAllText(dlg.FileName)); }
+        catch (Exception ex) { StatusText = $"Import DBC failed: {ex.Message}"; return; }
+        PersistLastBroadcastDir(settings, dlg.FileName);
+
+        var importVm = new DbcImportViewModel(db, Path.GetFileName(dlg.FileName));
+        var win = new Views.DbcImportWindow
+        {
+            DataContext = importVm,
+            Owner = System.Windows.Application.Current.Windows
+                .OfType<System.Windows.Window>().FirstOrDefault(w => w.IsActive),
+        };
+        if (win.ShowDialog() != true) return;
+
+        var incoming = importVm.BuildSelected();
+        if (incoming.Count == 0) { StatusText = "Import DBC: no messages selected"; return; }
+
+        ecu.Model.ReplaceBroadcasts(incoming);
+        ecu.ReloadBroadcasts();
+        StatusText = $"Imported {incoming.Count} broadcast message(s)";
+    }
+
+    // Save the selected ECU's broadcast set to a standalone *.dbc.json (a flat List<BroadcastMessageDto>),
+    // mirroring Save PIDs. Distinct from a raw .dbc - this is the app's own editable snapshot.
+    private void SaveSetupBroadcasts()
+    {
+        if (SetupSelectedEcu is not { } ecu) return;
+        var settings = AppSettings.Load();
+        var dlg = new SaveFileDialog
+        {
+            Filter = "Broadcast config (*.dbc.json)|*.dbc.json|JSON (*.json)|*.json|All files|*.*",
+            DefaultExt = ".dbc.json",
+            FileName = $"{ecu.Model.Name}.dbc.json",
+            InitialDirectory = AppSettings.ResolveInitialDir(settings.LastBroadcastDir),
+        };
+        if (dlg.ShowDialog() != true) return;
+        try
+        {
+            var list = ecu.Model.Broadcasts.Select(Core.Persistence.ConfigStore.BroadcastMessageDtoFrom).ToList();
+            var json = System.Text.Json.JsonSerializer.Serialize(list, Common.Persistence.ConfigSerializer.Options);
+            File.WriteAllText(dlg.FileName, json);
+            StatusText = $"Saved {list.Count} broadcast message(s) to {Path.GetFileName(dlg.FileName)}";
+            PersistLastBroadcastDir(settings, dlg.FileName);
+        }
+        catch (Exception ex)
+        {
+            StatusText = $"Save broadcasts failed: {ex.Message}";
+        }
+    }
+
+    // Load a *.dbc.json and REPLACE the selected ECU's broadcast set (snapshot-restore, like Load PIDs).
+    private void LoadSetupBroadcasts()
+    {
+        if (SetupSelectedEcu is not { } ecu) return;
+        var settings = AppSettings.Load();
+        var dlg = new OpenFileDialog
+        {
+            Filter = "Broadcast config (*.dbc.json)|*.dbc.json|JSON (*.json)|*.json|All files|*.*",
+            InitialDirectory = AppSettings.ResolveInitialDir(settings.LastBroadcastDir),
+        };
+        if (dlg.ShowDialog() != true) return;
+        try
+        {
+            var json = File.ReadAllText(dlg.FileName);
+            var dtos = System.Text.Json.JsonSerializer.Deserialize<List<Common.Persistence.BroadcastMessageDto>>(
+                           json, Common.Persistence.ConfigSerializer.Options) ?? new();
+            ecu.Model.ReplaceBroadcasts(dtos.Select(Core.Persistence.ConfigStore.BroadcastMessageFrom));
+            ecu.ReloadBroadcasts();
+            StatusText = $"Loaded {dtos.Count} broadcast message(s) from {Path.GetFileName(dlg.FileName)}";
+            PersistLastBroadcastDir(settings, dlg.FileName);
+        }
+        catch (Exception ex)
+        {
+            StatusText = $"Load broadcasts failed: {ex.Message}";
+        }
+    }
+
+    private static void PersistLastBroadcastDir(AppSettings settings, string chosenFile)
+    {
+        var dir = Path.GetDirectoryName(chosenFile);
+        if (string.IsNullOrEmpty(dir)) return;
+        settings.LastBroadcastDir = dir;
+        settings.Save();
+    }
+
     /// <summary>
     /// ECU > Reset State menu handler. Power-cycles every ECU on the bus
     /// (spec-correct $20 ReturnToNormalMode teardown + full $27 re-lock).
@@ -1504,9 +1610,9 @@ public sealed class MainViewModel : NotifyPropertyChangedBase
         if (currentConnection == ConnectionType.RawCanTcp)
         {
             ConnectionStatus =
-                rawCanServer.IsConnected ? "Gauge link: connected"
-              : rawCanServer.IsRunning  ? $"Gauge link: listening :{rawCanServer.Port}"
-              :                           "Gauge link: stopped";
+                rawCanServer.IsConnected ? "Connected"
+              : rawCanServer.IsRunning  ? $"Listening :{rawCanServer.Port}"
+              :                           "Stopped";
         }
         else
         {

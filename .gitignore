@@ -32,8 +32,8 @@ resources/
 # Scratch / output
 *.cjs
 *.txt
-claude-context.md
-CLAUDE.md
+*.md
+!README.md
 
 # docs: PDFs only
 docs/*

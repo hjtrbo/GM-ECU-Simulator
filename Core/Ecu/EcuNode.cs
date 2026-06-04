@@ -354,6 +354,46 @@ public sealed class EcuNode
     /// </summary>
     public void RaisePidsChanged() => PidsChanged?.Invoke(this, EventArgs.Empty);
 
+    // ---- DBC broadcast set ----------------------------------------------------------------------
+    // Unsolicited CAN broadcast messages this ECU emits while a host session is open (driven by
+    // BroadcastScheduler). Lock-guarded with a change event so the scheduler can rebuild its timers
+    // and the editor can rebind, mirroring the PID store shape.
+    private readonly List<BroadcastMessage> broadcasts = new();
+    private readonly Lock broadcastsLock = new();
+
+    /// <summary>Raised after a broadcast message is added, removed, replaced, or edited.</summary>
+    public event EventHandler? BroadcastsChanged;
+
+    /// <summary>Snapshot copy - safe to enumerate cross-thread (e.g. the scheduler tick).</summary>
+    public IReadOnlyList<BroadcastMessage> Broadcasts
+    {
+        get { lock (broadcastsLock) return broadcasts.ToArray(); }
+    }
+
+    public void AddBroadcast(BroadcastMessage msg)
+    {
+        lock (broadcastsLock) broadcasts.Add(msg);
+        BroadcastsChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    public bool RemoveBroadcast(BroadcastMessage msg)
+    {
+        bool removed;
+        lock (broadcastsLock) removed = broadcasts.Remove(msg);
+        if (removed) BroadcastsChanged?.Invoke(this, EventArgs.Empty);
+        return removed;
+    }
+
+    public void ReplaceBroadcasts(IEnumerable<BroadcastMessage> newMessages)
+    {
+        lock (broadcastsLock) { broadcasts.Clear(); broadcasts.AddRange(newMessages); }
+        BroadcastsChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    /// <summary>Notifies subscribers a broadcast message's properties changed in place (period,
+    /// signal mapping, ...) so the scheduler can rebuild its timers.</summary>
+    public void RaiseBroadcastsChanged() => BroadcastsChanged?.Invoke(this, EventArgs.Empty);
+
     /// <summary>Snapshot copy of the identifier map - safe to enumerate cross-thread.</summary>
     public IReadOnlyDictionary<byte, byte[]> Identifiers
     {

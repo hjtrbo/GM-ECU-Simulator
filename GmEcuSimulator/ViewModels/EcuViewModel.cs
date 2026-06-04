@@ -35,6 +35,13 @@ public sealed class EcuViewModel : NotifyPropertyChangedBase
     // Add/Remove/alias-collision logic keeps operating on Pids directly. Order = display order top-to-bottom.
     public IReadOnlyList<PidModeSection> Sections { get; }
 
+    // The DBC-driven CAN broadcast messages this ECU emits, shown in the editor's "CAN Broadcast"
+    // section (above $01). Each wraps a Core BroadcastMessage; edits flow through OnBroadcastEdited so
+    // the live scheduler rebuilds. Import / Save / Load (*.dbc / *.dbc.json) are MainViewModel
+    // commands (they own the file dialogs); Add / Remove message are local commands below.
+    public ObservableCollection<BroadcastMessageViewModel> Broadcasts { get; } = new();
+    private BroadcastMessageViewModel? selectedBroadcast;
+
     public GlitchConfigViewModel Glitch { get; }
     private PidViewModel? selectedPid;
 
@@ -50,6 +57,12 @@ public sealed class EcuViewModel : NotifyPropertyChangedBase
         // stores without churning this ObservableCollection.
         foreach (var pid in model.AllPids) Pids.Add(new PidViewModel(pid, this));
         foreach (var def in J1979Catalogue.All) Obd2Pids.Add(new J1979RowViewModel(def, model));
+        foreach (var msg in model.Broadcasts) Broadcasts.Add(new BroadcastMessageViewModel(msg, this));
+
+        AddBroadcastCommand = new RelayCommand(AddBroadcast);
+        RemoveBroadcastCommand = new RelayCommand(
+            () => { if (SelectedBroadcast != null) RemoveBroadcast(SelectedBroadcast); },
+            () => SelectedBroadcast != null);
 
         // One collapsible section per editable mode. Each builds its own filtered/sorted view over Pids and its own
         // column-filter set; the order here is the editor's top-to-bottom order.
@@ -102,6 +115,63 @@ public sealed class EcuViewModel : NotifyPropertyChangedBase
     /// </summary>
     public void BindBus(Core.Bus.VirtualBus bus) => this.bus = bus;
 
+    // -------- CAN broadcast section --------
+
+    public RelayCommand AddBroadcastCommand { get; private set; } = null!;
+    public RelayCommand RemoveBroadcastCommand { get; private set; } = null!;
+
+    public BroadcastMessageViewModel? SelectedBroadcast
+    {
+        get => selectedBroadcast;
+        set => SetField(ref selectedBroadcast, value);   // RemoveBroadcastCommand re-queries via CommandManager
+    }
+
+    private void AddBroadcast()
+    {
+        // Pick a CAN id not already used by another broadcast on this ECU.
+        var taken = new HashSet<uint>(Broadcasts.Select(b => b.Model.CanId));
+        uint canId = 0x100;
+        while (taken.Contains(canId)) canId++;
+        var msg = new BroadcastMessage { CanId = canId, Name = "New broadcast", Dlc = 8, PeriodMs = 100, Enabled = true };
+        Model.AddBroadcast(msg);
+        var vm = new BroadcastMessageViewModel(msg, this);
+        Broadcasts.Add(vm);
+        SelectedBroadcast = vm;
+        OnBroadcastEdited();
+    }
+
+    public void RemoveBroadcast(BroadcastMessageViewModel vm)
+    {
+        Model.RemoveBroadcast(vm.Model);
+        Broadcasts.Remove(vm);
+        if (ReferenceEquals(selectedBroadcast, vm)) SelectedBroadcast = null;
+        OnBroadcastEdited();
+    }
+
+    // Re-sync the VM collection from the model after a bulk change (DBC import / .dbc.json load /
+    // replace-all). The caller has already mutated Model.Broadcasts.
+    public void ReloadBroadcasts()
+    {
+        Broadcasts.Clear();
+        foreach (var msg in Model.Broadcasts) Broadcasts.Add(new BroadcastMessageViewModel(msg, this));
+        SelectedBroadcast = null;
+        OnBroadcastEdited();
+    }
+
+    // Any broadcast edit: tell the model (so node-level subscribers know) and rebuild the live
+    // scheduler if a host session is currently emitting. No-op on the scheduler when idle.
+    public void OnBroadcastEdited()
+    {
+        Model.RaiseBroadcastsChanged();
+        bus?.BroadcastScheduler.RebuildIfRunning();
+    }
+
+    // 10 Hz live-value refresh for the broadcast signal readouts (driven by MainWindow's timer).
+    public void RefreshBroadcastsLive(double timeMs)
+    {
+        foreach (var b in Broadcasts) b.RefreshLive(Model.EngineModel, timeMs);
+    }
+
     // The operating points the user can drive this ECU through; bound to the Scenario ComboBox in the inspector.
     public ScenarioId[] Scenarios { get; } = Enum.GetValues<ScenarioId>();
 
@@ -138,59 +208,8 @@ public sealed class EcuViewModel : NotifyPropertyChangedBase
         }
     }
 
-    // The three AccelDecelSweep knobs, in seconds for the editor (the model stores ms). Each rebuilds the profile
-    // record with-expression-style so the other fields are preserved; clamped non-negative. PeriodMs = the sum.
-    public double SweepAccelSeconds
-    {
-        get => Model.EngineModel.Sweep.AccelTimeMs / 1000.0;
-        set
-        {
-            Model.EngineModel.Sweep = Model.EngineModel.Sweep with { AccelTimeMs = Math.Max(0, value) * 1000.0 };
-            OnPropertyChanged();
-        }
-    }
-
-    public double SweepLimiterHoldSeconds
-    {
-        get => Model.EngineModel.Sweep.LimiterHoldMs / 1000.0;
-        set
-        {
-            Model.EngineModel.Sweep = Model.EngineModel.Sweep with { LimiterHoldMs = Math.Max(0, value) * 1000.0 };
-            OnPropertyChanged();
-        }
-    }
-
-    public double SweepDecelSeconds
-    {
-        get => Model.EngineModel.Sweep.DecelTimeMs / 1000.0;
-        set
-        {
-            Model.EngineModel.Sweep = Model.EngineModel.Sweep with { DecelTimeMs = Math.Max(0, value) * 1000.0 };
-            OnPropertyChanged();
-        }
-    }
-
-    // Entry cross-fade: how long the pull eases in from the previous operating point when the sweep is selected.
-    public double SweepCrossfadeSeconds
-    {
-        get => Model.EngineModel.Sweep.CrossfadeMs / 1000.0;
-        set
-        {
-            Model.EngineModel.Sweep = Model.EngineModel.Sweep with { CrossfadeMs = Math.Max(0, value) * 1000.0 };
-            OnPropertyChanged();
-        }
-    }
-
-    // Rev-limiter cut: the +/- rpm the engine bounces by while on the limiter (fuel/spark-cut amplitude). In rpm.
-    public double SweepLimiterCutRpm
-    {
-        get => Model.EngineModel.Sweep.LimiterBounceRpm;
-        set
-        {
-            Model.EngineModel.Sweep = Model.EngineModel.Sweep with { LimiterBounceRpm = Math.Max(0, value) };
-            OnPropertyChanged();
-        }
-    }
+    // The AccelDecelSweep rev-pull timing is fixed at SweepProfile.Default for every ECU - it is not editable per
+    // ECU and not persisted. The former Sweep* editor properties (and their collapsed Setup-pane inputs) were retired.
 
     /// <summary>
     /// Called by MainViewModel after the wizard registers a new primed ECU.

@@ -32,17 +32,20 @@ public static class J1979Catalogue
     {
         J1979Encode enc = (engine, _, t, dest) =>
             ValueCodec.Encode(engine.Sample(sig, t), scalar, offset, type, dest.Length, dest);
+
         J1979Decode dec = data =>
         {
             double eng = ReadRaw(data, type) * scalar + offset;
             return unit.Length == 0 ? eng.ToString("0.###") : $"{eng:0.###} {unit}";
         };
+
         return new J1979Pid(pid, length, name, enc, dec);
     }
 
     // E38/E67-realistic gas-V8 selection spanning three support blocks ($00/$20/$40) so the bitmask cascade is real.
     private static readonly J1979Pid[] Defs =
     {
+        // $00-$1F
         new(0x01, 4, "Monitor status since DTCs cleared", EncodeMonitorStatusSinceCleared, DecodeMonitorStatus),
         new(0x03, 2, "Fuel system status",                EncodeFuelSystemStatus,          DecodeFuelSystemStatus),
         AnalogPid(0x04, 1, "Calculated engine load",            SignalId.EngineLoad, PercentScalar, 0, "%"),
@@ -60,21 +63,17 @@ public static class J1979Catalogue
         AnalogPid(0x10, 2, "Mass air flow",                     SignalId.MassAirFlow, 0.01, 0, "g/s"),
         AnalogPid(0x11, 1, "Throttle position",                 SignalId.ThrottlePosition, PercentScalar, 0, "%"),
         new(0x13, 1, "O2 sensors present (2 banks)", (_, s, _, d) => d[0] = s.O2SensorsPresent, DecodeO2Present),
-        new(0x14, 2, "O2 sensor B1S1",
-            EncodeO2(SignalId.O2VoltageBank1Sensor1, SignalId.ShortTermFuelTrimBank1), DecodeO2),
-        new(0x18, 2, "O2 sensor B2S1",
-            EncodeO2(SignalId.O2VoltageBank2Sensor1, SignalId.ShortTermFuelTrimBank2), DecodeO2),
+        new(0x14, 2, "O2 sensor B1S1", EncodeO2(SignalId.O2VoltageBank1Sensor1, SignalId.ShortTermFuelTrimBank1), DecodeO2),
+        new(0x18, 2, "O2 sensor B2S1", EncodeO2(SignalId.O2VoltageBank2Sensor1, SignalId.ShortTermFuelTrimBank2), DecodeO2),
         new(0x1C, 1, "OBD standards conformance", (_, s, _, d) => d[0] = s.ObdStandard, DecodeObdStandard),
         new(0x1F, 2, "Run time since engine start", EncodeRunTime, data => $"{ReadU16(data)} s"),
-
-        new(0x21, 2, "Distance with MIL on",
-            (_, s, _, d) => WriteU16(d, (ushort)(s.MilOn ? 12 : 0)), data => $"{ReadU16(data)} km"),
+        // $20-$3F
+        new(0x21, 2, "Distance with MIL on", (_, s, _, d) => WriteU16(d, (ushort)(s.MilOn ? 12 : 0)), data => $"{ReadU16(data)} km"),
         AnalogPid(0x2F, 1, "Fuel tank level", SignalId.FuelLevel, PercentScalar, 0, "%"),
         new(0x30, 1, "Warm-ups since codes cleared", (_, _, _, d) => d[0] = 40, data => data[0].ToString()),
-        new(0x31, 2, "Distance since codes cleared",
-            (_, _, _, d) => WriteU16(d, 1234), data => $"{ReadU16(data)} km"),
+        new(0x31, 2, "Distance since codes cleared", (_, _, _, d) => WriteU16(d, 1234), data => $"{ReadU16(data)} km"),
         AnalogPid(0x33, 1, "Barometric pressure", SignalId.BarometricPressure, 1, 0, "kPa"),
-
+        // $40-$5F
         new(0x41, 4, "Monitor status this drive cycle", EncodeMonitorStatusThisCycle, _ => "monitors complete"),
         AnalogPid(0x42, 2, "Control module voltage", SignalId.ControlModuleVoltage, 0.001, 0, "V"),
         AnalogPid(0x44, 2, "Commanded equivalence ratio", SignalId.CommandedEquivalenceRatio, 1.0 / 32768.0, 0, "lambda"),

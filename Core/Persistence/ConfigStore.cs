@@ -160,16 +160,15 @@ public static class ConfigStore
         Scenario = node.EngineModel.ActiveScenario == ScenarioId.Idle ? null : node.EngineModel.ActiveScenario,
         // Persist the engine character only when it diverges from the NA default (keeps standard configs quiet).
         EngineModelId = node.EngineModel.Character.Id == EngineCharacterRegistry.DefaultId ? null : node.EngineModel.Character.Id,
-        // Persist each AccelDecelSweep time only when the user has tuned it off the default (keeps standard configs quiet).
-        SweepAccelMs = node.EngineModel.Sweep.AccelTimeMs == SweepProfile.Default.AccelTimeMs ? null : node.EngineModel.Sweep.AccelTimeMs,
-        SweepLimiterHoldMs = node.EngineModel.Sweep.LimiterHoldMs == SweepProfile.Default.LimiterHoldMs ? null : node.EngineModel.Sweep.LimiterHoldMs,
-        SweepDecelMs = node.EngineModel.Sweep.DecelTimeMs == SweepProfile.Default.DecelTimeMs ? null : node.EngineModel.Sweep.DecelTimeMs,
-        SweepCrossfadeMs = node.EngineModel.Sweep.CrossfadeMs == SweepProfile.Default.CrossfadeMs ? null : node.EngineModel.Sweep.CrossfadeMs,
-        SweepLimiterCutRpm = node.EngineModel.Sweep.LimiterBounceRpm == SweepProfile.Default.LimiterBounceRpm ? null : node.EngineModel.Sweep.LimiterBounceRpm,
+        // AccelDecelSweep timing is no longer persisted - it is fixed at SweepProfile.Default for every ECU.
         // Persist only the $01 PIDs the user has turned OFF relative to the
         // built-in E38/E67 default subset (a delta, not the whole map). null
         // when nothing is disabled keeps standard configs quiet.
         Mode1Disabled = ComputeMode1Disabled(node),
+        // Persist the DBC broadcast set only when non-empty (keeps standard configs quiet).
+        Broadcasts = node.Broadcasts.Count > 0
+            ? node.Broadcasts.Select(BroadcastMessageDtoFrom).ToList()
+            : null,
     };
 
     public static EcuNode EcuNodeFrom(EcuDto dto)
@@ -206,20 +205,11 @@ public static class ConfigStore
             // AddPid routes by pid.Mode into the appropriate per-mode store.
             node.AddPid(PidFrom(pidDto));
         }
-        // Restore any tuned AccelDecelSweep timing before the scenario is set; each absent field falls back to the
-        // SweepProfile default so a partially-specified config still loads coherently.
-        if (dto.SweepAccelMs is { } || dto.SweepLimiterHoldMs is { } || dto.SweepDecelMs is { } || dto.SweepCrossfadeMs is { }
-            || dto.SweepLimiterCutRpm is { })
-        {
-            node.EngineModel.Sweep = SweepProfile.Default with
-            {
-                AccelTimeMs = dto.SweepAccelMs ?? SweepProfile.Default.AccelTimeMs,
-                LimiterHoldMs = dto.SweepLimiterHoldMs ?? SweepProfile.Default.LimiterHoldMs,
-                DecelTimeMs = dto.SweepDecelMs ?? SweepProfile.Default.DecelTimeMs,
-                CrossfadeMs = dto.SweepCrossfadeMs ?? SweepProfile.Default.CrossfadeMs,
-                LimiterBounceRpm = dto.SweepLimiterCutRpm ?? SweepProfile.Default.LimiterBounceRpm,
-            };
-        }
+        // Restore the DBC broadcast set (absent -> none).
+        if (dto.Broadcasts is { } broadcasts)
+            node.ReplaceBroadcasts(broadcasts.Select(BroadcastMessageFrom));
+        // AccelDecelSweep timing is fixed at SweepProfile.Default (the EngineModel's field initializer) - no per-ECU
+        // override is read from config. Old configs carrying the retired Sweep* fields load fine; the values are ignored.
         // Restore the engine character (absent / unknown -> the NA default via the registry's fallback).
         node.EngineModel.Character = EngineCharacterRegistry.Create(dto.EngineModelId);
         // Restore the boot operating point for the live signal model (absent -> the engine model's default Idle).
@@ -279,6 +269,72 @@ public static class ConfigStore
         Waveform = WaveformDto.From(pid.WaveformConfig),
         LengthBytes = pid.LengthBytes,
         StaticBytes = BytesToHexString(pid.StaticBytes),
+    };
+
+    // ---- Broadcast (DBC) round-trip. Also the *.dbc.json shape (a flat List<BroadcastMessageDto>). ----
+
+    public static BroadcastMessage BroadcastMessageFrom(BroadcastMessageDto dto)
+    {
+        var msg = new BroadcastMessage
+        {
+            CanId = dto.CanId,
+            Extended = dto.Extended,
+            Name = dto.Name,
+            Dlc = dto.Dlc,
+            PeriodMs = dto.PeriodMs,
+            Enabled = dto.Enabled,
+        };
+        foreach (var s in dto.Signals) msg.Signals.Add(BroadcastSignalFrom(s));
+        return msg;
+    }
+
+    public static BroadcastMessageDto BroadcastMessageDtoFrom(BroadcastMessage msg) => new()
+    {
+        CanId = msg.CanId,
+        Extended = msg.Extended,
+        Name = msg.Name,
+        Dlc = msg.Dlc,
+        PeriodMs = msg.PeriodMs,
+        Enabled = msg.Enabled,
+        Signals = msg.Signals.Select(BroadcastSignalDtoFrom).ToList(),
+    };
+
+    private static BroadcastSignal BroadcastSignalFrom(BroadcastSignalDto dto) => new()
+    {
+        Name = dto.Name,
+        StartBit = dto.StartBit,
+        Length = dto.Length,
+        ByteOrder = dto.ByteOrder,
+        Signed = dto.Signed,
+        Scale = dto.Scale,
+        Offset = dto.Offset,
+        Unit = dto.Unit,
+        Min = dto.Min,
+        Max = dto.Max,
+        Signal = dto.Signal,
+        Constant = dto.Constant,
+        // Explicit source when present; infer otherwise (a signal-backed field stays signal-backed,
+        // else None) so a hand-written .dbc.json without ValueSource still behaves sensibly.
+        ValueSource = dto.ValueSource ?? (dto.Signal.HasValue
+            ? Common.Protocol.BroadcastValueSource.Signal
+            : Common.Protocol.BroadcastValueSource.None),
+    };
+
+    private static BroadcastSignalDto BroadcastSignalDtoFrom(BroadcastSignal s) => new()
+    {
+        Name = s.Name,
+        StartBit = s.StartBit,
+        Length = s.Length,
+        ByteOrder = s.ByteOrder,
+        Signed = s.Signed,
+        Scale = s.Scale,
+        Offset = s.Offset,
+        Unit = s.Unit,
+        Min = s.Min,
+        Max = s.Max,
+        Signal = s.Signal,
+        ValueSource = s.ValueSource,
+        Constant = s.Constant,
     };
 
     private static byte[]? HexStringToBytes(string? hex)

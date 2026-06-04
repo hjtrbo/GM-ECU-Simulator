@@ -26,6 +26,10 @@ public sealed class VirtualBus
     public DpidScheduler Scheduler { get; }
     public TesterPresentTicker Ticker { get; }
     public IdleBusSupervisor IdleSupervisor { get; }
+
+    // Emits the ECUs' DBC-driven CAN broadcast messages via Broadcaster while a host session is open.
+    // Driven by the composition root (RebuildAndStart on HostConnected, StopAll on HostDisconnected).
+    public BroadcastScheduler BroadcastScheduler { get; }
     public double NowMs => clock.Elapsed.TotalMilliseconds;
 
     /// <summary>
@@ -265,6 +269,7 @@ public sealed class VirtualBus
         Scheduler = new DpidScheduler(this);
         Ticker = new TesterPresentTicker(this, Scheduler);
         IdleSupervisor = new IdleBusSupervisor(this, Scheduler);
+        BroadcastScheduler = new BroadcastScheduler(this);
     }
 
     /// <summary>Snapshot copy - safe to enumerate cross-thread.</summary>

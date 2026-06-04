@@ -84,9 +84,13 @@ namespace Common.Persistence;
 // dashboard. Each entry references a PID by (Ecu name, Mode, Address); tiles whose target no longer resolves are
 // pruned on load. Cross-ECU, so it lives at the config root rather than under EcuDto. v1-v16 files load with
 // LiveTiles == null (empty dashboard) and round-trip cleanly; MinSupportedVersion stays 16.
+//
+// v18 added per-ECU EcuDto.Broadcasts - the DBC-driven CAN broadcast set (each a message = arbitration ID + DLC +
+// period carrying bit-packed signals mapped to live engine signals / constants). Additive: v16/v17 files load with
+// Broadcasts == null (no broadcast traffic) and round-trip cleanly; MinSupportedVersion stays 16.
 public sealed class SimulatorConfig
 {
-    public const int CurrentVersion = 17;
+    public const int CurrentVersion = 18;
     public const int MinSupportedVersion = 16;
 
     public int Version { get; set; } = CurrentVersion;
@@ -238,18 +242,9 @@ public sealed class EcuDto
     // field existed loads with the original behaviour unchanged. "boosted-gas-v8" selects the forced-induction model.
     public string? EngineModelId { get; set; }
 
-    // Tunable timing of the AccelDecelSweep rev pull, in milliseconds: climb time, rev-limiter hold, coast time, and
-    // the entry cross-fade. Each is persisted only when it differs from the SweepProfile default (keeps standard
-    // configs quiet); a null falls back to that default on load. Independent of Scenario so a tuned profile survives
-    // even while the ECU boots at Idle.
-    public double? SweepAccelMs { get; set; }
-    public double? SweepLimiterHoldMs { get; set; }
-    public double? SweepDecelMs { get; set; }
-    public double? SweepCrossfadeMs { get; set; }
-
-    // The +/- rpm the engine oscillates by while bouncing off the rev limiter (the fuel/spark-cut amplitude).
-    // Persisted only when it differs from the SweepProfile default; null falls back to that default on load.
-    public double? SweepLimiterCutRpm { get; set; }
+    // The AccelDecelSweep rev-pull timing (climb / limiter-hold / coast / cross-fade / limiter-cut) is no longer
+    // configurable per ECU - it is fixed at SweepProfile.Default. The former Sweep* override fields were retired; old
+    // configs that still carry them deserialise harmlessly (unknown JSON members are ignored).
 
     // The $01 (OBD-II) PIDs this ECU has turned OFF, as a delta against the
     // built-in E38/E67 default supported subset. The advertised $01 set (and
@@ -258,6 +253,56 @@ public sealed class EcuDto
     // as a delta so standard configs stay quiet and the default set can evolve
     // without rewriting every saved ECU.
     public List<byte>? Mode1Disabled { get; set; }
+
+    // DBC-driven CAN broadcast set this ECU emits unsolicited while a J2534 host session is open
+    // (see Core.Scheduler.BroadcastScheduler). Each entry is a CAN message with bit-packed signals
+    // mapped to the live engine model or constants. Null / omitted -> no broadcast traffic; written
+    // only when non-empty so standard configs stay quiet. Imported from a .dbc via the editor or
+    // round-tripped on its own as a *.dbc.json (a flat List<BroadcastMessageDto>).
+    public List<BroadcastMessageDto>? Broadcasts { get; set; }
+}
+
+// One unsolicited CAN broadcast message. CanId is the raw arbitration ID a passive logger sees (not
+// a diagnostic response id). PeriodMs is the free-form transmit period (from the DBC's
+// GenMsgCycleTime, editable). Dlc is the payload length the signals pack into.
+public sealed class BroadcastMessageDto
+{
+    [JsonConverter(typeof(HexUIntConverter))]
+    public required uint CanId { get; set; }
+
+    public required string Name { get; set; }
+    public int Dlc { get; set; } = 8;
+    public int PeriodMs { get; set; } = 100;
+    public bool Enabled { get; set; } = true;
+
+    // 29-bit extended arbitration ID when true (rare on GM/Ford HS buses, but the DBC carries it).
+    public bool Extended { get; set; }
+
+    public List<BroadcastSignalDto> Signals { get; set; } = new();
+}
+
+// One bit-packed signal within a broadcast message. The layout block (StartBit..Max) comes from the
+// DBC SG_ line; the mapping block (Signal / ValueSource / Constant) is how the simulator sources the
+// value at emit time: a live engine SignalId, a fixed Constant, or none (0).
+public sealed class BroadcastSignalDto
+{
+    public required string Name { get; set; }
+    public int StartBit { get; set; }
+    public int Length { get; set; }
+    public Common.Dbc.DbcByteOrder ByteOrder { get; set; } = Common.Dbc.DbcByteOrder.Motorola;
+    public bool Signed { get; set; }
+    public double Scale { get; set; } = 1.0;
+    public double Offset { get; set; }
+    public string Unit { get; set; } = "";
+    public double Min { get; set; }
+    public double Max { get; set; }
+
+    // Live-signal source for this field. Signal sampled from the ECU's EngineModel when ValueSource
+    // == Signal; Constant value when == Constant; 0 when None / null. Null in older files predating
+    // the field -> ConfigStore infers it (a non-null Signal -> Signal, else None).
+    public SignalId? Signal { get; set; }
+    public BroadcastValueSource? ValueSource { get; set; }
+    public double Constant { get; set; }
 }
 
 public sealed class PidDto
