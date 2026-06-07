@@ -10,7 +10,7 @@ namespace EcuSimulator.Tests.Persistence;
 // auto-save dropped the field, the next launch ran with no flash backing,
 // and PCMTec popped "Unknown Vehicle / CONDITIONS_NOT_CORRECT" because $23
 // silently NRC'd $22.
-[Collection(FordCapturePersonaCollection.Name)]
+[Collection(FordUdsPersonaCollection.Name)]
 public sealed class FlashBinPathRoundTripTests
 {
     [Fact]
@@ -23,7 +23,7 @@ public sealed class FlashBinPathRoundTripTests
             PhysicalRequestCanId = 0x7E0,
             UsdtResponseCanId = 0x7E8,
             UudtResponseCanId = 0x5E8,
-            PersonaId = "ford-capture",
+            PersonaId = "ford-uds",
             FlashBinPath = Path,
         };
 
@@ -38,16 +38,16 @@ public sealed class FlashBinPathRoundTripTests
 
             var node = ConfigStore.EcuNodeFrom(dtoIn);
             Assert.Equal(tempPath, node.FlashBinPath);
-            Assert.Equal("ford-capture", node.Persona.Id);
+            Assert.Equal("ford-uds", node.Persona.Id);
 
             var dtoOut = ConfigStore.EcuDtoFrom(node);
             Assert.Equal(tempPath, dtoOut.FlashBinPath);
-            Assert.Equal("ford-capture", dtoOut.PersonaId);
+            Assert.Equal("ford-uds", dtoOut.PersonaId);
         }
         finally
         {
             try { System.IO.File.Delete(tempPath); } catch { }
-            Core.Ecu.Personas.FordCapturePersona.LoadFlashBin((byte[]?)null);
+            Core.Ecu.Personas.FordUdsPersona.LoadFlashBin((byte[]?)null);
         }
     }
 

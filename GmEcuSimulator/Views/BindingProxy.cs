@@ -7,7 +7,7 @@ namespace GmEcuSimulator.Views;
 // DataContext. This Freezable carries the DataContext into the resource
 // dictionary: declare it in DataGrid.Resources with Data="{Binding}", then
 // columns bind through it with an explicit Source. Standard WPF workaround
-// (see the column Header bindings in SetupWindow.xaml).
+// (see the column Header bindings in EcuSetupWindow.xaml).
 public sealed class BindingProxy : Freezable
 {
     protected override Freezable CreateInstanceCore() => new BindingProxy();

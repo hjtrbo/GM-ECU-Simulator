@@ -72,8 +72,29 @@ public sealed class PidModeSection : NotifyPropertyChangedBase
         View.Filter = Matches;
 
         AddCommand    = new RelayCommand(() => parent.AddPid(Mode));
-        RemoveCommand = new RelayCommand(() => { if (SelectedPid != null) parent.RemovePid(SelectedPid); },
-                                         () => SelectedPid != null);
+        RemoveCommand = new RelayCommand(RemoveSelected, CanRemoveSelected);
+    }
+
+    // Delete every row the user has highlighted. The grid is SelectionMode=Extended, so Ctrl/Shift-click builds a
+    // multi-row selection; the Remove button passes the grid's SelectedItems (a live IList) as the command parameter.
+    // We snapshot it to a list first because parent.RemovePid mutates the shared Pids collection, which re-flows this
+    // section's view and would shift the IList out from under the loop. Falls back to SelectedPid when no parameter is
+    // supplied (e.g. a keyboard binding) so single-row removal still works.
+    private void RemoveSelected(object? parameter)
+    {
+        var targets = SelectionToList(parameter);
+        foreach (var pid in targets)
+            parent.RemovePid(pid);
+    }
+
+    private bool CanRemoveSelected(object? parameter)
+        => parameter is System.Collections.IList list ? list.Count > 0 : SelectedPid != null;
+
+    private List<PidViewModel> SelectionToList(object? parameter)
+    {
+        if (parameter is System.Collections.IList list)
+            return list.OfType<PidViewModel>().ToList();
+        return SelectedPid != null ? new List<PidViewModel> { SelectedPid } : new List<PidViewModel>();
     }
 
     // Per-section grid selection. Two-way bound to the section's DataGrid.SelectedItem. When a row is picked here, the

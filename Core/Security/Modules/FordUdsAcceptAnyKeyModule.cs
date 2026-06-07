@@ -4,7 +4,7 @@ using System.Text.Json;
 
 namespace Core.Security.Modules;
 
-// Ford UDS $27 SecurityAccess module for the ford-capture persona's flash path.
+// Ford UDS $27 SecurityAccess module for the ford-uds persona's flash path.
 //
 // Why a dedicated module rather than reusing Gmw3110_2010_Generic:
 //   - Strict mode needs the real seed/key cipher to byte-compare the tester's

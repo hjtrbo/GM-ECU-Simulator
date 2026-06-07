@@ -140,18 +140,18 @@ public sealed class EcuNode
         if (supported) mode1Supported.Add(pid); else mode1Supported.Remove(pid);
     }
 
-    // For ECUs using the ford-capture persona, the path of the flash bin
-    // loaded into FordCapturePersona at config-apply time. Stored here
+    // For ECUs using the ford-uds persona, the path of the flash bin
+    // loaded into FordUdsPersona at config-apply time. Stored here
     // purely so the save path (ConfigStore.EcuDtoFrom) can round-trip the
     // field back to JSON without losing it through a UI save. The persona
     // itself owns the byte array (static singleton); this is a bookkeeping
     // mirror, not a second copy of the data.
     public string? FlashBinPath { get; set; }
 
-    // ---- Flash-timing profile (ford-capture flash-write path) ----
+    // ---- Flash-timing profile (ford-uds flash-write path) ----
     //
     // A simulator answers instantly, so a flash write completes in well under
-    // 10 s; a real PCM takes 30 s+. These two knobs let the ford-capture persona
+    // 10 s; a real PCM takes 30 s+. These two knobs let the ford-uds persona
     // model realistic timing. Both default 0 = instant (no behavioural change,
     // tests stay fast); set them in the editor's Advanced section.
     //
@@ -165,6 +165,16 @@ public sealed class EcuNode
     //   PCMTec aborts on a pending response to the $B1 erase (observed 2026-06-06).
     public int FlashTransferDelayMs { get; set; }
     public int FlashEraseDelayMs { get; set; }
+
+    // When true, a $23 ReadMemoryByAddress that targets RAM - any address range
+    // lying at or beyond the loaded flash bin's length (with no bin loaded the
+    // length is 0, so every address counts) - is answered with a positive $63
+    // reply padded with zero bytes instead of NRC $31 RequestOutOfRange. The
+    // check runs in VirtualBus.DispatchUsdt before the persona dispatch, so it
+    // applies to every persona; in-bin reads still fall through to the persona
+    // (the ford-uds persona serves the real bytes). Default false = the
+    // spec-correct NRC $31 behaviour, so existing configs are unchanged.
+    public bool RamReadReturnsZeros { get; set; }
 
     // The diagnostic dispatch table the ECU presents on the wire RIGHT NOW.
     // Defaults to GMW3110-2010 (what every stock ECU spends its life speaking).

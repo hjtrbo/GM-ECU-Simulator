@@ -44,8 +44,48 @@ public sealed partial class ThemedMessageBox : Window
                 InvalidateMeasure();
                 UpdateLayout();
                 SizeToContent = SizeToContent.WidthAndHeight;
+
+                // Re-centre once the true size is known. WPF resolves
+                // WindowStartupLocation="CenterOwner" against the window's
+                // pre-content size (chrome only), so SizeToContent grows the
+                // dialog AFTER positioning and it lands above/right of centre.
+                // A second ContextIdle pass runs after the WidthAndHeight
+                // re-measure above has settled ActualWidth/ActualHeight, so
+                // the centring maths sees the final dimensions.
+                Dispatcher.BeginInvoke(new Action(CentreOnOwner), DispatcherPriority.ContextIdle);
             }), DispatcherPriority.ContextIdle);
         };
+    }
+
+    // Centre the dialog on its owner (the maximised main shell == the screen),
+    // falling back to the primary screen's work area when there is no owner.
+    private void CentreOnOwner()
+    {
+        double w = ActualWidth, h = ActualHeight;
+        if (w <= 0 || h <= 0)
+            return;
+
+        double areaLeft, areaTop, areaWidth, areaHeight;
+        if (Owner is { } owner && owner.WindowState != WindowState.Minimized && owner.ActualWidth > 0)
+        {
+            // RestoreBounds is empty until the owner has a restore rect, so
+            // prefer the live Left/Top/ActualWidth which are valid even when
+            // the owner is maximised.
+            areaLeft   = owner.Left;
+            areaTop    = owner.Top;
+            areaWidth  = owner.ActualWidth;
+            areaHeight = owner.ActualHeight;
+        }
+        else
+        {
+            areaLeft   = SystemParameters.WorkArea.Left;
+            areaTop    = SystemParameters.WorkArea.Top;
+            areaWidth  = SystemParameters.WorkArea.Width;
+            areaHeight = SystemParameters.WorkArea.Height;
+        }
+
+        Left = areaLeft + (areaWidth  - w) / 2;
+        Top  = areaTop  + (areaHeight - h) / 2;
     }
 
     /// <summary>

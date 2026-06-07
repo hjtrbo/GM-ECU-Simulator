@@ -142,11 +142,12 @@ public static class ConfigStore
         DiagnosticAddress = node.DiagnosticAddress,
         FlashTransferDelayMs = node.FlashTransferDelayMs,
         FlashEraseDelayMs = node.FlashEraseDelayMs,
+        RamReadReturnsZeros = node.RamReadReturnsZeros,
         // Persist persona id only when it diverges from the default
         // (gmw3110). Saves a noisy "PersonaId": "gmw3110" line on every
         // ECU in the standard config and keeps diffs stable.
         PersonaId = node.Persona.Id == "gmw3110" ? null : node.Persona.Id,
-        // FlashBinPath is per-persona (Ford-capture only) and EcuNode
+        // FlashBinPath is per-persona (Ford UDS only) and EcuNode
         // doesn't carry the path back (LoadFlashBin replaces the static
         // bytes on the persona, not on the node). We DO persist the
         // node's user-set FlashBinPath via the side-channel below so a
@@ -188,21 +189,22 @@ public static class ConfigStore
             DiagnosticAddress = dto.DiagnosticAddress,
             FlashTransferDelayMs = dto.FlashTransferDelayMs,
             FlashEraseDelayMs = dto.FlashEraseDelayMs,
+            RamReadReturnsZeros = dto.RamReadReturnsZeros,
         };
         node.SecurityModule = SecurityModuleRegistry.Create(dto.SecurityModuleId);
         node.SecurityModule?.LoadConfig(dto.SecurityModuleConfig);
         // Persona resolution. Missing / unknown -> Gmw3110Persona (the
-        // standard default for every GM ECU). The Ford-capture preset uses
-        // PersonaId = "ford-capture" to swap in the logging dispatcher.
+        // standard default for every GM ECU). The Ford UDS preset uses
+        // PersonaId = "ford-uds" to swap in the logging dispatcher.
         node.Persona = Core.Ecu.Personas.PersonaRegistry.Resolve(dto.PersonaId);
-        // Ford-capture only: load the flash bin if a path was supplied.
+        // Ford UDS only: load the flash bin if a path was supplied.
         // Other personas ignore FlashBinPath. We throw on missing / unreadable
         // so config-load failures are loud - $23 silently NRC-ing against a
         // typo'd path would be confusing on a re-test.
         node.FlashBinPath = dto.FlashBinPath;
-        if (dto.PersonaId == "ford-capture" && !string.IsNullOrWhiteSpace(dto.FlashBinPath))
+        if (dto.PersonaId == "ford-uds" && !string.IsNullOrWhiteSpace(dto.FlashBinPath))
         {
-            Core.Ecu.Personas.FordCapturePersona.LoadFlashBin(dto.FlashBinPath!);
+            Core.Ecu.Personas.FordUdsPersona.LoadFlashBin(dto.FlashBinPath!);
         }
         foreach (var pidDto in dto.Pids)
         {

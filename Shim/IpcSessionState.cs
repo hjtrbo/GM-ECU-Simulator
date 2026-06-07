@@ -10,7 +10,7 @@ namespace Shim.Ipc;
 //
 // Also implements IFrameBroadcaster so Core-side handlers can shove raw
 // CAN frames at every channel without needing a direct reference to the
-// channel collection (Core can't reference Shim). Used by FordCapturePersona
+// channel collection (Core can't reference Shim). Used by FordUdsPersona
 // to emit UUDT broadcasts on 0x6A0/0x6A1 - PCMTec's PASS_FILTER for those
 // IDs lives on a different J2534 channel than the diagnostic request,
 // so the request channel's EnqueueRx doesn't reach it. BroadcastFrame
@@ -43,7 +43,7 @@ public sealed class IpcSessionState : IDisposable, IFrameBroadcaster
         // and runs the same periodic-timer teardown.
         Bus.IdleReset += OnBusIdleReset;
 
-        // Wire the cross-channel broadcaster. Ford-capture persona's UUDT
+        // Wire the cross-channel broadcaster. Ford UDS persona's UUDT
         // emitter uses this to push frames at every channel; each channel's
         // filter table decides delivery.
         Bus.Broadcaster = this;

@@ -90,7 +90,7 @@ public static class SecurityModuleRegistry
                                            id: "gm-bypass-5byte",
                                            behaviour: SecurityModuleBehaviour.BypassAll));
 
-        // Ford UDS accept-any-key module for the ford-capture flash path. Issues
+        // Ford UDS accept-any-key module for the ford-uds flash path. Issues
         // a real (non-zero) seed and accepts whatever key the tester computes -
         // we don't have PCMTec's seed/key algorithm for this PCM, so this is the
         // honest way to walk a Ford flash tool past $27 and into the write

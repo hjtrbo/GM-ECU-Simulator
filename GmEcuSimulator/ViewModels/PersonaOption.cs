@@ -10,7 +10,7 @@ namespace GmEcuSimulator.ViewModels;
 //
 // Only the two shipping dispatch tables are offered here:
 //   "gmw3110"      -> Gmw3110Persona   ("GM Gen 4")
-//   "ford-capture" -> FordCapturePersona ("Ford")
+//   "ford-uds" -> FordUdsPersona ("Ford")
 // uds-kernel is intentionally absent - it is a runtime-only persona swapped in
 // by Service36Handler when a kernel boot-loads, not something a user picks.
 public sealed record PersonaOption(string Id, string Label);

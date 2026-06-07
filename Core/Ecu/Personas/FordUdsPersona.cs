@@ -8,10 +8,10 @@ using System.Text;
 
 namespace Core.Ecu.Personas;
 
-// Ford-capture persona: a write-everything-down-and-reject-everything-politely
+// Ford UDS persona: a write-everything-down-and-reject-everything-politely
 // dispatcher used to elicit PCMTec's request stream when no real Ford ECU is
 // available. Every inbound USDT message is appended to a per-session log file
-// under %LOCALAPPDATA%\GmEcuSimulator\logs\ford-capture\ with full byte hex,
+// under %LOCALAPPDATA%\GmEcuSimulator\logs\ford-uds\ with full byte hex,
 // a best-effort service-name annotation, and the addressing mode (physical /
 // functional). Replies are always NRC $11 ServiceNotSupported on physical
 // requests; functional broadcasts stay silent (spec).
@@ -22,22 +22,22 @@ namespace Core.Ecu.Personas;
 // HostDisconnected events on VirtualBus drive the file rotate so a Reset
 // session lands as its own file.
 //
-// Usage: load the Ford-capture preset config (see
-// `ecu_simulator_config_ford_capture.json` at the repo root) which sets
-// `PersonaId = "ford-capture"` on the single ECU at $7E0/$7E8. Register the
+// Usage: load the Ford UDS preset config (see
+// `ecu_simulator_config_ford_uds.mode.json` at the repo root) which sets
+// `PersonaId = "ford-uds"` on the single ECU at $7E0/$7E8. Register the
 // 32-bit PassThruShim (PCMTec is 32-bit), start GmEcuSimulator, connect from
 // PCMTec. Every request lands in the log file as a new line.
 //
 // Iterate by hand-extending the (sid, prefix) -> response table below as we
 // observe PCMTec's request stream in the log; every other request still hits
 // the default NRC path so we keep observing.
-public sealed class FordCapturePersona : IDiagnosticPersona
+public sealed class FordUdsPersona : IDiagnosticPersona
 {
-    public static readonly FordCapturePersona Instance = new();
-    private FordCapturePersona() { }
+    public static readonly FordUdsPersona Instance = new();
+    private FordUdsPersona() { }
 
-    public string Id => "ford-capture";
-    public string DisplayName => "Ford capture (PCMTec)";
+    public string Id => "ford-uds";
+    public string DisplayName => "Ford UDS (PCMTec)";
 
     // ---- Iteration knobs: Mode 09 identity served from the loaded bin ----
     //
@@ -92,7 +92,7 @@ public sealed class FordCapturePersona : IDiagnosticPersona
 
     /// <summary>Load (or replace) the flash backing for $23 reads. Pass null
     /// to clear and force $23 NRCs. The same bytes back every ECU using the
-    /// ford-capture persona - the persona itself is a singleton.</summary>
+    /// ford-uds persona - the persona itself is a singleton.</summary>
     public static void LoadFlashBin(byte[]? bytes) => flashBin = bytes;
 
     /// <summary>Load the flash backing from a file path. Throws on missing /
@@ -206,7 +206,7 @@ public sealed class FordCapturePersona : IDiagnosticPersona
         }
         catch (Exception ex)
         {
-            Console.Error.WriteLine($"[ford-capture] csv append error: {ex.Message}");
+            Console.Error.WriteLine($"[ford-uds] csv append error: {ex.Message}");
         }
     }
 
@@ -434,7 +434,7 @@ public sealed class FordCapturePersona : IDiagnosticPersona
             {
                 AutoFlush = true,
             };
-            logWriter.WriteLine($"# Ford-capture log opened {DateTime.Now:O} (shim bitness {Bitness})");
+            logWriter.WriteLine($"# Ford UDS log opened {DateTime.Now:O} (shim bitness {Bitness})");
             logWriter.WriteLine($"# Every line: <utcMs>  <dir>  <chan>  <addr>  <stack>  <sid_hex sid_name>  <payload_hex>  <annotation>");
             return currentPath;
         }
@@ -451,7 +451,7 @@ public sealed class FordCapturePersona : IDiagnosticPersona
         if (logWriter == null) return;
         try
         {
-            logWriter.WriteLine($"# Ford-capture log closed {DateTime.Now:O}");
+            logWriter.WriteLine($"# Ford UDS log closed {DateTime.Now:O}");
             logWriter.Dispose();
         }
         catch { /* idempotent close */ }
@@ -481,7 +481,7 @@ public sealed class FordCapturePersona : IDiagnosticPersona
             // upstream, but persona dispatch shouldn't throw on logging errors
             // either. Re-raise into a non-fatal channel by writing to the
             // process console if available.
-            Console.Error.WriteLine($"[ford-capture] log error: {ex.Message}");
+            Console.Error.WriteLine($"[ford-uds] log error: {ex.Message}");
         }
 
         // Spec-correct: functional broadcasts get no reply (every ECU on the
@@ -567,7 +567,7 @@ public sealed class FordCapturePersona : IDiagnosticPersona
             return true;
         }
 
-        // $27 SecurityAccess. The ford-capture persona NRC-$11'd this until now,
+        // $27 SecurityAccess. The ford-uds persona NRC-$11'd this until now,
         // which is exactly where a real Ford flash tool (PCMTec) stalls before
         // programming - see the bus log that motivated Ford-Flash-Support. Route
         // it to the shared Service27Handler so node.SecurityModule drives the
@@ -678,7 +678,7 @@ public sealed class FordCapturePersona : IDiagnosticPersona
         }
 
         // $37 RequestTransferExit. Reply $77 and flush the accumulated $36 stream
-        // to a .bin under the ford-capture log dir (full image: loaded bin's
+        // to a .bin under the ford-uds log dir (full image: loaded bin's
         // block 0 preserved, captured region overlaid at 0x10000).
         if (sid == 0x37)
         {
@@ -729,7 +729,7 @@ public sealed class FordCapturePersona : IDiagnosticPersona
     // ---- internal: flash-write capture ----
 
     /// <summary>
-    /// Flush the accumulated $36 stream to a .bin under the ford-capture log dir
+    /// Flush the accumulated $36 stream to a .bin under the ford-uds log dir
     /// and return its path. When a flash bin is loaded, the output is a full image
     /// (a clone of the loaded bin with the captured <paramref name="count"/> bytes
     /// overlaid at <see cref="FordWritableRegionBase"/>, so block 0 is preserved);
@@ -823,7 +823,7 @@ public sealed class FordCapturePersona : IDiagnosticPersona
         {
             AutoFlush = true,
         };
-        logWriter.WriteLine($"# Ford-capture log opened {DateTime.Now:O} (shim bitness {Bitness}, lazy-init)");
+        logWriter.WriteLine($"# Ford UDS log opened {DateTime.Now:O} (shim bitness {Bitness}, lazy-init)");
     }
 
     private static string ResolveLogDirectory()
@@ -833,7 +833,7 @@ public sealed class FordCapturePersona : IDiagnosticPersona
         // a captured session as one tidy folder.
         string appdata = Environment.GetEnvironmentVariable("LOCALAPPDATA")
                          ?? Path.GetTempPath();
-        return Path.Combine(appdata, "GmEcuSimulator", "logs", "ford-capture");
+        return Path.Combine(appdata, "GmEcuSimulator", "logs", "ford-uds");
     }
 
     private static string Bitness => IntPtr.Size == 8 ? "64" : "32";

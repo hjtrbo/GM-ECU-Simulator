@@ -8,10 +8,10 @@ namespace EcuSimulator.Tests.Bus;
 
 // Phase 6 broadcast plumbing. Covers:
 //   - VirtualBus.Broadcaster is null by default (no IPC session bound).
-//   - FordCapturePersona doesn't crash when bus.Broadcaster is null and
+//   - FordUdsPersona doesn't crash when bus.Broadcaster is null and
 //     EnsureBroadcastStarted fires (timer ticks become no-ops).
 //   - When a IFrameBroadcaster fake is wired, the broadcast tick reaches it.
-[Collection(FordCapturePersonaCollection.Name)]
+[Collection(FordUdsPersonaCollection.Name)]
 public sealed class FrameBroadcasterTests
 {
     private sealed class FakeBroadcaster : IFrameBroadcaster
@@ -28,19 +28,19 @@ public sealed class FrameBroadcasterTests
     }
 
     [Fact]
-    public void FordCapturePersona_BroadcastReachesBroadcaster()
+    public void FordUdsPersona_BroadcastReachesBroadcaster()
     {
         // Wire a fake broadcaster, send an $A1 to register a slot, send $A0
         // to kick off the broadcast loop, sleep a beat, expect a frame.
         // Drives the real TimerOnDelay so the test is integration-flavoured.
-        FordCapturePersona.StopBroadcast();           // clean slate
-        FordCapturePersona.ResetDmrSlotMap();
+        FordUdsPersona.StopBroadcast();           // clean slate
+        FordUdsPersona.ResetDmrSlotMap();
         var bus = new VirtualBus();
         var fake = new FakeBroadcaster();
         bus.Broadcaster = fake;
 
         var node = NodeFactory.CreateNode();
-        node.Persona = FordCapturePersona.Instance;
+        node.Persona = FordUdsPersona.Instance;
         var ch = new ChannelSession
         {
             Id = 1, Protocol = ProtocolID.CAN, Baud = 500_000, Bus = bus,
@@ -60,7 +60,7 @@ public sealed class FrameBroadcasterTests
         // Give the 100ms timer a couple of cycles to fire.
         Thread.Sleep(350);
 
-        FordCapturePersona.StopBroadcast();
+        FordUdsPersona.StopBroadcast();
 
         Assert.NotEmpty(fake.Frames);
         // Each tick emits TWO frames now: one DMR-stream broadcast (0x6A0
@@ -93,7 +93,7 @@ public sealed class FrameBroadcasterTests
     [Fact]
     public void StopBroadcast_IsSafeWhenNothingRunning()
     {
-        FordCapturePersona.StopBroadcast(); // no exception
-        FordCapturePersona.StopBroadcast();
+        FordUdsPersona.StopBroadcast(); // no exception
+        FordUdsPersona.StopBroadcast();
     }
 }

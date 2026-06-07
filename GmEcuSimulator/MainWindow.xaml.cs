@@ -53,7 +53,7 @@ public partial class MainWindow : Window
     // capture, the user toggles "Log to file" - that path retains everything.
     private static readonly ConcurrentQueue<(TextBox Box, string Line)> pendingAppends = new();
     private const int MaxPendingAppends = 20_000;
-    private const int MaxLogLines = 1000;
+    private const int MaxLogLines = 2000;
 
     // Unified file-logging sink. Wraps a FileLogSink and owns the
     // "[HH:mm:ss.fff],[TAG],<content>" line format. Writes go to a dedicated
@@ -529,12 +529,12 @@ public partial class MainWindow : Window
     // and the writer thread is live before the host can issue another J2534
     // call. Only Starts when the user has the menu toggle armed; an unchecked
     // toggle means "don't capture", regardless of host activity.
-    // True when any ECU on the bus is running the Ford-capture persona - the
+    // True when any ECU on the bus is running the Ford UDS persona - the
     // signal that the user wants a faithful wire log written automatically.
     private static bool CapturePersonaActive()
     {
         foreach (var node in App.Bus.Nodes)
-            if (node.Persona.Id == "ford-capture") return true;
+            if (node.Persona.Id == "ford-uds") return true;
         return false;
     }
 
@@ -543,7 +543,7 @@ public partial class MainWindow : Window
         lock (fileLogLifecycleLock)
         {
             hostSessionActive = true;
-            // The ford-capture persona exists to record a host's traffic, so the
+            // The ford-uds persona exists to record a host's traffic, so the
             // wire capture must never depend on the user having armed the "Log to
             // file" toggle - force the complete bus_*.csv on whenever it's active.
             // Every other persona still honours the toggle.
@@ -554,7 +554,7 @@ public partial class MainWindow : Window
             {
                 busLogger.Start(Core.Bus.BusLogger.DefaultPath(), BusConfigBanner.For(App.Bus));
                 if (captureActive && vm?.IsFileLoggingEnabled != true)
-                    AppendSimLog($"[file-log] ford-capture active - auto-started wire capture: {busLogger.CurrentPath}");
+                    AppendSimLog($"[file-log] ford-uds active - auto-started wire capture: {busLogger.CurrentPath}");
             }
             catch (Exception ex)
             {

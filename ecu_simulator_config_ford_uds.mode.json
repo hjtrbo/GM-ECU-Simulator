@@ -1,0 +1,20 @@
+{
+  "version": 17,
+  "description": "PCMTec capture sink - single ECU at $7E0/$7E8 with FordUdsPersona. Mode 09 PID 02 (VIN @0x000100C0) and PID 04 (CalID @0x00010046) are read from the HAEE4UY bin at flashBinPath, so they match what PCMTec cross-checks via $23. Service $23 ReadMemoryByAddress also serves from that bin. Service $27 SecurityAccess uses the ford-uds-accept-any module (real seed, accepts any key) so a Ford flash tool can unlock and proceed into the write services. Every other request is logged to %LOCALAPPDATA%\\GmEcuSimulator\\logs\\ford-uds\\pcmtec_capture_*.log and replied to with NRC $7F SID $11.",
+  "ecus": [
+    {
+      "name": "Ford PCM (capture)",
+      "physicalRequestCanId": "0x7E0",
+      "usdtResponseCanId": "0x7E8",
+      "uudtResponseCanId": "0x5E8",
+      "flowControlBlockSize": 0,
+      "programmedState": 0,
+      "diagnosticAddress": "0x10",
+      "personaId": "ford-uds",
+      "securityModuleId": "ford-uds-accept-any",
+      "securityModuleConfig": { "seedLength": 3 },
+      "flashBinPath": "C:\\Users\\Nathan\\OneDrive\\Cars\\FG XR6T\\Hacks\\PCMtec Data Extraction\\bin\\HAEE4UY.bin",
+      "pids": []
+    }
+  ]
+}

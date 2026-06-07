@@ -10,9 +10,9 @@ namespace GmEcuSimulator.Views;
 // an independent selection (MainViewModel.SetupSelectedEcu) so picking a
 // different ECU in this window doesn't disturb the main window's Selected
 // ECU inspector.
-public partial class SetupWindow : Window
+public partial class EcuSetupWindow : Window
 {
-    public SetupWindow()
+    public EcuSetupWindow()
     {
         InitializeComponent();
         StateChanged += (_, _) => UpdateMaximizeIcon();
@@ -28,7 +28,7 @@ public partial class SetupWindow : Window
 
     // Right-clicking a PID column header opens that column's Excel-style
     // sort/filter popup. The header's DataContext is the column's
-    // PidColumnFilter (bound via EcuProxy in SetupWindow.xaml); opening is just
+    // PidColumnFilter (bound via EcuProxy in EcuSetupWindow.xaml); opening is just
     // flipping its IsOpen, which the popup binds to.
     private void OnColumnHeaderRightClick(object sender, MouseButtonEventArgs e)
     {

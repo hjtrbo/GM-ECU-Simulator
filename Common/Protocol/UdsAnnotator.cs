@@ -12,7 +12,12 @@ namespace Common.Protocol;
 // caller (VirtualBus.LogTx/LogRx/LogRxFiltered) is already on the hot
 // path, so the annotator returns null when the frame isn't recognised
 // rather than throwing; the caller just skips the suffix.
-public static class Gmw3110Annotator
+//
+// Scope: generic UDS / ISO-14229 with GMW3110-2010 as a subset. Alongside
+// the GM enhanced-diag SIDs it recognises plain UDS services ($11 ECUReset,
+// $31 RoutineControl), SAE J1979 Mode 09, and Ford-PCM specifics ($23
+// ReadMemoryByAddress, $B1 ReadBlock) - see Common.Protocol.Service.
+public static class UdsAnnotator
 {
     /// <summary>
     /// Lightweight classifier: true iff the frame is a TesterPresent
@@ -240,9 +245,72 @@ public static class Gmw3110Annotator
                     return $"{head} {sfName}";
                 }
                 return head;
+            case Service.RequestVehicleInformation:  // OBD-II Mode 09 RequestVehicleInformation (Ford PCM)
+                // Request and the $49 positive response both carry the InfoType
+                // in the same byte position (usdt[1]); the response adds a
+                // NumberOfDataItems byte + the data, which the FF/SF hex already
+                // shows, so surfacing just the InfoType keeps the tag scannable.
+                if (usdt.Length >= 2) return $"{head} - {Mode09InfoType(usdt[1])}";
+                return head;
+            case Service.ReadMemoryByAddress:  // ReadMemoryByAddress (Ford UDS): 23 <4B BE addr> <2B BE len>
+                if (!isPositive && usdt.Length == 7)
+                {
+                    uint addr = ((uint)usdt[1] << 24) | ((uint)usdt[2] << 16)
+                              | ((uint)usdt[3] << 8) | usdt[4];
+                    ushort len = (ushort)((usdt[5] << 8) | usdt[6]);
+                    return $"{head} - addr=${addr:X8} len={len}";
+                }
+                // Positive $63: head + the raw bytes the read returned. These are
+                // usually identifier ASCII (VIN / part-number fragments) so show
+                // a quoted string when printable, else hex.
+                if (isPositive && usdt.Length >= 2)
+                    return $"{head} {RenderBytesAsText(usdt.Slice(1))}";
+                return head;
+            case Service.FordReadBlock:  // Ford ReadBlock / flash-erase command (e.g. B1 00 B2 AA)
+                // Both the request and the $F1 positive response echo the same
+                // command bytes; tag them with the trailing payload so an erase
+                // (B1 00 B2 AA) is distinguishable from other $B1 sub-commands.
+                if (usdt.Length >= 2) return $"{head} {HexBytes(usdt.Slice(1))}";
+                return head;
             default:
                 return head;
         }
+    }
+
+    // OBD-II Mode 09 (SAE J1979) InfoType names for the bus-log tag. Unknown
+    // InfoTypes fall back to the raw hex so the line is still self-describing.
+    private static string Mode09InfoType(byte b) => b switch
+    {
+        0x02 => "InfoType $02 (VIN)",
+        0x04 => "InfoType $04 (CalID)",
+        0x06 => "InfoType $06 (CVN)",
+        0x0A => "InfoType $0A (ECUName)",
+        _    => $"InfoType ${b:X2}",
+    };
+
+    // Render a byte span as a quoted ASCII string when every byte is printable,
+    // otherwise as space-separated hex. Used for $23 positive responses, which
+    // return raw flash bytes that are usually identifier ASCII but sometimes
+    // binary (or erased $FF).
+    private static string RenderBytesAsText(ReadOnlySpan<byte> data)
+    {
+        if (data.Length == 0) return "(empty)";
+        foreach (byte b in data)
+            if (b < 0x20 || b > 0x7E) return HexBytes(data);
+        Span<char> chars = stackalloc char[data.Length];
+        for (int i = 0; i < data.Length; i++) chars[i] = (char)data[i];
+        return $"\"{new string(chars)}\"";
+    }
+
+    private static string HexBytes(ReadOnlySpan<byte> data)
+    {
+        var sb = new System.Text.StringBuilder(data.Length * 3);
+        for (int i = 0; i < data.Length; i++)
+        {
+            if (i > 0) sb.Append(' ');
+            sb.Append(data[i].ToString("X2"));
+        }
+        return sb.ToString();
     }
 
     private static string? ServiceName(byte sid) => sid switch
@@ -268,9 +336,15 @@ public static class Gmw3110Annotator
         // GMW3110-2010 does not define them. Testers sometimes probe with UDS
         // services after a $36 DownloadAndExecute when the loaded kernel may
         // speak a different protocol; tagging them helps explain the NRC $11
-        // the dispatcher sends back.
-        0x11                                      => "ECUReset (UDS)",
+        // the dispatcher sends back. The Ford-PCM block below is exercised by
+        // the ford-uds persona (PCMTec): Mode 09 vehicle-info, $23
+        // ReadMemoryByAddress (Ford's 23 <4B addr> <2B len> form, no ALFI),
+        // and the $B1 ReadBlock/flash-erase command. See FordUdsPersona.
+        Service.EcuReset                          => "ECUReset (UDS)",
         Iso14229.Service.RoutineControl           => "RoutineControl (UDS)",
+        Service.RequestVehicleInformation         => "VehicleInfo (Mode09)",
+        Service.ReadMemoryByAddress               => "ReadMemoryByAddress",
+        Service.FordReadBlock                     => "ReadBlock (Ford)",
         _ => null,
     };
 

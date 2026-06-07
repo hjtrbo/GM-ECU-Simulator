@@ -81,11 +81,11 @@ public static class EcuExitLogic
         //     GMW3110 module again from here on.
         //
         //     Gate on the kernel persona specifically: a *configured* persona
-        //     (e.g. ford-capture, loaded from the config file) is user state, not
+        //     (e.g. ford-uds, loaded from the config file) is user state, not
         //     a runtime handover, and must survive an exit/reset. ResetEcuState
         //     funnels through here too - and the gauge-link transport flip calls
         //     ResetEcuState on every ECU - so an unconditional reset silently
-        //     reverted a loaded FordCapturePersona to gmw3110, after which the
+        //     reverted a loaded FordUdsPersona to gmw3110, after which the
         //     capture sink NRC'd PCMTec's Mode $09 ($7F 09 11) instead of
         //     answering VIN/CalID.
         if (node.Persona is UdsKernelPersona)

@@ -214,26 +214,32 @@ public sealed class EcuDto
     [JsonConverter(typeof(HexByteConverter))]
     public byte DiagnosticAddress { get; set; }
 
-    // Flash-timing profile for the ford-capture flash-write path. Both default
+    // Flash-timing profile for the ford-uds flash-write path. Both default
     // 0 = instant. FlashTransferDelayMs delays each $36 response; FlashEraseDelayMs
     // is the modelled $B1 erase duration (driven by $7F B1 78 pending frames).
     // See EcuNode for the full rationale. Optional; absence -> 0.
     public int FlashTransferDelayMs { get; set; }
     public int FlashEraseDelayMs { get; set; }
 
+    // When true, $23 ReadMemoryByAddress requests for addresses beyond the loaded
+    // flash bin (RAM) get a positive zero-filled response instead of NRC $31. See
+    // EcuNode.RamReadReturnsZeros. Default false -> spec-correct NRC, so old
+    // configs load with unchanged behaviour.
+    public bool RamReadReturnsZeros { get; set; }
+
     public List<PidDto> Pids { get; set; } = new();
 
     // Persona / dispatch table this ECU uses for inbound USDT requests.
     // Null or omitted -> "gmw3110" (the default that every GM ECU starts
-    // with). "ford-capture" routes every request through FordCapturePersona,
+    // with). "ford-uds" routes every request through FordUdsPersona,
     // which logs and NRC-replies without consulting any Service*Handler.
     // Resolved via PersonaRegistry on load. New field; absence in older
     // configs is silently treated as "gmw3110".
     public string? PersonaId { get; set; }
 
     // Optional path to a flash bin file backing Service $23 ReadMemoryByAddress
-    // when PersonaId == "ford-capture". The file is loaded once at config-apply
-    // time via FordCapturePersona.LoadFlashBin(path); subsequent $23 requests
+    // when PersonaId == "ford-uds". The file is loaded once at config-apply
+    // time via FordUdsPersona.LoadFlashBin(path); subsequent $23 requests
     // serve directly from those bytes. Use this so PCMTec's flash-cross-check
     // probes (VIN at 0x000100C0, etc.) can complete against the real HAEE4UY
     // contents instead of NRC-ing. Path can be absolute or relative to the

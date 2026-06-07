@@ -784,7 +784,7 @@ public sealed class MainViewModel : NotifyPropertyChangedBase
 
     // "Append description tag" - flips VirtualBus.AnnotateFrames so each
     // bus log line gets a "  ; ServiceName ..." suffix produced by
-    // Gmw3110Annotator. Affects BOTH file and textbox output because the
+    // UdsAnnotator. Affects BOTH file and textbox output because the
     // annotation is computed at the bus layer (one place; one truth).
     private bool logAppendDescriptionTag;
     public bool LogAppendDescriptionTag
@@ -1587,7 +1587,7 @@ public sealed class MainViewModel : NotifyPropertyChangedBase
             setupWindow.Activate();
             return;
         }
-        setupWindow = new Views.SetupWindow
+        setupWindow = new Views.EcuSetupWindow
         {
             DataContext = this,
             Owner = Application.Current?.MainWindow,

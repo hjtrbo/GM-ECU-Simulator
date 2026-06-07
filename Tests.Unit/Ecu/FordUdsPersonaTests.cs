@@ -8,7 +8,7 @@ using Xunit;
 
 namespace EcuSimulator.Tests.Ecu;
 
-// FordCapturePersona covers:
+// FordUdsPersona covers:
 //   - Every USDT request → NRC $7F SID $11 ServiceNotSupported on the wire.
 //   - Persona logs to a file (best-effort, validated by checking that the
 //     file path is non-null after Dispatch).
@@ -19,13 +19,13 @@ namespace EcuSimulator.Tests.Ecu;
 //
 // Test pattern matches Service22HandlerTests: build a node + channel, call
 // Dispatch directly, drain the response queue.
-[Collection(FordCapturePersonaCollection.Name)]
-public sealed class FordCapturePersonaTests
+[Collection(FordUdsPersonaCollection.Name)]
+public sealed class FordUdsPersonaTests
 {
     private static (Core.Ecu.EcuNode node, ChannelSession ch) MakeNodeWithPersona()
     {
         var node = NodeFactory.CreateNode();
-        node.Persona = FordCapturePersona.Instance;
+        node.Persona = FordUdsPersona.Instance;
         var ch = NodeFactory.CreateChannel();
         return (node, ch);
     }
@@ -53,7 +53,7 @@ public sealed class FordCapturePersonaTests
             scheduler: new DpidScheduler(new VirtualBus()),
             stack: DiagnosticStack.Uds);
 
-        Assert.True(claimed, "ford-capture must claim every SID so the bus fallback never fires");
+        Assert.True(claimed, "ford-uds must claim every SID so the bus fallback never fires");
         var resp = TestFrame.DequeueSingleFrameUsdt(ch);
         Assert.Equal(new byte[] { 0x7F, sid, 0x11 }, resp);
         TestFrame.AssertEmpty(ch);
@@ -85,7 +85,7 @@ public sealed class FordCapturePersonaTests
         // contents - multi-frame reassembly with the FC handshake is
         // covered exhaustively in IsoTpTxStateMachineTests.
         // No bin loaded -> the VinFallback string is used.
-        FordCapturePersona.LoadFlashBin((byte[]?)null);
+        FordUdsPersona.LoadFlashBin((byte[]?)null);
         var (node, ch) = MakeNodeWithPersona();
         byte[] usdt = { 0x09, 0x02 };
 
@@ -117,7 +117,7 @@ public sealed class FordCapturePersonaTests
     {
         // 49 04 01 + 16-byte CalID = 19 bytes total. No bin loaded -> the
         // CalIdFallback string ("HAEE4UY") is used.
-        FordCapturePersona.LoadFlashBin((byte[]?)null);
+        FordUdsPersona.LoadFlashBin((byte[]?)null);
         var (node, ch) = MakeNodeWithPersona();
         byte[] usdt = { 0x09, 0x04 };
 
@@ -151,7 +151,7 @@ public sealed class FordCapturePersonaTests
         // carries its prefix ("WX0"), proving the canned string isn't used.
         var fakeBin = new byte[0x20000];
         System.Text.Encoding.ASCII.GetBytes("WX0TESTVIN1234567", 0, 17, fakeBin, 0x100C0);
-        FordCapturePersona.LoadFlashBin(fakeBin);
+        FordUdsPersona.LoadFlashBin(fakeBin);
 
         var (node, ch) = MakeNodeWithPersona();
         byte[] usdt = { 0x09, 0x02 };
@@ -171,7 +171,7 @@ public sealed class FordCapturePersonaTests
         var vinStart = System.Text.Encoding.ASCII.GetString(data, IdBytes + 5, 3);
         Assert.Equal("WX0", vinStart);
 
-        FordCapturePersona.LoadFlashBin((byte[]?)null);
+        FordUdsPersona.LoadFlashBin((byte[]?)null);
     }
 
     [Fact]
@@ -182,7 +182,7 @@ public sealed class FordCapturePersonaTests
         // First Frame carries the strategy prefix ("ZZ9"), not the fallback.
         var fakeBin = new byte[0x20000];
         System.Text.Encoding.ASCII.GetBytes("ZZ9CAL2.HEX", 0, 11, fakeBin, 0x10046);
-        FordCapturePersona.LoadFlashBin(fakeBin);
+        FordUdsPersona.LoadFlashBin(fakeBin);
 
         var (node, ch) = MakeNodeWithPersona();
         byte[] usdt = { 0x09, 0x04 };
@@ -203,14 +203,14 @@ public sealed class FordCapturePersonaTests
         var calIdStart = System.Text.Encoding.ASCII.GetString(data, IdBytes + 5, 3);
         Assert.Equal("ZZ9", calIdStart);
 
-        FordCapturePersona.LoadFlashBin((byte[]?)null);
+        FordUdsPersona.LoadFlashBin((byte[]?)null);
     }
 
     [Fact]
     public void Service23_BinNotLoaded_NrcsConditionsNotCorrect()
     {
         var (node, ch) = MakeNodeWithPersona();
-        FordCapturePersona.LoadFlashBin((byte[]?)null);
+        FordUdsPersona.LoadFlashBin((byte[]?)null);
         byte[] usdt = { 0x23, 0x00, 0x01, 0x00, 0xC0, 0x00, 0x04 };
 
         node.Persona.Dispatch(
@@ -231,7 +231,7 @@ public sealed class FordCapturePersonaTests
         // where 0x100C0 holds "6FPA" (the first 4 chars of the canned VIN).
         var fakeBin = new byte[0x20000];
         System.Text.Encoding.ASCII.GetBytes("6FPA", 0, 4, fakeBin, 0x100C0);
-        FordCapturePersona.LoadFlashBin(fakeBin);
+        FordUdsPersona.LoadFlashBin(fakeBin);
 
         var (node, ch) = MakeNodeWithPersona();
         byte[] usdt = { 0x23, 0x00, 0x01, 0x00, 0xC0, 0x00, 0x04 };
@@ -246,7 +246,7 @@ public sealed class FordCapturePersonaTests
         var resp = TestFrame.DequeueSingleFrameUsdt(ch);
         Assert.Equal(new byte[] { 0x63, 0x36, 0x46, 0x50, 0x41 }, resp);
 
-        FordCapturePersona.LoadFlashBin((byte[]?)null); // tidy up
+        FordUdsPersona.LoadFlashBin((byte[]?)null); // tidy up
     }
 
     [Fact]
@@ -259,7 +259,7 @@ public sealed class FordCapturePersonaTests
         // offset 0x100C0 - the VIN anchor PCMTec is cross-checking.
         var fakeBin = new byte[0x20000];
         System.Text.Encoding.ASCII.GetBytes("6FPA", 0, 4, fakeBin, 0x100C0);
-        FordCapturePersona.LoadFlashBin(fakeBin);
+        FordUdsPersona.LoadFlashBin(fakeBin);
 
         var (node, ch) = MakeNodeWithPersona();
         // VERBATIM from the PCMTec capture, no extra ALFI byte.
@@ -275,14 +275,14 @@ public sealed class FordCapturePersonaTests
         var resp = TestFrame.DequeueSingleFrameUsdt(ch);
         Assert.Equal(new byte[] { 0x63, 0x36, 0x46, 0x50, 0x41 }, resp);
 
-        FordCapturePersona.LoadFlashBin((byte[]?)null);
+        FordUdsPersona.LoadFlashBin((byte[]?)null);
     }
 
     [Fact]
     public void Service23_OutOfRange_Nrcs()
     {
         var fakeBin = new byte[16];
-        FordCapturePersona.LoadFlashBin(fakeBin);
+        FordUdsPersona.LoadFlashBin(fakeBin);
 
         var (node, ch) = MakeNodeWithPersona();
         // Request 4 bytes from 0x100C0 against a 16-byte bin -> overflow.
@@ -295,7 +295,7 @@ public sealed class FordCapturePersonaTests
 
         var resp = TestFrame.DequeueSingleFrameUsdt(ch);
         Assert.Equal(new byte[] { 0x7F, 0x23, 0x31 }, resp); // ROOR
-        FordCapturePersona.LoadFlashBin((byte[]?)null);
+        FordUdsPersona.LoadFlashBin((byte[]?)null);
     }
 
     [Fact]
@@ -306,7 +306,7 @@ public sealed class FordCapturePersonaTests
         // Phase 7: reply is JUST {E1, index} per the PCMTec dev blog
         // wire-format spec; sending the full 7-byte verbatim echo
         // (Phase 5 behaviour) triggered PCMTec's downstream NRE.
-        FordCapturePersona.ResetDmrSlotMap();
+        FordUdsPersona.ResetDmrSlotMap();
         var (node, ch) = MakeNodeWithPersona();
         byte[] usdt = { 0xA1, 0x01, 0x8C, 0x00, 0x3F, 0x90, 0xB8 };
 
@@ -318,7 +318,7 @@ public sealed class FordCapturePersonaTests
 
         var resp = TestFrame.DequeueSingleFrameUsdt(ch);
         Assert.Equal(new byte[] { 0xE1, 0x01 }, resp);
-        Assert.Equal((uint)0x003F90B8, FordCapturePersona.DmrSlotMap[0x01]);
+        Assert.Equal((uint)0x003F90B8, FordUdsPersona.DmrSlotMap[0x01]);
     }
 
     [Fact]
@@ -328,7 +328,7 @@ public sealed class FordCapturePersonaTests
         // {89, 8A, 8B, 8C, 91, 92, 93, 94, 99, 9A, 9B, A1, A2, A9}; each
         // represents a different memory access mode. The handler must not
         // filter on 0x8C.
-        FordCapturePersona.ResetDmrSlotMap();
+        FordUdsPersona.ResetDmrSlotMap();
         var (node, ch) = MakeNodeWithPersona();
         var scheduler = new DpidScheduler(new VirtualBus());
 
@@ -336,13 +336,13 @@ public sealed class FordCapturePersonaTests
         node.Persona.Dispatch(node, alt, ch, false, 0xA1, 0, scheduler, DiagnosticStack.Uds);
         var resp = TestFrame.DequeueSingleFrameUsdt(ch);
         Assert.Equal(new byte[] { 0xE1, 0x02 }, resp);
-        Assert.Equal((uint)0x003F9B70, FordCapturePersona.DmrSlotMap[0x02]);
+        Assert.Equal((uint)0x003F9B70, FordUdsPersona.DmrSlotMap[0x02]);
     }
 
     [Fact]
     public void ServiceA1_MultipleSlots_AllCaptured()
     {
-        FordCapturePersona.ResetDmrSlotMap();
+        FordUdsPersona.ResetDmrSlotMap();
         var (node, ch) = MakeNodeWithPersona();
         var scheduler = new DpidScheduler(new VirtualBus());
 
@@ -362,10 +362,10 @@ public sealed class FordCapturePersonaTests
             Assert.Equal(new byte[] { 0xE1, expected }, resp);
         }
 
-        Assert.Equal((uint)0x003F90B8, FordCapturePersona.DmrSlotMap[0x01]);
-        Assert.Equal((uint)0x003F86EC, FordCapturePersona.DmrSlotMap[0x08]);
-        Assert.Equal((uint)0x003F9B70, FordCapturePersona.DmrSlotMap[0x02]);
-        Assert.Equal((uint)0x003F7B28, FordCapturePersona.DmrSlotMap[0x09]);
+        Assert.Equal((uint)0x003F90B8, FordUdsPersona.DmrSlotMap[0x01]);
+        Assert.Equal((uint)0x003F86EC, FordUdsPersona.DmrSlotMap[0x08]);
+        Assert.Equal((uint)0x003F9B70, FordUdsPersona.DmrSlotMap[0x02]);
+        Assert.Equal((uint)0x003F7B28, FordUdsPersona.DmrSlotMap[0x09]);
     }
 
     [Fact]
@@ -431,7 +431,7 @@ public sealed class FordCapturePersonaTests
     [Fact]
     public void Service27_RequestSeed_ReturnsNonZeroSeedAndInstallsFallbackModule()
     {
-        // The motivating bus log: PCMTec sends $27 and the ford-capture persona
+        // The motivating bus log: PCMTec sends $27 and the ford-uds persona
         // used to NRC $11, stalling the flash. Now the persona installs the Ford
         // accept-any-key module (config left SecurityModuleId null here) and
         // answers with a real seed.
@@ -597,7 +597,7 @@ public sealed class FordCapturePersonaTests
         var bin = new byte[0x20000];
         bin[0x0000] = 0xB0;       // block-0 markers that must survive
         bin[0xFFFF] = 0xB1;
-        FordCapturePersona.LoadFlashBin(bin);
+        FordUdsPersona.LoadFlashBin(bin);
         try
         {
             var (node, ch) = MakeNodeWithPersona();
@@ -618,7 +618,7 @@ public sealed class FordCapturePersonaTests
             Assert.Equal(new byte[] { 0x77, 0x00 }, TestFrame.DequeueSingleFrameUsdt(ch));
             Assert.False(node.State.DownloadActive);
 
-            var path = FordCapturePersona.LastFlashWritePath;
+            var path = FordUdsPersona.LastFlashWritePath;
             Assert.False(string.IsNullOrEmpty(path));
             Assert.True(File.Exists(path!));
             var image = File.ReadAllBytes(path!);
@@ -630,7 +630,7 @@ public sealed class FordCapturePersonaTests
         }
         finally
         {
-            FordCapturePersona.LoadFlashBin((byte[]?)null);
+            FordUdsPersona.LoadFlashBin((byte[]?)null);
         }
     }
 
@@ -638,8 +638,8 @@ public sealed class FordCapturePersonaTests
     public void Dispatch_OpensLogFile()
     {
         var (node, ch) = MakeNodeWithPersona();
-        FordCapturePersona.EndSession(); // clean slate
-        Assert.Null(FordCapturePersona.CurrentLogPath);
+        FordUdsPersona.EndSession(); // clean slate
+        Assert.Null(FordUdsPersona.CurrentLogPath);
 
         node.Persona.Dispatch(
             node, new byte[] { 0x22, 0x01, 0x00 }, ch,
@@ -647,7 +647,7 @@ public sealed class FordCapturePersonaTests
             scheduler: new DpidScheduler(new VirtualBus()),
             stack: DiagnosticStack.Uds);
 
-        var path = FordCapturePersona.CurrentLogPath;
+        var path = FordUdsPersona.CurrentLogPath;
         Assert.False(string.IsNullOrEmpty(path), "lazy-open should have created a log file path");
         Assert.True(File.Exists(path!), $"log file should exist at {path}");
     }

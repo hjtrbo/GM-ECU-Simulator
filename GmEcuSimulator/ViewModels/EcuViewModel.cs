@@ -310,7 +310,7 @@ public sealed class EcuViewModel : NotifyPropertyChangedBase
     /// <summary>
     /// Path of the .bin chosen as this ECU's flash source, backed by the
     /// round-tripping <see cref="EcuNode.FlashBinPath"/>. Set by the bin picker;
-    /// the ford-capture persona reads the bytes to back Service $23.
+    /// the ford-uds persona reads the bytes to back Service $23.
     /// </summary>
     public string? FlashBinPath
     {
@@ -333,8 +333,8 @@ public sealed class EcuViewModel : NotifyPropertyChangedBase
     private void ClearBin()
     {
         FlashBinPath = null;
-        if (Model.Persona.Id == "ford-capture")
-            Core.Ecu.Personas.FordCapturePersona.LoadFlashBin((byte[]?)null);
+        if (Model.Persona.Id == "ford-uds")
+            Core.Ecu.Personas.FordUdsPersona.LoadFlashBin((byte[]?)null);
     }
 
     private void LoadInfoFromBin()
@@ -391,12 +391,12 @@ public sealed class EcuViewModel : NotifyPropertyChangedBase
         }
 
         // The picked bin is also this ECU's flash source: record the path (round-trips
-        // via ConfigStore.FlashBinPath) and, for the ford-capture persona, push the
+        // via ConfigStore.FlashBinPath) and, for the ford-uds persona, push the
         // bytes live so $23 reads serve them this session without a config reload. Done
         // before identity parsing so the flash source sticks even if extraction fails.
         FlashBinPath = picker.FileName;
-        if (Model.Persona.Id == "ford-capture")
-            Core.Ecu.Personas.FordCapturePersona.LoadFlashBin(bytes);
+        if (Model.Persona.Id == "ford-uds")
+            Core.Ecu.Personas.FordUdsPersona.LoadFlashBin(bytes);
 
         var result = Mode1ADidBinExtractor.Parse(bytes);
         if (result == null)
@@ -657,6 +657,24 @@ public sealed class EcuViewModel : NotifyPropertyChangedBase
         }
     }
 
+    /// <summary>
+    /// When ticked, a $23 ReadMemoryByAddress for an address beyond the loaded
+    /// flash bin (RAM) is answered with a positive zero-filled response instead
+    /// of NRC $31 RequestOutOfRange. Applies to every persona. Default off.
+    /// </summary>
+    public bool RamReadReturnsZeros
+    {
+        get => Model.RamReadReturnsZeros;
+        set
+        {
+            if (Model.RamReadReturnsZeros != value)
+            {
+                Model.RamReadReturnsZeros = value;
+                OnPropertyChanged();
+            }
+        }
+    }
+
     // The single "active row" across all sections. The waveform inspector and the per-ECU Remove route through this;
     // each section's grid drives it via NotifySectionSelected. Setting it from code (e.g. after Add) does NOT clear
     // the sections - NotifySectionSelected owns the cross-section deselect.
@@ -888,7 +906,7 @@ public sealed class EcuViewModel : NotifyPropertyChangedBase
     // resolve static properties, so the public surface must be an instance member.
     private static readonly IReadOnlyList<PersonaOption> SharedPersonas = new[]
     {
-        new PersonaOption("ford-capture", "Ford"),
+        new PersonaOption("ford-uds", "Ford"),
         new PersonaOption("gmw3110",      "GM Gen 4"),
     };
 
@@ -903,7 +921,7 @@ public sealed class EcuViewModel : NotifyPropertyChangedBase
     /// <summary>
     /// The persona this single ECU presents on the wire, bound two-way to the
     /// Advanced-tab dropdown. Getter reflects the live Model.Persona (so a
-    /// config load with PersonaId = "ford-capture" shows "Ford"); setter swaps
+    /// config load with PersonaId = "ford-uds" shows "Ford"); setter swaps
     /// the dispatch table on this ECU only and resets its security state, the
     /// same way a security-module change does - a prior persona's unlock must
     /// not leak into the new dispatcher. A runtime-only persona (uds-kernel)

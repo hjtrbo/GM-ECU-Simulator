@@ -24,7 +24,7 @@ public sealed class AppSettings
     /// <summary>When on (and LogToFile is on), [CAN] frame lines reach the file.</summary>
     public bool LogIncludeBusTraffic { get; set; } = true;
 
-    /// <summary>When on, every bus-frame log line is suffixed with a Gmw3110Annotator tag.</summary>
+    /// <summary>When on, every bus-frame log line is suffixed with a UdsAnnotator tag.</summary>
     public bool LogAppendDescriptionTag { get; set; }
 
     /// <summary>

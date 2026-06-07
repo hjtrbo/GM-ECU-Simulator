@@ -117,7 +117,7 @@ public sealed class VirtualBus
 
     /// <summary>
     /// When true, every bus-frame log line is suffixed with a short
-    /// human-readable tag produced by <see cref="Common.Protocol.Gmw3110Annotator"/>
+    /// human-readable tag produced by <see cref="Common.Protocol.UdsAnnotator"/>
     /// (e.g. "  ; SecurityAccess - RequestSeed"). Off by default - testers
     /// who only want raw hex pay no annotation cost on the hot path.
     /// </summary>
@@ -209,7 +209,7 @@ public sealed class VirtualBus
         var canId = CanFrame.ReadId(frame);
         var payload = CanFrame.Payload(frame);
         var (pretty, csv) = FormatFrame(chId, "Rx", canId, payload, hostFiltered: false);
-        bool isTp = Common.Protocol.Gmw3110Annotator.IsTesterPresent(canId, payload);
+        bool isTp = Common.Protocol.UdsAnnotator.IsTesterPresent(canId, payload);
         EmitFrame(chId, canId, payload, pretty, csv, isTp, sink);
     }
 
@@ -221,7 +221,7 @@ public sealed class VirtualBus
         var canId = CanFrame.ReadId(frame);
         var payload = CanFrame.Payload(frame);
         var (pretty, csv) = FormatFrame(chId, "Tx", canId, payload, hostFiltered: false);
-        bool isTp = Common.Protocol.Gmw3110Annotator.IsTesterPresent(canId, payload);
+        bool isTp = Common.Protocol.UdsAnnotator.IsTesterPresent(canId, payload);
         EmitFrame(chId, canId, payload, pretty, csv, isTp, sink);
     }
 
@@ -233,9 +233,13 @@ public sealed class VirtualBus
         var canId = CanFrame.ReadId(frame);
         var payload = CanFrame.Payload(frame);
         var (pretty, csv) = FormatFrame(chId, "Tx", canId, payload, hostFiltered: true);
-        bool isTp = Common.Protocol.Gmw3110Annotator.IsTesterPresent(canId, payload);
+        bool isTp = Common.Protocol.UdsAnnotator.IsTesterPresent(canId, payload);
         EmitFrame(chId, canId, payload, pretty, csv, isTp, sink);
     }
+
+    // Width the byte field is padded to so annotation tags align in a column;
+    // see the comment in FormatFrame for the derivation.
+    private const int AnnotationColumn = 27;
 
     // Builds both the pretty (textbox) and csv (file) representations from
     // the same intermediate data so the annotator is invoked at most once.
@@ -244,11 +248,23 @@ public sealed class VirtualBus
         string bytes = $"{FormatId(canId)} {HexFormat.Bytes(payload)}";
         if (hostFiltered) bytes += " - HOST FILTERED";
         string? annotation = AnnotateFrames
-            ? Common.Protocol.Gmw3110Annotator.Annotate(canId, payload)
+            ? Common.Protocol.UdsAnnotator.Annotate(canId, payload)
             : null;
-        string pretty = annotation != null
-            ? $"[chan {chId}] {direction} {bytes}  ; {annotation}"
-            : $"[chan {chId}] {direction} {bytes}";
+        string pretty;
+        if (annotation != null)
+        {
+            // Pad the byte field to a fixed width so the "; <tag>" annotations
+            // line up in a column across frames. AnnotationColumn covers an
+            // 11-bit ID (3 hex) plus a full 8-byte CAN payload
+            // ("7E0 07 23 00 01 00 C0 00 04" = 27 chars); wider frames (29-bit
+            // IDs or the " - HOST FILTERED" suffix) just push their tag right.
+            string field = bytes.Length < AnnotationColumn ? bytes.PadRight(AnnotationColumn) : bytes;
+            pretty = $"[chan {chId}] {direction} {field}  ; {annotation}";
+        }
+        else
+        {
+            pretty = $"[chan {chId}] {direction} {bytes}";
+        }
         string csv = $"[{direction}],{bytes},{annotation ?? ""}";
         return (pretty, csv);
     }
@@ -440,6 +456,17 @@ public sealed class VirtualBus
         // catch can never raise a second-order exception.
         try
         {
+            // RAM-read fallback (per-ECU opt-in): a $23 ReadMemoryByAddress
+            // targeting an address beyond the loaded flash bin (RAM) gets a
+            // positive zero-filled reply instead of NRC $31 RequestOutOfRange.
+            // Runs before persona dispatch so it applies to every persona;
+            // in-bin reads fall through to the persona's own handler.
+            if (sid == 0x23 && node.RamReadReturnsZeros
+                && TryAnswerRamReadWithZeros(node, usdt, ch))
+            {
+                return;
+            }
+
             // Delegate to the ECU's currently-active persona. Default is
             // Gmw3110Persona; a successful $36 sub $80 DownloadAndExecute
             // swaps it to UdsKernelPersona. A persona returning false means
@@ -470,5 +497,32 @@ public sealed class VirtualBus
                 }
             }
         }
+    }
+
+    // Answer a $23 ReadMemoryByAddress targeting RAM with a positive $63 reply
+    // of <len> zero bytes. Returns true when handled, false when the request
+    // isn't the recognised 7-byte ReadMemoryByAddress shape or the address
+    // range lies wholly inside the loaded flash bin (in which case the persona
+    // serves the real bytes). Request layout (the Ford UDS $23 wire format):
+    //   23 <4-byte BE address> <2-byte BE length>   (7 bytes total)
+    // "RAM" = any byte of the requested range lies at or past the bin length;
+    // with no bin loaded the bin length is 0, so every address is RAM.
+    private static bool TryAnswerRamReadWithZeros(EcuNode node, ReadOnlySpan<byte> usdt, ChannelSession ch)
+    {
+        if (usdt.Length != 7) return false;
+        uint addr = (uint)((usdt[1] << 24) | (usdt[2] << 16) | (usdt[3] << 8) | usdt[4]);
+        ushort len = (ushort)((usdt[5] << 8) | usdt[6]);
+        if (len == 0) return false;
+
+        uint binLength = (uint)Core.Ecu.Personas.FordUdsPersona.FlashBinSize;
+        // Wholly inside the bin -> not RAM; let the persona serve real bytes.
+        // ulong guards against addr+len wrapping for addresses near uint.MaxValue.
+        if ((ulong)addr + len <= binLength) return false;
+
+        var reply = new byte[1 + len];
+        reply[0] = 0x63;                       // 0x23 | 0x40 positive response
+        // reply[1..] stays zero-initialised - the zero-filled RAM payload.
+        node.State.Fragmenter.EnqueueResponse(ch, node.UsdtResponseCanId, reply);
+        return true;
     }
 }

@@ -8,7 +8,7 @@ namespace EcuSimulator.Tests.Security;
 
 // Direct coverage of the Ford accept-any-key $27 module, driven through
 // Service27Handler so the egress wrapper runs end to end. The persona-level
-// integration lives in FordCapturePersonaTests; this file pins the module's
+// integration lives in FordUdsPersonaTests; this file pins the module's
 // own behaviour: config-driven seed width / fixed seed, accept-any unlock, the
 // already-unlocked zero-seed convention, and malformed-config fallback.
 public sealed class FordUdsAcceptAnyKeyModuleTests

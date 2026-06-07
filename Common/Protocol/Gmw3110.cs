@@ -28,6 +28,18 @@ public static class Service
     public const byte ReadDataByPacketIdentifier = 0xAA;      // $AA - periodic DPID
     public const byte RequestDeviceControl = 0xAE;            // $AE - CPID-based device control (§8.21)
 
+    // ---- Generic UDS / Ford-PCM services ----
+    // GMW3110 is now treated as a subset of generic UDS; these SIDs are not part
+    // of the GMW3110-2010 enhanced-diag set but show up on the UDS-stack
+    // dispatcher (real E38/E67 silicon) or on Ford PCMs (ford-uds persona),
+    // so the shared service table recognises them too. Names follow ISO-14229 /
+    // SAE J1979 where applicable. RoutineControl ($31) is defined alongside the
+    // SPS-kernel uses in Iso14229.Service - reference that one, not a duplicate.
+    public const byte RequestVehicleInformation = 0x09;       // $09 - SAE J1979 OBD-II Mode 09 (VIN/CalID/CVN)
+    public const byte EcuReset = 0x11;                        // $11 - UDS ECUReset
+    public const byte ReadMemoryByAddress = 0x23;             // $23 - UDS ReadMemoryByAddress (Ford: 23 <4B addr><2B len>, no ALFI)
+    public const byte FordReadBlock = 0xB1;                   // $B1 - Ford ReadBlock / flash-erase command
+
     // Positive response = request + 0x40
     public const byte NegativeResponse = 0x7F;
 

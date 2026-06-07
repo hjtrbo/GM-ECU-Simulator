@@ -1,4 +1,4 @@
-<Window x:Class="GmEcuSimulator.Views.SetupWindow"
+<Window x:Class="GmEcuSimulator.Views.EcuSetupWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:conv="clr-namespace:GmEcuSimulator.Converters"
@@ -121,7 +121,7 @@
              (set via the column's Header binding). Shows the title, a magnifying
              glass when a filter is active, and a right-click popup with sort
              asc/desc, a filter box, and clear. Right-click is handled in
-             SetupWindow.xaml.cs (OnColumnHeaderRightClick), which opens the popup
+             EcuSetupWindow.xaml.cs (OnColumnHeaderRightClick), which opens the popup
              by setting the filter's IsOpen. -->
         <DataTemplate x:Key="PidColumnHeader">
             <Grid Background="Transparent"
@@ -819,18 +819,22 @@
                                                     </Button>
                                                     <Button Width="30" Height="26" Padding="0"
                                                             Command="{Binding RemoveCommand}"
-                                                            ToolTip="Remove the selected row in this section.">
+                                                            CommandParameter="{Binding SelectedItems, ElementName=SectionPidGrid}"
+                                                            ToolTip="Remove the selected row(s) in this section. Ctrl/Shift-click to select multiple rows first.">
                                                         <TextBlock Text="&#xE74D;" FontFamily="Segoe MDL2 Assets" FontSize="14"
                                                                    HorizontalAlignment="Center" VerticalAlignment="Center"/>
                                                     </Button>
                                                 </StackPanel>
 
-                                                <DataGrid ItemsSource="{Binding View}"
+                                                <DataGrid x:Name="SectionPidGrid"
+                                                          ItemsSource="{Binding View}"
                                                           SelectedItem="{Binding SelectedPid}"
                                                           AutoGenerateColumns="False"
                                                           CanUserAddRows="False"
                                                           CanUserDeleteRows="False"
                                                           CanUserSortColumns="False"
+                                                          SelectionMode="Extended"
+                                                          SelectionUnit="FullRow"
                                                           FontSize="14"
                                                           HeadersVisibility="Column"
                                                           GridLinesVisibility="Horizontal"
@@ -1143,6 +1147,8 @@
                                 <RowDefinition Height="Auto"/>
                                 <RowDefinition Height="Auto"/>
                                 <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
                             </Grid.RowDefinitions>
 
                             <!-- ISO 15765-2 FlowControl BlockSize. The ECU
@@ -1163,7 +1169,7 @@
 
                             <!-- Persona (diagnostic dispatch table) picker for
                                  THIS ECU. "GM Gen 4" = the GMW3110 stack;
-                                 "Ford" = the Ford-capture (PCMTec) dispatcher.
+                                 "Ford" = the Ford UDS (PCMTec) dispatcher.
                                  Binds EcuViewModel.SelectedPersonaOption, which
                                  swaps Model.Persona on this ECU only and resets
                                  its security state - it does NOT touch the other
@@ -1176,7 +1182,7 @@
                                       ItemsSource="{Binding AvailablePersonas}"
                                       SelectedItem="{Binding SelectedPersonaOption}"
                                       DisplayMemberPath="Label"
-                                      ToolTip="Diagnostic dispatch table this ECU presents on the wire. GM Gen 4 = the GMW3110 stack; Ford = the Ford-capture (PCMTec) dispatcher. Applies to this ECU only and resets its security state."/>
+                                      ToolTip="Diagnostic dispatch table this ECU presents on the wire. GM Gen 4 = the GMW3110 stack; Ford = the Ford UDS (PCMTec) dispatcher. Applies to this ECU only and resets its security state."/>
 
                             <!-- $27 SecurityAccess module picker. Identical
                                  wiring to the MainWindow Selected-ECU pane's
@@ -1205,7 +1211,7 @@
                                  28x22 glyph pattern (Segoe MDL2 Assets) so the two rows share a control vocabulary.
                                  The bin is both this ECU's identity source (the picker inspects the readback and
                                  prompts before overwriting placeholder VIN / part numbers) and its flash source
-                                 (Service $23 reads, ford-capture persona). -->
+                                 (Service $23 reads, ford-uds persona). -->
                             <Grid Grid.Row="4" Grid.Column="0" Grid.ColumnSpan="2">
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="*"/>
@@ -1243,7 +1249,7 @@
                             <!-- Flash-timing knobs. A simulator answers instantly (a flash finishes in
                                  <10 s); a real PCM takes 30 s+. These let any persona model realistic
                                  timing. Both default 0 = instant. Honoured by every flash path
-                                 (Ford-capture $B1/$36 and GM SPS $31/$36). -->
+                                 (Ford UDS $B1/$36 and GM SPS $31/$36). -->
                             <Border Grid.Row="6" Grid.Column="0" Grid.ColumnSpan="2"
                                     Style="{StaticResource SectionDivider}" Margin="0,16,0,10"/>
 
@@ -1261,6 +1267,18 @@
                                      Text="{Binding FlashEraseDelayMs, UpdateSourceTrigger=LostFocus}"
                                      FontFamily="{StaticResource Font.Mono}"
                                      ToolTip="Modelled erase time (ms). The erase positive response is simply deferred by this much - the ECU goes quiet then answers when done (no ResponsePending; PCMTec rejects a pending reply to the $B1 erase). 0 = instant."/>
+
+                            <!-- RAM-read fallback. When ticked, a $23 ReadMemoryByAddress that
+                                 targets an address beyond the loaded bin (RAM) is answered with a
+                                 positive zero-filled response instead of NRC $31 RequestOutOfRange.
+                                 Applies to every persona; in-bin reads still serve the real bytes. -->
+                            <Border Grid.Row="9" Grid.Column="0" Grid.ColumnSpan="2"
+                                    Style="{StaticResource SectionDivider}" Margin="0,16,0,10"/>
+
+                            <CheckBox Grid.Row="10" Grid.Column="0" Grid.ColumnSpan="2" Margin="0,2"
+                                      Content="Answer RAM reads with zeros"
+                                      IsChecked="{Binding RamReadReturnsZeros}"
+                                      ToolTip="When ticked, a $23 ReadMemoryByAddress for an address past the loaded bin's length (RAM) returns a positive response padded with 0x00 bytes instead of NRC $31 RequestOutOfRange. Applies to every persona; addresses inside the bin still read the real bytes."/>
                         </Grid>
                     </ScrollViewer>
                 </DockPanel>

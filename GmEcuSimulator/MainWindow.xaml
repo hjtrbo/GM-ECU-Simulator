@@ -310,7 +310,7 @@
                               StaysOpenOnClick="True"
                               IsChecked="{Binding LogAppendDescriptionTag, Mode=TwoWay}"
                               IsEnabled="{Binding IsFileLoggingEnabled}"
-                              ToolTip="Suffix every bus-frame line with a short human-readable tag (e.g. 'SecurityAccess - RequestSeed', 'ISO-TP FF (3110B) - TransferData @ 003FAFE0'). Tag is produced by Gmw3110Annotator from the raw bytes."/>
+                              ToolTip="Suffix every bus-frame line with a short human-readable tag (e.g. 'SecurityAccess - RequestSeed', 'ISO-TP FF (3110B) - TransferData @ 003FAFE0'). Tag is produced by UdsAnnotator from the raw bytes."/>
                     <MenuItem Header="_Collapse bulk transfers"
                               IsCheckable="True"
                               StaysOpenOnClick="True"

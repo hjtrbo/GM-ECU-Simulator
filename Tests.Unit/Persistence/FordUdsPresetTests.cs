@@ -6,8 +6,8 @@ using Xunit;
 
 namespace EcuSimulator.Tests.Persistence;
 
-// Guards the Ford-capture preset the user actually loads at
-// %LocalAppData%\GmEcuSimulator\config\ford_capture.mode.json so we catch schema
+// Guards the Ford UDS preset the user actually loads at
+// %LocalAppData%\GmEcuSimulator\config\ford_uds.mode.json so we catch schema
 // drift before the user has to: the tests round-trip it through
 // ConfigSerializer + ConfigStore. This is the live file File > Open points at;
 // keeping the guard on the real artefact (not a stale repo copy) is the whole
@@ -20,8 +20,8 @@ namespace EcuSimulator.Tests.Persistence;
 // passed the range check while the PascalCase keys silently deserialised to
 // every property's default value, including Ecus=[]. The simulator then sat
 // there with zero ECUs and no on-screen indication of why. Hence this test.
-[Collection(FordCapturePersonaCollection.Name)]
-public sealed class FordCapturePresetTests
+[Collection(FordUdsPersonaCollection.Name)]
+public sealed class FordUdsPresetTests
 {
     // The live preset under %LocalAppData%\GmEcuSimulator\config\ - the same
     // directory ConfigStore.ConfigDirectory resolves to, so this tracks the
@@ -29,13 +29,13 @@ public sealed class FordCapturePresetTests
     private static string PresetPath()
         => Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-            "GmEcuSimulator", "config", "ford_capture.mode.json");
+            "GmEcuSimulator", "config", "ford_uds.mode.json");
 
     [Fact]
     public void Preset_File_Exists()
     {
         Assert.True(File.Exists(PresetPath()),
-            $"Ford-capture preset missing at {PresetPath()}");
+            $"Ford UDS preset missing at {PresetPath()}");
     }
 
     [Fact]
@@ -53,16 +53,16 @@ public sealed class FordCapturePresetTests
         Assert.Equal((ushort)0x7E0, ecu.PhysicalRequestCanId);
         Assert.Equal((ushort)0x7E8, ecu.UsdtResponseCanId);
         Assert.Equal((ushort)0x5E8, ecu.UudtResponseCanId);
-        Assert.Equal("ford-capture", ecu.PersonaId);
+        Assert.Equal("ford-uds", ecu.PersonaId);
     }
 
     [Fact]
-    public void Preset_Builds_Node_With_FordCapturePersona()
+    public void Preset_Builds_Node_With_FordUdsPersona()
     {
         var json = File.ReadAllText(PresetPath());
         var cfg = ConfigSerializer.Deserialize(json);
         var node = ConfigStore.EcuNodeFrom(cfg.Ecus[0]);
 
-        Assert.Same(FordCapturePersona.Instance, node.Persona);
+        Assert.Same(FordUdsPersona.Instance, node.Persona);
     }
 }
