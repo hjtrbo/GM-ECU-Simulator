@@ -38,13 +38,9 @@ namespace Core.Dps;
 // "Auto-populate" buttons mutating the Phase3Manifest -> zero stub. No
 // splice, no donor walker, no family detection from a donor.
 //
-// Security module selection: if the utility-file script's first $27
-// instruction carries a non-zero algorithm-id byte (AC1), the prime
-// picks gm-e92-5byte with that algoId so the simulator computes the
-// algorithmically-correct key. If AC1 is zero (= ones-complement
-// default) or the script has no $27 step, the prime falls back to
-// gm-bypass-2byte, which emits a random seed and unlocks straight
-// through.
+// Security selectors are retained as metadata. They do not establish an ECU
+// family, cipher implementation or seed width. Automatic imports use a module
+// that rejects access until the user explicitly selects a supported model.
 public static class ArchivePrimer
 {
     // VIN charset is [A-HJ-NPR-Z0-9] (no I/O/Q to avoid confusion with 1/0).
@@ -110,13 +106,13 @@ public static class ArchivePrimer
         var vin = ResolveVinFromFilename(archive.ArchivePath);
         var expectedValues = new ExpectedValueTable(utility.Routines);
         var expectedRequests = ExpectedRequestLog.Build(utility.Instructions);
-        var flags = BuildFlagList(utility, expectedValues);
+        var securitySelection = UtilitySecuritySelection.Inspect(utility);
+        var flags = BuildFlagList(utility, expectedValues)
+            .Append(securitySelection.Summary).ToList();
         var solverResult = PidResponseSolver.Compute(utility, pids);
         var phase3 = Phase3Extractor.Build(utility, solverResult, pids);
 
         var calBlocks = BuildCalBlocks(archive.CalibrationFilePaths, utility);
-
-        var (securityModuleId, securityModuleConfig) = PickSecurityModule(utility);
 
         var report = new PrimeReport(
             ArchivePath: archiveZipPath,
@@ -128,15 +124,15 @@ public static class ArchivePrimer
             Family: null,                       // donor-free: family unknown
             OsPartNumber: archiveHeader?.OsPartNumber,
             OsAlphaCode: archiveHeader?.AlphaCode,
-            SecurityModuleId: securityModuleId,
-            SecurityModuleConfig: securityModuleConfig,
+            SecurityModuleId: UtilitySecuritySelection.UnresolvedModuleId,
+            SecurityModuleConfig: null,
             IdentifierDidCount: 0,              // bin walker dropped
             PidsKnownFromBin: pids.Count,
             PidsSatisfiedFromBin: 0,
             PidsSatisfiedFromArchive: solverResult.Responses.Count,
             PidsReturningNrc: Math.Max(0, pids.Count - solverResult.Responses.Count),
             CalBlocks: calBlocks,
-            Flags: flags);
+            Flags: flags) { SecuritySelection = securitySelection };
 
         return new PrimedDataset(
             Report: report,
@@ -258,34 +254,6 @@ public static class ArchivePrimer
                 Unit        = "",
             });
         }
-    }
-
-    // Decide which security module to install for the primed ECU. The
-    // utility-file $27 instruction encodes the algorithm-id in Action[1]
-    // (per the GM Class 2 Interpreter 1 spec): 0x00 = ones-complement
-    // default (no per-family math required), anything else is a real
-    // algorithm id. We pick gm-e92-5byte + algoId for the real cases
-    // and fall through to gm-bypass-2byte otherwise.
-    private static (string ModuleId, JsonElement? Config) PickSecurityModule(UtilityFile uf)
-    {
-        const string BypassId = "gm-bypass-2byte";
-        const string StrictId = "gm-e92-5byte";
-
-        foreach (var instr in uf.Instructions)
-        {
-            if (instr.OpCode != 0x27) continue;
-            if (instr.Action is null || instr.Action.Length < 2) continue;
-
-            byte algoId = instr.Action[1];
-            if (algoId == 0) return (BypassId, null);
-
-            var cfg = JsonSerializer.SerializeToElement(new { algoId = $"0x{algoId:X2}" });
-            return (StrictId, cfg);
-        }
-
-        // No $27 in the script: tester won't request security, so the
-        // choice is cosmetic. Keep the bypass for back-compatibility.
-        return (BypassId, null);
     }
 
     private static IEnumerable<byte> ScanReadDids(UtilityFile uf)

@@ -162,7 +162,7 @@ Test vectors (in `E67AlgorithmTests`):
 
 ### 3.3 `T43Algorithm` - 2-byte, T43 TCM (6T70 family)
 
-Registry id: `gm-t43`. GM-assigned algoId not yet pinned (search ongoing - rename to `gm-algo-NN` when a real utility file confirms `$27 AC1`). Decompiled from the FOSS 6Speed.T43 tester's `gett43key`.
+Registry id: `gm-t43` (legacy alias). GM-assigned algoId is not yet pinned. For interpreter 3, opcode `$27` uses AC0 for the algorithm and AC2 for the table/source; a utility match and independent binding are needed. Decompiled from the FOSS 6Speed.T43 tester's `gett43key`.
 
 ```csharp
 public sealed class T43Algorithm : ISeedKeyAlgorithm
@@ -264,7 +264,15 @@ Defaults: `algoId = 0x92`, `password = Gm5BytePasswords.Table[0x92]`, `familyByt
 }
 ```
 
-`ArchivePrimer.PickSecurityModule` reads `algoId` straight out of the utility-file's first $27 instruction (`Action[1]`, AKA AC1) and wires the right config automatically.
+Corrected archive-import behavior: archive import no longer automatically selects
+this model. `UtilitySecuritySelection` reads the documented interpreter-3
+fields (algorithm AC0, access mode AC1, source/table AC2, zero-seed exception
+AC3) and retains them in the prime report. These fields alone do not establish
+seed width, cipher implementation or target compatibility. Imports default to
+`gm-archive-unresolved`, whose `$27` handler returns NRC `$11` and never unlocks.
+That response describes an unsupported simulator model, not measured ECU
+behavior. Explicit model selection remains available. See
+[the importer notes](../Dps/README.md#0e-utility-security-selectors-are-metadata-not-a-model-binding).
 
 Test vectors (in `Gm5ByteAlgorithmTests`, all for `algoId = 0x92`):
 
@@ -284,7 +292,8 @@ Test vectors (in `Gm5ByteAlgorithmTests`, all for `algoId = 0x92`):
 
 | Registry id | Class | What it does |
 |---|---|---|
-| `gm-bypass-5byte`           | `Gmw3110_2010_Generic` + `Gmw3110ProgrammingBypassAlgorithm` | First `$27 01` returns a zero seed AND flips `SecurityUnlockedLevel`. Tester skips `$27 02` entirely. Used for legacy 2-byte stub-security boot blocks and as `ArchivePrimer`'s fallback when the utility file's AC1 is zero. |
+| `gm-bypass-5byte` | `Gmw3110_2010_Generic` + `RandomSeedCipher(5)` | Explicit bypass fixture: first `$27 01` returns a zero seed and sets simulated unlocked state. Never selected automatically by archive import. |
+| `gm-archive-unresolved` | `UnresolvedArchiveSecurityModule` | Archive default: refuses `$27` with NRC `$11`; no seed generation, key acceptance or unlock. |
 | `gm-permissive-5byte`       | `Gmw3110Permissive5Byte` | Emits a real non-zero 5-byte seed; accepts ANY key on `$27 02`. Use for new ECU families whose password we haven't captured yet. |
 | `gmw3110-2010-not-implemented` | `Gmw3110_2010_Generic` + `NotImplementedAlgorithm` | Deterministic seed `[0x12, 0x34]`, refuses every key. Exercises every NRC path against any J2534 host without committing to real cipher math. |
 

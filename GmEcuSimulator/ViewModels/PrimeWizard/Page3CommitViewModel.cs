@@ -19,7 +19,7 @@ public sealed class Page3CommitViewModel : NotifyPropertyChangedBase
     private readonly PrimeWizardContext context;
     private string archiveLine = "(none)";
     private string loadedBinLine = "(none)";
-    private string selectedSecurityModule = "gm-bypass-2byte";
+    private string selectedSecurityModule = UtilitySecuritySelection.UnresolvedModuleId;
     private string fixedSeedHex = "";
     private bool suppressContextWrites;     // OnEnter rehydration must not double-fire writes
     private int totalRows;
@@ -150,7 +150,7 @@ public sealed class Page3CommitViewModel : NotifyPropertyChangedBase
         {
             SelectedSecurityModule = context.OverrideSecurityModuleId
                                      ?? context.Dataset?.Report.SecurityModuleId
-                                     ?? "gm-bypass-2byte";
+                                     ?? UtilitySecuritySelection.UnresolvedModuleId;
             FixedSeedHex = context.OverrideFixedSeedHex ?? "";
         }
         finally
