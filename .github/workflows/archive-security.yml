@@ -1,0 +1,29 @@
+name: Archive security regression
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  archive-core:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '9.0.x'
+      - name: Run synthetic archive and security-model cases
+        run: dotnet run --project Tests.ArchiveSecurity/Tests.ArchiveSecurity.csproj --configuration Debug
+
+  archive-wizard:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '9.0.x'
+      - name: Build application and run synthetic wizard cases
+        run: dotnet run --project Tests.ArchiveWizard/Tests.ArchiveWizard.csproj --configuration Debug

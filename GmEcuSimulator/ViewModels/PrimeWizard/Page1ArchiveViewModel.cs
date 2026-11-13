@@ -115,6 +115,8 @@ public sealed class Page1ArchiveViewModel : NotifyPropertyChangedBase
                 ArchivePath = null;
                 context.Archive = null;
                 context.ArchivePath = null;
+                context.OverrideSecurityModuleId = null;
+                context.OverrideFixedSeedHex = null;
                 return;
             }
 
@@ -142,6 +144,9 @@ public sealed class Page1ArchiveViewModel : NotifyPropertyChangedBase
                 context.Dataset = null;
                 context.EditedManifest = null;
                 context.UserEdits.Clear();
+                // An explicit model/seed choice belongs to the previous archive.
+                context.OverrideSecurityModuleId = null;
+                context.OverrideFixedSeedHex = null;
             }
         }
         catch (Exception ex)
@@ -152,6 +157,8 @@ public sealed class Page1ArchiveViewModel : NotifyPropertyChangedBase
             CalCount = 0;
             OsPartNumber = null;
             context.Archive = null;
+            context.OverrideSecurityModuleId = null;
+            context.OverrideFixedSeedHex = null;
         }
     }
 }

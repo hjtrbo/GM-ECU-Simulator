@@ -26,10 +26,10 @@ public sealed class ArchivePrimerTests
         Assert.Equal(12, dataset.ExpectedValues.Count);
         Assert.InRange(dataset.ExpectedRequests.Count, 20, 121);
 
-        // Donor concept is gone; family is always null and security defaults
-        // to the bypass module.
+        // Family and cipher cannot be inferred from a utility selector alone.
         Assert.Null(dataset.Report.Family);
-        Assert.Equal("gm-programming-bypass", dataset.Report.SecurityModuleId);
+        Assert.Equal(UtilitySecuritySelection.UnresolvedModuleId, dataset.Report.SecurityModuleId);
+        Assert.NotNull(dataset.Report.SecuritySelection);
 
         Assert.InRange(dataset.KnownPids.Count, 530, 540);
 

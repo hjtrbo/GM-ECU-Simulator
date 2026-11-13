@@ -38,6 +38,8 @@ public sealed record PrimeReport(
     IReadOnlyList<CalBlockEntry> CalBlocks, // flash layout: one entry per archive cal file
     IReadOnlyList<string> Flags)          // flag-for-review strings, see ArchivePrimer
 {
+    public UtilitySecuritySelection? SecuritySelection { get; init; }
+
     public string OneLineSummary()
     {
         var name = System.IO.Path.GetFileName(ArchivePath);

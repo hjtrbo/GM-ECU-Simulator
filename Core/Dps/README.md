@@ -17,7 +17,7 @@ Three things changed materially during implementation. Update the corresponding 
 
 **Original assumption (§5, §11):** `Mode1ADidBinExtractor` could be invoked on the archive's OS module to recover family + identifier DIDs. **Actual:** archives contain only the OS region (flash `0x010000` and up). The PowerPC service dispatcher cluster lives at flash `~0x006900` (boot region) - not in the archive. So `Parse` returns null on archive OS modules. The walker remains useful only for full 2 MiB readbacks fed in via Load-Info-from-Bin.
 
-**What ships instead:** `Mode1ADidBinExtractor.ReadArchiveOsHeader` extracts the 8-digit ASCII OS part number + 2-char alpha code from the per-module header at file offset `0x0E`/`10`. The header is surfaced in the Prime Report for human inspection, but **no longer feeds family inference**. The earlier `FamilyFromOsPartNumber` table and archive-filename-prefix sniffing were removed per the donor-only stance (see `feedback_no_os_pn_database.md` in memory). `PrimeReport.Family` is hardcoded `null` in [ArchivePrimer.cs:130](ArchivePrimer.cs:130). Security-module selection is now driven by `PickSecurityModule` reading the utility-file's `$27 Action[1]` algoId; see §0e below.
+**What ships instead:** `Mode1ADidBinExtractor.ReadArchiveOsHeader` extracts the 8-digit ASCII OS part number + 2-char alpha code from the per-module header at file offset `0x0E`/`10`. The header is surfaced in the Prime Report for human inspection, but **no longer feeds family inference**. The earlier `FamilyFromOsPartNumber` table and archive-filename-prefix sniffing were removed per the donor-only stance (see `feedback_no_os_pn_database.md` in memory). `PrimeReport.Family` is hardcoded `null` in [ArchivePrimer.cs:130](ArchivePrimer.cs:130). Security selectors are retained as metadata; automatic imports use the unresolved model described in §0e below.
 
 ### 0b. PidResponseSolver replaced "NRC-only tier 3"
 
@@ -32,9 +32,35 @@ Three things changed materially during implementation. Update the corresponding 
 - **Bypass-by-policy unlocks at requestSeed.** `Gmw3110_2010_Generic.HandleBypass` requestSeed branch now sets `SecurityUnlockedLevel = level` along with emitting the all-zero seed. Without this, DPS's "seed `00 00` means already unlocked" shortcut leaves the ECU still locked and `$34` returns NRC `$22`.
 - **Module-change resets security state.** `EcuViewModel.ApplyModuleSelection` calls `ResetSecurityState()` so switching algorithms doesn't inherit the prior module's unlock state. Without this, a session with bypass followed by a session with algo 92 silently runs through the spec's "already unlocked -> seed=00 00" branch instead of actually exercising algo 92.
 
-### 0e. Security module is picked from the utility file's `$27` instruction
+### 0e. Utility security selectors are metadata, not a model binding
 
-**Original assumption (§7 area):** family detection drives the security module choice. **Actual:** `ArchivePrimer.PickSecurityModule` ([ArchivePrimer.cs:266](ArchivePrimer.cs:266)) walks the parsed utility file and reads the first `$27` instruction's `Action[1]` algoId. Non-zero -> `gm-e92-5byte` with `{algoId: "0xNN"}` config (the DPS-style 5-byte cipher in `Gm5ByteAlgorithm`). Zero or absent -> `gm-bypass-2byte` (the `RandomSeedCipher` wrapped with `SecurityModuleBehaviour.BypassAll`). No family lookup, no filename sniffing. The Algo 92 cipher itself was fully extracted on 2026-05-17 - see `reference_dps_algo92_extracted.md` in memory for provenance.
+Corrected archive-import behavior: the GM SPS interpreter 3 specification assigns
+opcode `$27` **AC0** to the algorithm, **AC1** to the access mode, **AC2** to the
+algorithm source/table, and **AC3** to the zero-seed exception. The previous
+automatic selection read AC1 as the algorithm and mapped every nonzero value
+to the E92 five-byte model; zero or absence selected a bypass. Those inferences
+were unsupported. See the GM-authored
+[April 2011 interpreter manual](https://www.scribd.com/doc/85336952/Interpreters-April-01-2011),
+pages 163–164.
+
+`UtilitySecuritySelection.Inspect` now retains all security steps, their raw
+actions and the fields supported by the reviewed format. Unknown interpreters,
+sources and out-of-range access pairs remain unresolved. It does not execute
+gotos or establish which step runs. The prime report displays this evidence.
+
+Automatic archive imports now use `gm-archive-unresolved`, which returns
+service-not-supported without generating a seed, checking a key or unlocking
+the simulated node. This is a limitation of the configured model, not a
+prediction of a real ECU's response. Choosing a known model or a bypass fixture
+remains an explicit user action in the wizard. Its provenance and suitability
+must be assessed separately. Archive defaults still do not define a BCM persona.
+
+Run the hardware-free synthetic regression executable with
+`dotnet run --project Tests.ArchiveSecurity/Tests.ArchiveSecurity.csproj -c Debug`
+from the repository root on a compatible SDK. It creates its own temporary
+archive fixtures; it does not depend on the absent external DPS archives.
+See [regression coverage](../../Tests.ArchiveSecurity/README.md) for the separate
+Windows wizard tests and the limits of these synthetic checks.
 
 ---
 

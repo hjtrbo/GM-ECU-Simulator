@@ -127,6 +127,15 @@ public static class PrimeReportWriter
         sb.AppendLine($"  OS PartNumber:         {r.OsPartNumber ?? "(not an archive OS module)"}");
         sb.AppendLine($"  OS AlphaCode:          {r.OsAlphaCode ?? "(n/a)"}");
         sb.AppendLine($"  Security module pick:  {r.SecurityModuleId}");
+        if (r.SecuritySelection is { } selection)
+        {
+            sb.AppendLine($"  Utility security:      {selection.Summary}");
+            foreach (var step in selection.Steps)
+                sb.AppendLine($"    step {step.Step:X2}: AC={step.RawActions}, " +
+                    $"algorithm={step.Algorithm:X2}, table={step.Table}, " +
+                    $"seed/key modes={step.SeedMode:X2}/{step.KeyMode:X2}, " +
+                    $"send key for zero seed={step.SendKeyForZeroSeed}; {step.Status}");
+        }
         sb.AppendLine();
     }
 

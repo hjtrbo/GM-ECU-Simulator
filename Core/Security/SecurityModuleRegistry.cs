@@ -42,6 +42,9 @@ public static class SecurityModuleRegistry
 
     static SecurityModuleRegistry()
     {
+        Register(Core.Dps.UtilitySecuritySelection.UnresolvedModuleId,
+            () => new UnresolvedArchiveSecurityModule());
+
         // Strict ciphers. Each wraps a real seed/key algorithm class and runs
         // the full GMW3110 SecurityAccess flow; mismatched keys get NRC $35.
 
